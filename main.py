@@ -5,10 +5,10 @@ import time
 import yfinance as yf
 from flask import Flask, jsonify
 
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
+
 bot = None
 
-if BOT_TOKEN:8611386223:AAG-eJynNK-6Bfo_csbHE-KgDN9rp666AUI
+BOT_TOKEN = "8611386223:AAG-eJynNK-6Bfo_csbHE-KgDN9rp666AUI"
     try:
         bot = telebot.TeleBot(BOT_TOKEN)
         print("✅ Bot initialized successfully")
