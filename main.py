@@ -5,18 +5,16 @@ import time
 import yfinance as yf
 from flask import Flask, jsonify
 
-
+BOT_TOKEN = "8611386223:AAG-eJynNK-6Bfo_csbHE-KgDN9rp666AUI"
 bot = None
 
-BOT_TOKEN = "8611386223:AAG-eJynNK-6Bfo_csbHE-KgDN9rp666AUI"
+if BOT_TOKEN:
     try:
         bot = telebot.TeleBot(BOT_TOKEN)
         print("✅ Bot initialized successfully")
     except Exception as e:
         print(f"⚠️ Bot init error: {e}")
         bot = None
-else:
-    print("⚠️ BOT_TOKEN not set!")
 
 app = Flask(__name__)
 
@@ -198,7 +196,6 @@ Signal    : {sig}""")
 
 def run_bot():
     if not bot:
-        print("⚠️ No bot token")
         return
     while True:
         try:
@@ -207,7 +204,6 @@ def run_bot():
         except Exception as e:
             print(f"❌ Polling error: {e}")
             time.sleep(5)
-            print("🔄 Restarting...")
 
 if __name__ == "__main__":
     print("✅ App starting...")
@@ -215,8 +211,6 @@ if __name__ == "__main__":
         t = threading.Thread(target=run_bot, daemon=True)
         t.start()
         print("✅ Bot thread started")
-    else:
-        print("⚠️ Set BOT_TOKEN in Render Environment!")
     port = int(os.environ.get("PORT", 10000))
     print(f"🌐 Flask on port {port}")
     app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False, threaded=True)
