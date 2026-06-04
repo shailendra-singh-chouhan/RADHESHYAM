@@ -1,562 +1,612 @@
-"""
-GOAT PRO — Real Angel One + Telegram Bot
-Render Deploy Ready
+﻿"""
+NIFTY + MCX Trading Signal Bot
+Full Clean Version â€” Render Deploy Ready
 """
 
 import os
-import json
-import time
-import threading
-import pyotp
 import telebot
+import requests
+import threading
+import time
+import datetime
+import pytz
 import yfinance as yf
-from flask import Flask, jsonify
-from SmartApi import SmartConnect
+from flask import Flask, jsonify, render_template
 
-# ─────────────────────────────────────────
-# CONFIG
-# ─────────────────────────────────────────
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8976682125:AAHHlimA_5-OyYYSShL_cKacdrVvfHKjjtE")
-CLIENT_ID      = os.environ.get("ANGEL_CLIENT_ID", "S430269")
-API_KEY        = os.environ.get("ANGEL_API_KEY", "Z3MfL8Os")
-TOTP_SECRET    = os.environ.get("ANGEL_TOTP_SECRET", "HPA3VQOM2HT3WI74RF2RQPDKIY")
-MPIN           = os.environ.get("ANGEL_MPIN", "2580")
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ðŸ”‘ CONFIG â€” Environment Variable à¤¸à¥‡ à¤²à¥‡à¤—à¤¾
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "YOUR_TOKEN_HERE")
+bot = telebot.TeleBot(BOT_TOKEN)
 
-bot = None
-if BOT_TOKEN:
-    try:
-        bot = telebot.TeleBot(BOT_TOKEN)
-        print("✅ Bot initialized")
-    except Exception as e:
-        print(f"⚠️ Bot error: {e}")
-
-# ─────────────────────────────────────────
-# FLASK
-# ─────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ðŸŒ FLASK SERVER â€” Render ke liye zaroori
+# (UptimeRobot isko ping karega, bot jaaga rahega)
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return jsonify({"status": "ok", "message": "GOAT PRO Running"}), 200
+    return render_template("dashboard.html")
 
 @app.route('/health')
 def health():
-    return jsonify({"status": "ok", "bot": "running" if bot else "no token"}), 200
+    return "OK", 200
+
+
+def get_index_quote(symbol):
+    try:
+        ticker = yf.Ticker(symbol)
+        info = ticker.fast_info
+        price = round(float(info['last_price']), 2)
+        previous = float(info.get('previous_close') or price)
+        change = round(price - previous, 2)
+        pchg = round((change / previous) * 100, 2) if previous else 0
+        return price, change, pchg
+    except:
+        return None, None, None
+
+
+def get_precious_metals_data(usd_inr):
+    data = {'gold_inr': None, 'silver_inr': None}
+    try:
+        gold_usd = yf.Ticker('GC=F').fast_info['last_price']
+        data['gold_inr'] = round(float(gold_usd) * float(usd_inr) / 10, 2) if usd_inr else None
+    except:
+        pass
+
+    try:
+        silver_usd = yf.Ticker('SI=F').fast_info['last_price']
+        data['silver_inr'] = round(float(silver_usd) * float(usd_inr), 2) if usd_inr else None
+    except:
+        pass
+
+    return data
+
+
+def get_signal_summary(change, pchg, pcr):
+    score = 0
+
+    try:
+        if pcr < 0.7 or pcr > 1.3:
+            score += 1
+        if change > 0 or change < 0:
+            score += 1
+        if abs(pchg) > 0.4:
+            score += 1
+    except:
+        return {'direction': 'WAIT - No trade zone', 'score': 0}
+
+    if score >= 3 and pcr < 0.7 and change > 0:
+        direction = 'STRONG BUY - CE zone'
+    elif score >= 3 and pcr > 1.3 and change < 0:
+        direction = 'STRONG SELL - PE zone'
+    elif score >= 3:
+        direction = 'MIXED - Wait for clarity'
+    else:
+        direction = 'WAIT - No trade zone'
+
+    return {'direction': direction, 'score': score}
+
 
 @app.route('/api/market')
-def market_api():
-    """Dashboard ke liye live data endpoint"""
-    data = get_all_market_data()
-    return jsonify(data), 200
+def api_market():
+    nifty_price, nifty_change, nifty_pchg = get_nifty_data()
+    bank_price, bank_change, bank_pchg = get_index_quote('^NSEBANK')
+    vix_price, _, _ = get_index_quote('^INDIAVIX')
+    pcr, _, _ = get_pcr_data()
+    mcx = get_mcx_data() or {}
+    metals = get_precious_metals_data(mcx.get('usd_inr'))
+    mcx.update(metals)
 
-# ─────────────────────────────────────────
-# ANGEL ONE LOGIN
-# ─────────────────────────────────────────
-angel_obj = None
-angel_token = None
-angel_last_login = 0
+    ist = pytz.timezone('Asia/Kolkata')
+    timestamp = datetime.datetime.now(ist).strftime('%H:%M:%S')
 
-def angel_login():
-    global angel_obj, angel_token, angel_last_login
-    try:
-        totp = pyotp.TOTP(TOTP_SECRET).now()
-        obj = SmartConnect(api_key=API_KEY)
-        data = obj.generateSession(CLIENT_ID, MPIN, totp)
-        if data['status']:
-            angel_obj = obj
-            angel_token = data['data']['jwtToken']
-            angel_last_login = time.time()
-            print("✅ Angel One login successful")
-            return True
-        else:
-            print(f"❌ Angel One login failed: {data['message']}")
-            return False
-    except Exception as e:
-        print(f"❌ Angel One error: {e}")
-        return False
-
-def ensure_angel_login():
-    global angel_last_login
-    # Re-login every 6 hours
-    if not angel_obj or (time.time() - angel_last_login) > 21600:
-        angel_login()
-
-# ─────────────────────────────────────────
-# NIFTY DATA — Angel One
-# ─────────────────────────────────────────
-def get_nifty_live():
-    try:
-        ensure_angel_login()
-        if angel_obj:
-            data = angel_obj.ltpData("NSE", "Nifty 50", "99926000")
-            ltp = data['data']['ltp']
-            # Get prev close via yfinance
-            yf_nifty = yf.Ticker("^NSEI")
-            prev = yf_nifty.fast_info['previous_close']
-            change = round(ltp - prev, 2)
-            pchg = round((change / prev) * 100, 2)
-            return ltp, change, pchg
-    except Exception as e:
-        print(f"Angel NIFTY error: {e}")
-    # Fallback to yfinance
-    try:
-        t = yf.Ticker("^NSEI")
-        info = t.fast_info
-        price = round(info['last_price'], 2)
-        prev = round(info['previous_close'], 2)
-        change = round(price - prev, 2)
-        pchg = round((change / prev) * 100, 2)
-        return price, change, pchg
-    except Exception as e:
-        print(f"yfinance NIFTY error: {e}")
-        return None, None, None
-
-def get_banknifty_live():
-    try:
-        ensure_angel_login()
-        if angel_obj:
-            data = angel_obj.ltpData("NSE", "Nifty Bank", "99926009")
-            ltp = data['data']['ltp']
-            yf_bn = yf.Ticker("^NSEBANK")
-            prev = yf_bn.fast_info['previous_close']
-            change = round(ltp - prev, 2)
-            pchg = round((change / prev) * 100, 2)
-            return ltp, change, pchg
-    except Exception as e:
-        print(f"Angel BankNifty error: {e}")
-    try:
-        t = yf.Ticker("^NSEBANK")
-        info = t.fast_info
-        price = round(info['last_price'], 2)
-        prev = round(info['previous_close'], 2)
-        change = round(price - prev, 2)
-        pchg = round((change / prev) * 100, 2)
-        return price, change, pchg
-    except:
-        return None, None, None
-
-# ─────────────────────────────────────────
-# OI + PCR — Angel One Option Chain
-# ─────────────────────────────────────────
-def get_oi_pcr():
-    try:
-        ensure_angel_login()
-        if angel_obj:
-            # Get option chain for NIFTY
-            data = angel_obj.optionGreeks({
-                "name": "NIFTY",
-                "expirydate": get_nearest_expiry()
-            })
-            if data and data.get('data'):
-                records = data['data']
-                total_ce_oi = sum(r.get('openInterest', 0) for r in records if r.get('optionType') == 'CE')
-                total_pe_oi = sum(r.get('openInterest', 0) for r in records if r.get('optionType') == 'PE')
-                pcr = round(total_pe_oi / total_ce_oi, 3) if total_ce_oi else None
-                return pcr, total_ce_oi, total_pe_oi
-    except Exception as e:
-        print(f"OI/PCR error: {e}")
-    # Fallback — VIX proxy
-    try:
-        vix = yf.Ticker("^INDIAVIX")
-        vix_val = round(vix.fast_info['last_price'], 2)
-        if vix_val < 13:
-            pcr = 0.6
-        elif vix_val > 20:
-            pcr = 1.4
-        else:
-            pcr = round(0.6 + (vix_val - 13) * (0.8 / 7), 3)
-        return pcr, None, None
-    except:
-        return None, None, None
-
-def get_nearest_expiry():
-    from datetime import datetime, timedelta
-    today = datetime.now()
-    # Next Thursday
-    days_ahead = 3 - today.weekday()
-    if days_ahead <= 0:
-        days_ahead += 7
-    expiry = today + timedelta(days=days_ahead)
-    return expiry.strftime("%d%b%Y").upper()
-
-# ─────────────────────────────────────────
-# MCX DATA
-# ─────────────────────────────────────────
-def get_mcx_data():
-    try:
-        crude = yf.Ticker("CL=F")
-        gold  = yf.Ticker("GC=F")
-        silver= yf.Ticker("SI=F")
-        gas   = yf.Ticker("NG=F")
-        usd_inr = yf.Ticker("INR=X")
-        inr = usd_inr.fast_info['last_price']
-        return {
-            'crude_usd': round(crude.fast_info['last_price'], 2),
-            'crude_inr': round(crude.fast_info['last_price'] * inr * 0.159, 2),
-            'gold_usd':  round(gold.fast_info['last_price'], 2),
-            'gold_inr':  round(gold.fast_info['last_price'] * inr * 0.0321, 2),
-            'silver_usd':round(silver.fast_info['last_price'], 2),
-            'silver_inr':round(silver.fast_info['last_price'] * inr * 0.0321, 2),
-            'gas_usd':   round(gas.fast_info['last_price'], 3),
-            'gas_inr':   round(gas.fast_info['last_price'] * inr * 0.036, 2),
-            'usd_inr':   round(inr, 2)
-        }
-    except Exception as e:
-        print(f"MCX error: {e}")
-        return None
-
-# ─────────────────────────────────────────
-# VIX
-# ─────────────────────────────────────────
-def get_vix():
-    try:
-        vix = yf.Ticker("^INDIAVIX")
-        return round(vix.fast_info['last_price'], 2)
-    except:
-        return None
-
-# ─────────────────────────────────────────
-# SIGNAL ENGINE
-# ─────────────────────────────────────────
-def generate_signal(price, change, pchg, pcr, vix):
-    if not all([price, change is not None, pchg is not None, pcr]):
-        return "⏳ DATA LOADING..."
-    
-    score = 0
-    reasons = []
-
-    # PCR filter
-    if pcr < 0.7:
-        score += 1
-        reasons.append("✅ PCR Bullish")
-    elif pcr > 1.3:
-        score += 1
-        reasons.append("✅ PCR Bearish")
-    else:
-        reasons.append("❌ PCR Neutral")
-
-    # Price filter
-    if change > 0:
-        score += 1
-        reasons.append("✅ Price +ve")
-    elif change < 0:
-        score += 1
-        reasons.append("✅ Price -ve")
-    else:
-        reasons.append("❌ Price Flat")
-
-    # Momentum
-    if abs(pchg) > 0.4:
-        score += 1
-        reasons.append("✅ Momentum Strong")
-    else:
-        reasons.append("❌ Momentum Weak")
-
-    # VIX filter
-    if vix:
-        if vix < 15:
-            score += 1
-            reasons.append("✅ VIX Low (stable)")
-        elif vix > 22:
-            reasons.append("⚠️ VIX High (risky)")
-
-    # Direction
-    if score >= 3:
-        if pcr < 0.7 and change > 0:
-            direction = "🚀 STRONG BUY — CE खरीदो"
-        elif pcr > 1.3 and change < 0:
-            direction = "💀 STRONG SELL — PE खरीदो"
-        else:
-            direction = "⚠️ MIXED — Wait"
-    else:
-        direction = "⏸️ WAIT — No trade zone"
-
-    return {
-        'direction': direction,
-        'score': score,
-        'reasons': reasons
-    }
-
-# ─────────────────────────────────────────
-# ALL MARKET DATA — Dashboard API
-# ─────────────────────────────────────────
-def get_all_market_data():
-    nifty_price, nifty_chg, nifty_pchg = get_nifty_live()
-    bn_price, bn_chg, bn_pchg = get_banknifty_live()
-    pcr, ce_oi, pe_oi = get_oi_pcr()
-    vix = get_vix()
-    mcx = get_mcx_data()
-    signal = generate_signal(nifty_price, nifty_chg, nifty_pchg, pcr, vix)
-
-    return {
+    return jsonify({
         'nifty': {
             'price': nifty_price,
-            'change': nifty_chg,
+            'change': nifty_change,
             'pchg': nifty_pchg
         },
         'banknifty': {
-            'price': bn_price,
-            'change': bn_chg,
-            'pchg': bn_pchg
+            'price': bank_price,
+            'change': bank_change,
+            'pchg': bank_pchg
         },
         'pcr': pcr,
-        'ce_oi': ce_oi,
-        'pe_oi': pe_oi,
-        'vix': vix,
+        'vix': vix_price,
         'mcx': mcx,
-        'signal': signal,
-        'timestamp': time.strftime("%H:%M:%S")
-    }
+        'signal': get_signal_summary(nifty_change, nifty_pchg, pcr),
+        'timestamp': timestamp
+    })
+def run_flask():
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
 
-# ─────────────────────────────────────────
-# TELEGRAM BOT COMMANDS
-# ─────────────────────────────────────────
-if bot:
+# Flask ko background thread mein chalao
+threading.Thread(target=run_flask, daemon=True).start()
 
-    @bot.message_handler(commands=['start', 'help'])
-    def start_cmd(m):
-        bot.reply_to(m, """⚡ GOAT PRO Trading Bot
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ðŸ“¦ GLOBAL STATE
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+alerts = {}          # chat_id: {'status': 'ON'}
+schedule_status = {} # chat_id: 'ON' / 'OFF'
 
-📊 Commands:
-/nifty    — NIFTY 50 live price
-/banknifty — BankNifty live price
-/signal   — Full F&O signal
-/pcr      — OI + PCR analysis
-/mcx      — Crude, Gold, Silver
-/vix      — India VIX
-/status   — Full market overview
-/alert ON/OFF — Auto alerts""")
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ðŸ› ï¸ HELPER: NSE Session
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+NSE_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+    'Accept': '*/*',
+    'Referer': 'https://www.nseindia.com/'
+}
 
-    @bot.message_handler(commands=['nifty'])
-    def nifty_cmd(m):
-        bot.reply_to(m, "⏳ Fetching live data...")
-        price, change, pchg = get_nifty_live()
-        if not price:
-            bot.reply_to(m, "🔴 Data unavailable")
-            return
-        trend = "🟢 UP" if change > 0 else ("🔴 DOWN" if change < 0 else "⚪ FLAT")
-        bot.reply_to(m, f"""📈 NIFTY 50 — LIVE
+def get_nse_session():
+    session = requests.Session()
+    session.get("https://www.nseindia.com", headers=NSE_HEADERS, timeout=6)
+    return session
 
-💰 Price : {price:,.2f}
-📊 Change: {'+' if change > 0 else ''}{change} ({pchg}%)
-📉 Trend : {trend}
-⏰ Time  : {time.strftime("%H:%M:%S")}""")
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ðŸ“ˆ HELPER: NIFTY Data
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+def get_nifty_data():
+    try:
+        session = get_nse_session()
+        url = "https://www.nseindia.com/api/equity-stockIndices?index=NIFTY%2050"
+        res = session.get(url, headers=NSE_HEADERS, timeout=6)
+        data = res.json()
+        for item in data['data']:
+            if item['indexSymbol'] == 'NIFTY 50':
+                price  = item['last']
+                change = round(item['variation'], 2)
+                pchg   = round(item['percentChange'], 2)
+                return price, change, pchg
+    except:
+        pass
+    return None, None, None
 
-    @bot.message_handler(commands=['banknifty'])
-    def bn_cmd(m):
-        bot.reply_to(m, "⏳ Fetching...")
-        price, change, pchg = get_banknifty_live()
-        if not price:
-            bot.reply_to(m, "🔴 Data unavailable")
-            return
-        trend = "🟢 UP" if change > 0 else "🔴 DOWN"
-        bot.reply_to(m, f"""🏦 BANKNIFTY — LIVE
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ðŸ“Š HELPER: PCR Data
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+def get_pcr_data():
+    try:
+        session = get_nse_session()
+        url = "https://www.nseindia.com/api/option-chain-indices?symbol=NIFTY"
+        res = session.get(url, headers=NSE_HEADERS, timeout=6)
+        data = res.json()
+        records = data['records']['data']
+        total_pe = sum(i['PE']['openInterest'] for i in records if 'PE' in i)
+        total_ce = sum(i['CE']['openInterest'] for i in records if 'CE' in i)
+        pcr = round(total_pe / total_ce, 3) if total_ce else None
+        return pcr, total_pe, total_ce
+    except:
+        pass
+    return None, None, None
 
-💰 Price : {price:,.2f}
-📊 Change: {'+' if change > 0 else ''}{change} ({pchg}%)
-📉 Trend : {trend}""")
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ðŸ›¢ï¸ HELPER: MCX Data (via yfinance)
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+def get_mcx_data():
+    try:
+        crude = yf.Ticker("CL=F")
+        gas   = yf.Ticker("NG=F")
+        usd_inr = yf.Ticker("INR=X")
 
-    @bot.message_handler(commands=['pcr'])
-    def pcr_cmd(m):
-        pcr, ce_oi, pe_oi = get_oi_pcr()
-        vix = get_vix()
-        if not pcr:
-            bot.reply_to(m, "🔴 PCR data unavailable")
-            return
-        sig = "🚀 BULLISH" if pcr < 0.7 else ("💀 BEARISH" if pcr > 1.3 else "⏸️ NEUTRAL")
-        oi_text = ""
-        if ce_oi and pe_oi:
-            oi_text = f"\n📊 CE OI: {ce_oi/100000:.1f}L\n📊 PE OI: {pe_oi/100000:.1f}L"
-        bot.reply_to(m, f"""📊 OI + PCR Analysis
+        crude_usd = crude.fast_info['last_price']
+        gas_usd   = gas.fast_info['last_price']
+        inr_rate  = usd_inr.fast_info['last_price']
 
-PCR     : {pcr} {sig}
-VIX     : {vix if vix else 'N/A'}{oi_text}
+        crude_inr = round(crude_usd * inr_rate * 0.159, 2)  # per barrel â†’ per litre approx
+        gas_inr   = round(gas_usd  * inr_rate * 0.036, 2)   # mmBtu â†’ approx MCX unit
 
-{'🔴 Bearish — PE side' if pcr > 1.3 else '🟢 Bullish — CE side' if pcr < 0.7 else '⏸️ Wait for clarity'}""")
+        return {
+            'crude_usd': crude_usd,
+            'crude_inr': crude_inr,
+            'gas_usd':   gas_usd,
+            'gas_inr':   gas_inr,
+            'usd_inr':   round(inr_rate, 2)
+        }
+    except:
+        return None
 
-    @bot.message_handler(commands=['signal'])
-    def signal_cmd(m):
-        bot.reply_to(m, "⏳ Analyzing market...")
-        price, change, pchg = get_nifty_live()
-        pcr, _, _ = get_oi_pcr()
-        vix = get_vix()
-        if not price:
-            bot.reply_to(m, "🔴 Data fetch failed")
-            return
-        sig = generate_signal(price, change, pchg, pcr, vix)
-        if isinstance(sig, str):
-            bot.reply_to(m, sig)
-            return
-        reasons_text = "\n".join(sig['reasons'])
-        bot.reply_to(m, f"""⚡ GOAT PRO SIGNAL
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ðŸ§  HELPER: Signal Logic
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+def generate_signal_text(price, change, pChange, pcr):
+    filters_pass = 0
+    reasons = []
 
-📈 NIFTY : {price:,.2f} ({'+' if change > 0 else ''}{change} | {pchg}%)
-😨 VIX   : {vix if vix else 'N/A'}
-📊 PCR   : {pcr if pcr else 'N/A'}
-
-🔍 Filters:
-{reasons_text}
-
-✅ Score : {sig['score']}/4
-🎯 Signal: {sig['direction']}
-
-⚠️ Educational only — Apni risk pe trade karo!""")
-
-    @bot.message_handler(commands=['mcx'])
-    def mcx_cmd(m):
-        d = get_mcx_data()
-        if not d:
-            bot.reply_to(m, "🔴 MCX unavailable")
-            return
-        bot.reply_to(m, f"""🏭 MCX COMMODITIES — LIVE
-
-🛢️ Crude Oil
-   ${d['crude_usd']} USD | ₹{d['crude_inr']} INR
-
-🥇 Gold
-   ${d['gold_usd']} USD | ₹{d['gold_inr']} INR/g
-
-🥈 Silver
-   ${d['silver_usd']} USD | ₹{d['silver_inr']} INR/g
-
-⛽ Natural Gas
-   ${d['gas_usd']} USD | ₹{d['gas_inr']} INR
-
-💱 USD/INR: {d['usd_inr']}""")
-
-    @bot.message_handler(commands=['vix'])
-    def vix_cmd(m):
-        vix = get_vix()
-        if not vix:
-            bot.reply_to(m, "🔴 VIX unavailable")
-            return
-        level = "😌 LOW" if vix < 13 else ("😨 HIGH" if vix > 20 else "😐 NORMAL")
-        tip = "✅ Options buy karo" if vix < 15 else ("⚠️ Risky — chhota size lo" if vix > 20 else "👍 Normal trading")
-        bot.reply_to(m, f"""😨 INDIA VIX
-
-VIX   : {vix}
-Level : {level}
-Tip   : {tip}""")
-
-    @bot.message_handler(commands=['status'])
-    def status_cmd(m):
-        bot.reply_to(m, "⏳ Full market scan...")
-        data = get_all_market_data()
-        n = data['nifty']
-        bn = data['banknifty']
-        mcx = data['mcx']
-        msg = f"""📊 GOAT PRO — MARKET STATUS
-⏰ {data['timestamp']}
-
-{'🟢' if n['change'] and n['change'] > 0 else '🔴'} NIFTY   : {n['price']:,.2f} ({'+' if n['change'] and n['change'] > 0 else ''}{n['change']})
-{'🟢' if bn['change'] and bn['change'] > 0 else '🔴'} BANKNIFTY: {bn['price']:,.2f}
-😨 VIX     : {data['vix']}
-📊 PCR     : {data['pcr']}
-"""
-        if mcx:
-            msg += f"""
-🛢️ Crude  : ₹{mcx['crude_inr']}
-🥇 Gold   : ₹{mcx['gold_inr']}
-💱 USD/INR: {mcx['usd_inr']}
-"""
-        if isinstance(data['signal'], dict):
-            msg += f"\n🎯 Signal: {data['signal']['direction']}"
-        bot.reply_to(m, msg)
-
-# ─────────────────────────────────────────
-# AUTO ALERT SYSTEM
-# ─────────────────────────────────────────
-alert_users = {}
-last_signal = None
-
-def auto_alert_worker():
-    global last_signal
-    while True:
-        try:
-            if not alert_users:
-                time.sleep(60)
-                continue
-            price, change, pchg = get_nifty_live()
-            pcr, _, _ = get_oi_pcr()
-            vix = get_vix()
-            sig = generate_signal(price, change, pchg, pcr, vix)
-            if isinstance(sig, dict) and sig['direction'] != last_signal:
-                if sig['score'] >= 3:
-                    last_signal = sig['direction']
-                    msg = f"""🚨 GOAT PRO AUTO ALERT!
-
-📈 NIFTY: {price:,.2f} ({'+' if change > 0 else ''}{change})
-📊 PCR  : {pcr}
-😨 VIX  : {vix}
-
-🎯 {sig['direction']}
-
-⚠️ Educational only!"""
-                    for chat_id in list(alert_users.keys()):
-                        try:
-                            bot.send_message(chat_id, msg)
-                        except:
-                            pass
-        except Exception as e:
-            print(f"Alert error: {e}")
-        time.sleep(300)  # Check every 5 min
-
-if bot:
-    @bot.message_handler(commands=['alert'])
-    def alert_cmd(m):
-        chat_id = m.chat.id
-        args = m.text.split()
-        if len(args) < 2:
-            status = "ON" if chat_id in alert_users else "OFF"
-            bot.reply_to(m, f"🔔 Alert: {status}\n/alert ON  or  /alert OFF")
-            return
-        if args[1].upper() == 'ON':
-            alert_users[chat_id] = True
-            bot.reply_to(m, "🔔 Auto alerts ON! Har 5 min mein signal check hoga.")
-        elif args[1].upper() == 'OFF':
-            alert_users.pop(chat_id, None)
-            bot.reply_to(m, "🔕 Auto alerts OFF.")
-
-# ─────────────────────────────────────────
-# BOT POLLING
-# ─────────────────────────────────────────
-def run_bot():
-    if not bot:
-        return
-    while True:
-        try:
-            print("🤖 Bot polling started...")
-            bot.infinity_polling(timeout=30, long_polling_timeout=30)
-        except Exception as e:
-            print(f"❌ Polling error: {e}")
-            time.sleep(5)
-
-# ─────────────────────────────────────────
-# MAIN
-# ─────────────────────────────────────────
-if __name__ == "__main__":
-    print("✅ GOAT PRO starting...")
-
-    # Angel One login
-    if all([CLIENT_ID, API_KEY, TOTP_SECRET, MPIN]):
-        print("🔑 Angel One credentials found — logging in...")
-        angel_login()
+    if pcr < 0.7:
+        filters_pass += 1
+        reasons.append("âœ… PCR Bullish <0.7")
+    elif pcr > 1.3:
+        filters_pass += 1
+        reasons.append("âœ… PCR Bearish >1.3")
     else:
-        print("⚠️ Angel One credentials missing!")
+        reasons.append("âŒ PCR Neutral")
 
-    # Bot thread
-    if bot:
-        t1 = threading.Thread(target=run_bot, daemon=True)
-        t1.start()
-        print("✅ Bot thread started")
+    if change > 0:
+        filters_pass += 1
+        reasons.append("âœ… Price Positive")
+    elif change < 0:
+        filters_pass += 1
+        reasons.append("âœ… Price Negative")
+    else:
+        reasons.append("âŒ Price Flat")
 
-    # Auto alert thread
-    if bot:
-        t2 = threading.Thread(target=auto_alert_worker, daemon=True)
-        t2.start()
-        print("✅ Alert thread started")
+    if abs(pChange) > 0.4:
+        filters_pass += 1
+        reasons.append("âœ… Momentum Strong")
+    else:
+        reasons.append("âŒ Momentum Weak")
 
-    port = int(os.environ.get("PORT", 10000))
-    print(f"🌐 Flask on port {port}")
-    from flask import Flask
-    app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False, threaded=True)
+    # Direction
+    if filters_pass >= 3:
+        if pcr < 0.7 and change > 0:
+            direction = "ðŸš€ STRONG BUY â€” CE à¤–à¤°à¥€à¤¦à¥‹"
+        elif pcr > 1.3 and change < 0:
+            direction = "ðŸ’€ STRONG SELL â€” PE à¤–à¤°à¥€à¤¦à¥‹"
+        else:
+            direction = "âš ï¸ MIXED â€” Wait for clarity"
+    else:
+        direction = "â¸ï¸ WAIT â€” No trade zone"
+
+    lines = [
+        f"ðŸ“ˆ NIFTY: {price}  ({'+' if change>0 else ''}{change} | {pChange}%)",
+        f"ðŸ“Š PCR: {pcr}",
+        "",
+        "ðŸ” Filters:",
+    ] + reasons + [
+        "",
+        f"âœ… Passed: {filters_pass}/3",
+        f"ðŸŽ¯ Signal: {direction}"
+    ]
+    return "\n".join(lines)
+
+
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ðŸ“Œ COMMANDS
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+# â”€â”€â”€ /start â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+@bot.message_handler(commands=['start', 'help'])
+def start_command(m):
+    msg = """ðŸ¤– NIFTY Trading Bot â€” Command List
+
+ðŸ“Š Market Data:
+/nifty     â†’ NIFTY 50 live price
+/pcr       â†’ Put-Call Ratio + signal
+/top5      â†’ Top 5 CE/PE OI strikes
+/signal    â†’ Full multi-filter signal
+
+ðŸ›¢ï¸ MCX:
+/mcx       â†’ Crude Oil + Natural Gas
+
+ðŸ“¦ Combined:
+/status    â†’ NIFTY + Crude à¤à¤• à¤¸à¤¾à¤¥
+
+ðŸ”” Alerts:
+/alert ON  â†’ Auto alert (PCR extreme)
+/alert OFF â†’ Alert à¤¬à¤‚à¤¦ à¤•à¤°à¥‹
+
+ðŸ“… Schedule:
+/schedule ON  â†’ 9:20 AM + 12 PM auto signal
+/schedule OFF â†’ Schedule à¤¬à¤‚à¤¦
+
+ðŸ’¡ Tip: /signal à¤¸à¤¬à¤¸à¥‡ powerful à¤¹à¥ˆà¥¤"""
+    bot.reply_to(m, msg)
+
+
+# â”€â”€â”€ /nifty â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+@bot.message_handler(commands=['nifty'])
+def nifty_command(m):
+    price, change, pChange = get_nifty_data()
+    if not price:
+        bot.reply_to(m, "ðŸ”´ NIFTY data à¤¨à¤¹à¥€à¤‚ à¤®à¤¿à¤²à¤¾\nNSE block à¤¯à¤¾ Market à¤¬à¤‚à¤¦ à¤¹à¥ˆ")
+        return
+    trend = "ðŸŸ¢ UP" if change > 0 else ("ðŸ”´ DOWN" if change < 0 else "âšª FLAT")
+    msg = f"""ðŸ“ˆ NIFTY 50 Live
+
+ðŸ’° Price : {price}
+ðŸ“Š Change: {'+' if change>0 else ''}{change} ({pChange}%)
+ðŸ“‰ Trend : {trend}"""
+    bot.reply_to(m, msg)
+
+
+# â”€â”€â”€ /pcr â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+@bot.message_handler(commands=['pcr'])
+def pcr_command(m):
+    pcr, total_pe, total_ce = get_pcr_data()
+    if not pcr:
+        bot.reply_to(m, "ðŸ”´ PCR data à¤¨à¤¹à¥€à¤‚ à¤®à¤¿à¤²à¤¾\nNSE block à¤¯à¤¾ Market à¤¬à¤‚à¤¦ à¤¹à¥ˆ")
+        return
+
+    if pcr < 0.7:
+        signal = "ðŸš€ STRONG BUY"
+        reason = "PCR < 0.7 â€” Call writers trapped"
+        action = "CE à¤–à¤°à¥€à¤¦à¥‹"
+    elif pcr > 1.3:
+        signal = "ðŸ’€ STRONG SELL"
+        reason = "PCR > 1.3 â€” Put writers trapped"
+        action = "PE à¤–à¤°à¥€à¤¦à¥‹"
+    else:
+        signal = "â¸ï¸ WAIT"
+        reason = "PCR 0.7â€“1.3 â€” No clear direction"
+        action = "Side à¤®à¥‡à¤‚ à¤°à¤¹à¥‹"
+
+    msg = f"""ðŸ“Š NIFTY PCR Live
+
+PCR   : {pcr}
+Put OI: {total_pe/100000:.1f}L
+Call OI: {total_ce/100000:.1f}L
+
+ðŸŽ¯ Signal : {signal}
+ðŸ“ Reason : {reason}
+âš¡ Action : {action}
+
+Rule: Extreme PCR à¤ªà¤° à¤¹à¥€ 100% confirm"""
+    bot.reply_to(m, msg)
+
+
+# â”€â”€â”€ /top5 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+@bot.message_handler(commands=['top5'])
+def top5_command(m):
+    try:
+        session = get_nse_session()
+        url = "https://www.nseindia.com/api/option-chain-indices?symbol=NIFTY"
+        res = session.get(url, headers=NSE_HEADERS, timeout=6)
+        data = res.json()
+
+        ce_list, pe_list = [], []
+        for item in data['records']['data']:
+            strike = item['strikePrice']
+            if 'CE' in item:
+                ce_list.append([strike, item['CE']['openInterest'], item['CE']['changeinOpenInterest']])
+            if 'PE' in item:
+                pe_list.append([strike, item['PE']['openInterest'], item['PE']['changeinOpenInterest']])
+
+        top5_ce = sorted(ce_list, key=lambda x: x[1], reverse=True)[:5]
+        top5_pe = sorted(pe_list, key=lambda x: x[1], reverse=True)[:5]
+
+        msg  = "ðŸ“Š NIFTY Top 5 OI Strikes\n\n"
+        msg += "ðŸ”´ CE Top 5 â€” Resistance\n"
+        msg += f"{'Strike':<8} {'OI':>8} {'ChgOI':>8}\n"
+        msg += "â”€" * 26 + "\n"
+        for strike, oi, chng in top5_ce:
+            msg += f"{strike:<8} {oi/100000:>6.1f}L {chng/100000:>+6.1f}L\n"
+
+        msg += "\nðŸŸ¢ PE Top 5 â€” Support\n"
+        msg += f"{'Strike':<8} {'OI':>8} {'ChgOI':>8}\n"
+        msg += "â”€" * 26 + "\n"
+        for strike, oi, chng in top5_pe:
+            msg += f"{strike:<8} {oi/100000:>6.1f}L {chng/100000:>+6.1f}L\n"
+
+        msg += "\nðŸ’¡ à¤œà¤¹à¤¾à¤ OI à¤¸à¤¬à¤¸à¥‡ à¤œà¥à¤¯à¤¾à¤¦à¤¾ = à¤¬à¤¡à¤¼à¥€ Support/Resistance\nBreakout à¤µà¤¹à¥€à¤‚ à¤¸à¥‡ à¤¹à¥‹à¤—à¤¾"
+    except Exception as e:
+        msg = f"ðŸ”´ Top5 Failed\nNSE block à¤¯à¤¾ Market à¤¬à¤‚à¤¦\n{str(e)[:60]}"
+
+    bot.reply_to(m, msg)
+
+
+# â”€â”€â”€ /signal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+@bot.message_handler(commands=['signal'])
+def signal_command(m):
+    price, change, pChange = get_nifty_data()
+    pcr, _, _ = get_pcr_data()
+
+    if not price or not pcr:
+        bot.reply_to(m, "ðŸ”´ Data Failed\nNSE block à¤¯à¤¾ Market à¤¬à¤‚à¤¦")
+        return
+
+    header = "ðŸŽ¯ NIFTY Signal Report\n" + "â”€"*28 + "\n"
+    body   = generate_signal_text(price, change, pChange, pcr)
+    bot.reply_to(m, header + body)
+
+
+# â”€â”€â”€ /mcx â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+@bot.message_handler(commands=['mcx'])
+def mcx_command(m):
+    args = m.text.split()
+    data = get_mcx_data()
+
+    if not data:
+        bot.reply_to(m, "ðŸ”´ MCX data à¤¨à¤¹à¥€à¤‚ à¤®à¤¿à¤²à¤¾\nNetwork issue à¤¯à¤¾ Market à¤¬à¤‚à¤¦")
+        return
+
+    # Filter by arg if given
+    if len(args) > 1:
+        arg = args[1].upper()
+        if arg in ('CRUDE', 'OIL'):
+            msg = f"""ðŸ›¢ï¸ MCX Crude Oil
+
+ðŸ’µ WTI (USD) : ${data['crude_usd']:.2f}/bbl
+ðŸ’° MCX (INR) : â‚¹{data['crude_inr']:.0f}/bbl (approx)
+ðŸ’± USD/INR   : {data['usd_inr']}
+
+ðŸ“¡ Source: Yahoo Finance (WTI Futures)"""
+        elif arg in ('GAS', 'NG', 'NATURAL'):
+            msg = f"""â›½ MCX Natural Gas
+
+ðŸ’µ NG (USD)  : ${data['gas_usd']:.3f}/mmBtu
+ðŸ’° MCX (INR) : â‚¹{data['gas_inr']:.0f} (approx)
+ðŸ’± USD/INR   : {data['usd_inr']}
+
+ðŸ“¡ Source: Yahoo Finance (NG Futures)"""
+        else:
+            msg = "â“ Unknown: /mcx CRUDE à¤¯à¤¾ /mcx GAS à¤²à¤¿à¤–à¥‹"
+    else:
+        msg = f"""ðŸ­ MCX Live Prices
+
+ðŸ›¢ï¸ Crude Oil
+   WTI     : ${data['crude_usd']:.2f}/bbl
+   MCX~    : â‚¹{data['crude_inr']:.0f}/bbl
+
+â›½ Natural Gas
+   NG      : ${data['gas_usd']:.3f}/mmBtu
+   MCX~    : â‚¹{data['gas_inr']:.0f}
+
+ðŸ’± USD/INR  : {data['usd_inr']}
+
+ðŸ“¡ Source: Yahoo Finance
+âš ï¸ MCX prices approximate (conversion based)"""
+
+    bot.reply_to(m, msg)
+
+
+# â”€â”€â”€ /status â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+@bot.message_handler(commands=['status'])
+def status_command(m):
+    price, change, pChange = get_nifty_data()
+    pcr, _, _ = get_pcr_data()
+    mcx = get_mcx_data()
+
+    ist = pytz.timezone('Asia/Kolkata')
+    now = datetime.datetime.now(ist).strftime("%d %b %Y  %I:%M %p IST")
+
+    msg = f"ðŸ“Š Market Status â€” {now}\n" + "â•"*32 + "\n\n"
+
+    # NIFTY
+    if price:
+        trend = "ðŸŸ¢" if change > 0 else ("ðŸ”´" if change < 0 else "âšª")
+        msg += f"ðŸ“ˆ NIFTY 50\n"
+        msg += f"   Price : {price}\n"
+        msg += f"   Change: {'+' if change>0 else ''}{change} ({pChange}%) {trend}\n"
+        msg += f"   PCR   : {pcr if pcr else 'N/A'}\n\n"
+    else:
+        msg += "ðŸ“ˆ NIFTY: ðŸ”´ Unavailable\n\n"
+
+    # MCX
+    if mcx:
+        msg += f"ðŸ›¢ï¸ MCX Crude  : â‚¹{mcx['crude_inr']:.0f} (~${mcx['crude_usd']:.2f})\n"
+        msg += f"â›½ MCX Gas    : â‚¹{mcx['gas_inr']:.0f} (~${mcx['gas_usd']:.3f})\n"
+        msg += f"ðŸ’± USD/INR   : {mcx['usd_inr']}\n"
+    else:
+        msg += "ðŸ›¢ï¸ MCX: ðŸ”´ Unavailable\n"
+
+    bot.reply_to(m, msg)
+
+
+# â”€â”€â”€ /alert â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+def alert_worker(chat_id):
+    while chat_id in alerts and alerts[chat_id] == 'ON':
+        try:
+            pcr, _, _ = get_pcr_data()
+            price, change, _ = get_nifty_data()
+            if pcr and price:
+                if pcr < 0.65:
+                    bot.send_message(chat_id,
+                        f"ðŸš¨ ALERT: PCR Extreme Bullish!\nðŸ“Š PCR: {pcr} < 0.65\nðŸš€ STRONG BUY Zone â€” CE à¤šà¥‡à¤• à¤•à¤°à¥‹\nðŸ’° NIFTY: {price}")
+                    time.sleep(300)
+                elif pcr > 1.35:
+                    bot.send_message(chat_id,
+                        f"ðŸš¨ ALERT: PCR Extreme Bearish!\nðŸ“Š PCR: {pcr} > 1.35\nðŸ’€ STRONG SELL Zone â€” PE à¤šà¥‡à¤• à¤•à¤°à¥‹\nðŸ’° NIFTY: {price}")
+                    time.sleep(300)
+        except:
+            pass
+        time.sleep(120)
+
+@bot.message_handler(commands=['alert'])
+def alert_command(m):
+    chat_id = m.chat.id
+    args = m.text.split()
+
+    if len(args) == 1:
+        status = alerts.get(chat_id, 'OFF')
+        bot.reply_to(m, f"ðŸ”” Alert Status: {status}\nà¤šà¤¾à¤²à¥‚: /alert ON\nà¤¬à¤‚à¤¦: /alert OFF")
+        return
+
+    action = args[1].upper()
+    if action == 'ON':
+        if alerts.get(chat_id) == 'ON':
+            bot.reply_to(m, "âœ… Alert à¤ªà¤¹à¤²à¥‡ à¤¸à¥‡ ON à¤¹à¥ˆ")
+            return
+        alerts[chat_id] = 'ON'
+        threading.Thread(target=alert_worker, args=(chat_id,), daemon=True).start()
+        bot.reply_to(m, """ðŸ”” Alert ON!
+
+âš¡ PCR < 0.65 à¤¯à¤¾ > 1.35 à¤¹à¥‹à¤¤à¥‡ à¤¹à¥€ message à¤†à¤à¤—à¤¾
+â° Check: à¤¹à¤° 2 à¤®à¤¿à¤¨à¤Ÿ
+ðŸ”• à¤¬à¤‚à¤¦ à¤•à¤°à¤¨à¤¾ à¤¹à¥‹: /alert OFF""")
+
+    elif action == 'OFF':
+        alerts[chat_id] = 'OFF'
+        alerts.pop(chat_id, None)
+        bot.reply_to(m, "ðŸ”• Alert OFF à¤•à¤° à¤¦à¤¿à¤¯à¤¾")
+    else:
+        bot.reply_to(m, "à¤—à¤²à¤¤ command\n/alert ON  à¤¯à¤¾  /alert OFF à¤²à¤¿à¤–à¥‹")
+
+
+# â”€â”€â”€ /schedule â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+def schedule_worker(chat_id):
+    ist = pytz.timezone('Asia/Kolkata')
+    sent_times = set()
+
+    while chat_id in schedule_status and schedule_status[chat_id] == 'ON':
+        try:
+            now = datetime.datetime.now(ist)
+            t   = now.strftime("%H:%M")
+            key = f"{now.date()}_{t}"
+
+            if now.weekday() < 5 and key not in sent_times:
+                if t == "09:20":
+                    price, change, pChange = get_nifty_data()
+                    pcr, _, _ = get_pcr_data()
+                    if price and pcr:
+                        msg = "ðŸŒ… Market Open Signal â€” 9:20 AM\n" + "â”€"*28 + "\n"
+                        msg += generate_signal_text(price, change, pChange, pcr)
+                        bot.send_message(chat_id, msg)
+                        sent_times.add(key)
+                elif t == "12:00":
+                    price, change, pChange = get_nifty_data()
+                    pcr, _, _ = get_pcr_data()
+                    if price and pcr:
+                        msg = "â˜€ï¸ Mid Session Signal â€” 12:00 PM\n" + "â”€"*28 + "\n"
+                        msg += generate_signal_text(price, change, pChange, pcr)
+                        bot.send_message(chat_id, msg)
+                        sent_times.add(key)
+        except:
+            pass
+        time.sleep(30)
+
+@bot.message_handler(commands=['schedule'])
+def schedule_command(m):
+    chat_id = m.chat.id
+    args = m.text.split()
+
+    if len(args) == 1:
+        status = schedule_status.get(chat_id, 'OFF')
+        bot.reply_to(m, f"ðŸ“… Schedule Status: {status}\nà¤šà¤¾à¤²à¥‚: /schedule ON\nà¤¬à¤‚à¤¦: /schedule OFF")
+        return
+
+    action = args[1].upper()
+    if action == 'ON':
+        if schedule_status.get(chat_id) == 'ON':
+            bot.reply_to(m, "âœ… Schedule à¤ªà¤¹à¤²à¥‡ à¤¸à¥‡ ON à¤¹à¥ˆ")
+            return
+        schedule_status[chat_id] = 'ON'
+        threading.Thread(target=schedule_worker, args=(chat_id,), daemon=True).start()
+        bot.reply_to(m, """ðŸ“… Schedule ON!
+
+â° Auto Signal Times:
+   ðŸŒ… 9:20 AM  â€” Market Open
+   â˜€ï¸ 12:00 PM â€” Mid Session
+
+à¤¦à¥‹à¤¨à¥‹à¤‚ time bot à¤–à¥à¤¦ signal à¤­à¥‡à¤œà¥‡à¤—à¤¾
+à¤¬à¤‚à¤¦ à¤•à¤°à¤¨à¤¾ à¤¹à¥‹: /schedule OFF""")
+
+    elif action == 'OFF':
+        schedule_status[chat_id] = 'OFF'
+        schedule_status.pop(chat_id, None)
+        bot.reply_to(m, "ðŸ“… Schedule OFF à¤•à¤° à¤¦à¤¿à¤¯à¤¾")
+    else:
+        bot.reply_to(m, "à¤—à¤²à¤¤ command\n/schedule ON  à¤¯à¤¾  /schedule OFF à¤²à¤¿à¤–à¥‹")
+
+
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ðŸš€ RUN
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+if __name__ == "__main__":
+    print("âœ… Bot à¤šà¤¾à¤²à¥‚ à¤¹à¥‹ à¤—à¤¯à¤¾...")
+    bot.infinity_polling(timeout=30, long_polling_timeout=30)
+
+
