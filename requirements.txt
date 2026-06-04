@@ -1,5 +1,6 @@
 pyTelegramBotAPI
 flask
+flask-cors
 yfinance
 requests
 pytz
