@@ -16,11 +16,11 @@ from SmartApi import SmartConnect
 # ─────────────────────────────────────────
 # CONFIG
 # ─────────────────────────────────────────
-BOT_TOKEN      = os.environ.get("BOT_TOKEN")
-CLIENT_ID      = os.environ.get("ANGEL_CLIENT_ID")
-API_KEY        = os.environ.get("ANGEL_API_KEY")
-TOTP_SECRET    = os.environ.get("ANGEL_TOTP_SECRET")
-MPIN           = os.environ.get("ANGEL_MPIN")
+BOT_TOKEN      = os.environ.get("BOT_TOKEN", ""8976682125:AAHHlimA_5-OyYYSShL_cKacdrVvfHKjjtE)
+CLIENT_ID      = os.environ.get("ANGEL_CLIENT_ID", "S430269")
+API_KEY        = os.environ.get("ANGEL_API_KEY", "Z3MfL8Os")
+TOTP_SECRET    = os.environ.get("ANGEL_TOTP_SECRET", "HPA3VQOM2HT3WI74RF2RQPDKIY")
+MPIN           = os.environ.get("ANGEL_MPIN", "2580")
 
 bot = None
 if BOT_TOKEN:
