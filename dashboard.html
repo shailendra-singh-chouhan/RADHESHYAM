@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GOAT PRO | Multi Market Command Center</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <main class="terminal-shell">
+    <header class="topbar">
+      <section>
+        <p class="eyebrow">GOAT PRO Trading Platform</p>
+        <h1>Multi Market Command Center</h1>
+      </section>
+
+      <section class="status-cluster" aria-label="Dashboard status">
+        <div class="pulse-chip" id="connectionStatus">
+          <span class="pulse-dot"></span>
+          <span>Connecting</span>
+        </div>
+        <div class="time-chip">
+          <span>Last Update</span>
+          <strong id="lastUpdate">--:--:--</strong>
+        </div>
+      </section>
+    </header>
+
+    <section class="alert-panel is-hidden" id="errorPanel" role="alert">
+      <strong>Market feed unavailable</strong>
+      <span id="errorMessage">Unable to load live market data.</span>
+    </section>
+
+    <section class="command-grid" aria-live="polite">
+      <article class="metric-card primary">
+        <div class="metric-label">NIFTY</div>
+        <div class="metric-value loading" id="niftyPrice">--</div>
+        <div class="metric-meta" id="niftyChange">Waiting for feed</div>
+      </article>
+
+      <article class="metric-card primary">
+        <div class="metric-label">BANKNIFTY</div>
+        <div class="metric-value loading" id="bankniftyPrice">--</div>
+        <div class="metric-meta" id="bankniftyChange">Waiting for feed</div>
+      </article>
+
+      <article class="metric-card">
+        <div class="metric-label">PCR</div>
+        <div class="metric-value loading" id="pcrValue">--</div>
+        <div class="metric-meta">Put Call Ratio</div>
+      </article>
+
+      <article class="metric-card">
+        <div class="metric-label">VIX</div>
+        <div class="metric-value loading" id="vixValue">--</div>
+        <div class="metric-meta">Volatility Index</div>
+      </article>
+
+      <article class="signal-card">
+        <div>
+          <div class="metric-label">Signal</div>
+          <div class="signal-text loading" id="signalDirection">Waiting for signal</div>
+        </div>
+        <div class="score-ring" aria-label="Signal score">
+          <span id="signalScore">--</span>
+          <small>Score</small>
+        </div>
+      </article>
+    </section>
+
+    <section class="market-strip" aria-label="Commodity and currency markets">
+      <article class="market-tile">
+        <span>Crude Oil</span>
+        <strong class="loading" id="crudeValue">--</strong>
+        <small>INR</small>
+      </article>
+
+      <article class="market-tile">
+        <span>Gold</span>
+        <strong class="loading" id="goldValue">--</strong>
+        <small>INR</small>
+      </article>
+
+      <article class="market-tile">
+        <span>Silver</span>
+        <strong class="loading" id="silverValue">--</strong>
+        <small>INR</small>
+      </article>
+
+      <article class="market-tile">
+        <span>USDINR</span>
+        <strong class="loading" id="usdinrValue">--</strong>
+        <small>FX</small>
+      </article>
+    </section>
+  </main>
+
+  <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+</body>
+</html>
