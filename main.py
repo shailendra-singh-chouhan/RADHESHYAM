@@ -9,9 +9,9 @@ import yfinance as yf
 app = Flask(__name__)
 CORS(app)
 
-# Global data storage for instant UI loading
+# Global data storage for instant UI loading with Open, High, Low included
 market_cache = {
-    "nifty": {"price": 23368.00, "chg_pts": 0.0, "pct": 0.0, "status": "SCANNING"},
+    "nifty": {"price": 23368.00, "chg_pts": 0.0, "pct": 0.0, "status": "SCANNING", "open": 0.0, "high": 0.0, "low": 0.0},
     "banknifty": {"price": 51240.00, "pct": 0.0, "status": "SCANNING"},
     "sensex": {"price": 80140.00, "pct": 0.0, "status": "SCANNING"},
     "crude": {"price": 6842.00, "pct": 0.0},
@@ -21,7 +21,7 @@ market_cache = {
 }
 
 def fetch_real_market_data():
-    """Background thread to fetch real yfinance data without slowing down dashboard"""
+    """Background thread to fetch real yfinance data safely"""
     tickers = {
         "nifty": "^NSEI", "banknifty": "^NSEBANK", "sensex": "^BSESN",
         "crude": "CL=F", "gold": "GC=F", "silver": "SI=F",
@@ -47,6 +47,10 @@ def fetch_real_market_data():
                             if key == "nifty":
                                 market_cache[key]["chg_pts"] = round(chg, 2)
                                 market_cache[key]["status"] = "BULLISH" if pct >= 0 else "BEARISH"
+                                # Fetching real session Open, High, Low
+                                market_cache[key]["open"] = round(float(ticker_data['Open'].iloc[0]), 2)
+                                market_cache[key]["high"] = round(float(ticker_data['High'].max()), 2)
+                                market_cache[key]["low"] = round(float(ticker_data['Low'].min()), 2)
                             elif key in ["banknifty", "sensex"]:
                                 market_cache[key]["status"] = "BULL" if pct >= 0 else "BEAR"
                         else:
@@ -55,17 +59,14 @@ def fetch_real_market_data():
             print(f"Data Fetching Error: {e}")
         time.sleep(6)
 
-# Start background engine
 Thread(target=fetch_real_market_data, daemon=True).start()
 
 @app.route('/api/market-data')
 def get_market_data():
-    # Real indicator-driven logic generation
     nifty_ptr = market_cache["nifty"]["price"]
-    rsi_val = round(32 + random.random() * 38, 1) # Live simulation proxy
+    rsi_val = round(32 + random.random() * 38, 1)
     vwap_val = round(nifty_ptr - 12 if rsi_val > 50 else nifty_ptr + 12, 1)
     
-    # DYNAMIC PICKS GENERATOR ENGINE
     scalp_pick = f"⏳ WAIT: Price near consolidation matrix"
     intraday_pick = f"🎯 INTRADAY: Range Bound Strategy | Avoid overtrading"
     swing_pick = f"📦 SWING: HDFC Bank accumulate zone near {market_cache['stocks']['hdfc']}"
@@ -217,16 +218,6 @@ body::before{content:'';position:fixed;inset:0;
     </div>
     <div class="tb-div"></div>
     <div class="tb-stat">
-      <div class="tb-val" id="tb-trades">12</div>
-      <div class="tb-label">📊 Trades</div>
-    </div>
-    <div class="tb-div"></div>
-    <div class="tb-stat">
-      <div class="tb-val" id="tb-pnl" style="color:#4ade80">+₹8,450</div>
-      <div class="tb-label">💰 P&L</div>
-    </div>
-    <div class="tb-div"></div>
-    <div class="tb-stat">
       <div class="tb-val" style="color:#fbbf24">79%</div>
       <div class="tb-label">🎯 Win Rate</div>
     </div>
@@ -279,9 +270,9 @@ body::before{content:'';position:fixed;inset:0;
     </div>
     <div class="hdiv"></div>
     <div class="hstats">
-      <div class="hst"><div class="hst-v" id="h-open">Realtime</div><div class="hst-l">📂 OPEN</div></div>
-      <div class="hst"><div class="hst-v" id="h-high">Realtime</div><div class="hst-l">🔼 HIGH</div></div>
-      <div class="hst"><div class="hst-v" id="h-low">Realtime</div><div class="hst-l">🔽 LOW</div></div>
+      <div class="hst"><div class="hst-v" id="h-open">--</div><div class="hst-l">📂 OPEN</div></div>
+      <div class="hst"><div class="hst-v" id="h-high">--</div><div class="hst-l">🔼 HIGH</div></div>
+      <div class="hst"><div class="hst-v" id="h-low">--</div><div class="hst-l">🔽 LOW</div></div>
       <div class="hst"><div class="hst-v" id="h-pcr" style="color:#4ade80">1.24 🟢</div><div class="hst-l">📊 PCR</div></div>
       <div class="hst"><div class="hst-v" id="h-iv">14.2%</div><div class="hst-l">⚡ IV</div></div>
     </div>
@@ -374,7 +365,6 @@ function updateClock(){
   const n=new Date();
   document.getElementById('tb-time').textContent= `${String(n.getHours()).padStart(2,'0')}:${String(n.getMinutes()).padStart(2,'0')}:${String(n.getSeconds()).padStart(2,'0')}`;
   
-  // Highlight active sessions
   const m=n.getHours()*60+n.getMinutes();
   [['s1',9*60+15,11*60],['s2',11*60,13*60],['s3',13*60,14*60+30],['s4',14*60+30,15*60+30]].forEach(([id,from,to])=>{
     document.getElementById(id).classList.toggle('active',m>=from&&m<to);
@@ -391,8 +381,12 @@ async function fetchDashboardData() {
         const tech = data.technical;
         const p = data.picks;
         
-        // Update Nifty Hero
+        // Update Nifty Hero Prices & OHL Data
         document.getElementById('hero-price').textContent = cache.nifty.price.toLocaleString('en-IN');
+        document.getElementById('h-open').textContent = cache.nifty.open.toLocaleString('en-IN');
+        document.getElementById('h-high').textContent = cache.nifty.high.toLocaleString('en-IN');
+        document.getElementById('h-low').textContent = cache.nifty.low.toLocaleString('en-IN');
+
         const hc = document.getElementById('hero-chg');
         if(cache.nifty.pct >= 0) {
             hc.style.color = '#4ade80';
