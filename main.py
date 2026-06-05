@@ -16,7 +16,7 @@ from SmartApi import SmartConnect
 # ─────────────────────────────────────────
 # CONFIG
 # ─────────────────────────────────────────
-BOT_TOKEN   = os.environ.get("BOT_TOKEN", "")
+BOT_TOKEN = "8787466828:AAHNr6VuDjfPzDyRs8cLahpTNxY1mb2tUg0"
 CLIENT_ID   = os.environ.get("ANGEL_CLIENT_ID", "")
 API_KEY     = os.environ.get("ANGEL_API_KEY", "")
 TOTP_SECRET = os.environ.get("ANGEL_TOTP_SECRET", "")
