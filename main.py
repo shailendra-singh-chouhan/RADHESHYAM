@@ -6,7 +6,7 @@ from flask import Flask, render_template_string, jsonify
 
 app = Flask(__name__)
 
-# 🎨 PREMIUM BLUE & WHITE THEME UI (100% Devnagari Hindi Script Core)
+# 🎨 PREMIUM BLUE & WHITE THEME UI (Top-Line Indicators + Symmetric Flow)
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="en">
@@ -41,9 +41,9 @@ HTML_TEMPLATE = """
                 // PCR Box Color Filter
                 const pcrVal = document.getElementById('pcr-val');
                 if(data.pcr >= 0.75) {
-                    pcrVal.className = "text-4xl font-black font-mono text-emerald-600 tracking-tight";
+                    pcrVal.className = "text-3xl md:text-4xl font-black font-mono text-emerald-600 tracking-tight mt-1";
                 } else {
-                    pcrVal.className = "text-4xl font-black font-mono text-rose-600 tracking-tight";
+                    pcrVal.className = "text-3xl md:text-4xl font-black font-mono text-rose-600 tracking-tight mt-1";
                 }
                 
                 // Laxman Rekha Box Color Filter
@@ -82,12 +82,30 @@ HTML_TEMPLATE = """
         <div class="bg-blue-50 border border-blue-200 rounded-xl p-5 shadow-sm flex items-start gap-4">
             <div class="text-2xl">📢</div>
             <div>
-                <h3 class="font-bold text-blue-900 text-sm tracking-widest uppercase font-mono">लाइव मार्केट चेतावनी</h3>
+                <h3 class="font-bold text-blue-900 text-sm tracking-widest uppercase font-mono">लाइव提 मार्केट चेतावनी</h3>
                 <p id="intraday-prompt" class="text-slate-800 mt-1 text-sm md:text-base font-bold tracking-wide leading-relaxed">{{ m.intraday_prompt }}</p>
             </div>
         </div>
 
         <section class="space-y-3">
+            <h2 class="text-base md:text-lg font-black text-blue-900 uppercase tracking-wider border-l-4 border-indigo-600 pl-2 font-mono">🧠 लाइव इंडिकेटर्स (सीधी लंबी लाइन)</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-5 items-stretch">
+                <div class="bg-white border border-slate-200 rounded-xl p-5 flex justify-between items-center shadow-sm min-h-[100px]">
+                    <div class="flex flex-col">
+                        <span class="text-xs md:text-sm font-bold text-slate-400 tracking-widest uppercase font-mono">📊 असली PCR (मार्केट का मूड)</span>
+                        <span id="pcr-val" class="text-3xl md:text-4xl font-black tracking-tight font-mono mt-1 {{ 'text-emerald-600' if m.pcr >= 0.75 else 'text-rose-600' }}">{{ m.pcr }}</span>
+                    </div>
+                    <span id="trend-tag" class="text-xs font-black uppercase tracking-wider font-mono bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600">{{ m.trend }}</span>
+                </div>
+                
+                <div class="bg-white border border-slate-200 rounded-xl p-5 flex flex-col justify-center shadow-sm min-h-[100px]">
+                    <span class="text-xs md:text-sm font-bold text-slate-400 tracking-widest uppercase font-mono">🚀 RSI मोमेंटम (स्पीडोमीटर)</span>
+                    <span id="rsi-val" class="text-xl md:text-2xl font-black text-slate-800 font-mono mt-1"><span class="mr-1">{{ m.rsi_color }}</span> {{ m.rsi }} <span class="text-xs md:text-sm text-slate-500 font-bold">({{ m.rsi_status }})</span></span>
+                </div>
+            </div>
+        </section>
+
+        <section class="space-y-3 pt-1">
             <h2 class="text-base md:text-lg font-black text-blue-900 uppercase tracking-wider border-l-4 border-blue-600 pl-2 font-mono">📊 निफ्टी लाइव भाव (मेन सेगमेंट)</h2>
             <div class="grid grid-cols-1 md:grid-cols-3 gap-5 items-stretch">
                 <div class="bg-white border border-slate-200 rounded-xl p-5 flex flex-col justify-between shadow-sm min-h-[150px]">
@@ -100,7 +118,7 @@ HTML_TEMPLATE = """
                 </div>
 
                 <div class="bg-white border border-slate-200 rounded-xl p-5 flex flex-col justify-between shadow-sm min-h-[150px]">
-                    <span class="text-xs md:text-sm font-bold text-slate-400 tracking-widest uppercase font-mono">💼 बड़े प्लेयर्स का रेट (VWAP)</span>
+                    <span class="text-xs md:text-sm font-bold text-slate-400 tracking-widest uppercase font-mono">💼 बड़े प्लेयर्स का rate (VWAP)</span>
                     <span id="vwap-val" class="font-mono font-black text-blue-600 text-3xl md:text-4xl mt-2">₹{{ m.vwap }}</span>
                     <p class="text-[11px] text-slate-400 font-medium border-t border-slate-100 pt-2 mt-4">बड़े इंस्टीट्यूशंस की एवरेज खरीद-बिक्री का ज़ोन।</p>
                 </div>
@@ -115,41 +133,22 @@ HTML_TEMPLATE = """
             </div>
         </section>
 
-        <section class="space-y-3 pt-2">
-            <h2 class="text-base md:text-lg font-black text-blue-900 uppercase tracking-wider border-l-4 border-indigo-600 pl-2 font-mono">🧠 इंडिकेटर्स और लाइव स्काल्पिंग सिग्नल</h2>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-5 items-stretch">
-                
-                <div class="bg-white border border-slate-200 rounded-xl p-6 flex flex-col justify-between shadow-sm min-h-[220px]">
-                    <div class="flex justify-between items-start border-b border-slate-100 pb-4">
-                        <div class="flex flex-col space-y-1">
-                            <span class="text-xs md:text-sm font-bold text-slate-400 tracking-widest uppercase font-mono">📊 असली PCR (मार्केट का मूड)</span>
-                            <span id="pcr-val" class="text-4xl font-black tracking-tight font-mono {{ 'text-emerald-600' if m.pcr >= 0.75 else 'text-rose-600' }}">{{ m.pcr }}</span>
-                        </div>
-                        <span id="trend-tag" class="text-xs font-black uppercase tracking-wider font-mono bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 mt-1">{{ m.trend }}</span>
+        <section class="space-y-3 pt-1">
+            <h2 class="text-base md:text-lg font-black text-blue-900 uppercase tracking-wider border-l-4 border-emerald-600 pl-2 font-mono">⚡ लाइव स्काल्पिंग सिग्नल इंजन</h2>
+            <div class="bg-gradient-to-br from-blue-600 to-indigo-700 text-white rounded-xl p-6 flex flex-col justify-between shadow-md min-h-[160px]">
+                <div class="space-y-4">
+                    <div class="flex justify-between items-center border-b border-blue-400/30 pb-2">
+                        <span class="text-xs font-black text-blue-100 tracking-widest uppercase font-mono">⚡ लाइव स्ट्रेटेजी राउटर</span>
+                        <span class="bg-white/20 text-white font-mono text-xs px-2.5 py-0.5 rounded-md uppercase font-bold tracking-wide">देशी इंजन</span>
                     </div>
-                    
-                    <div class="flex flex-col space-y-1 pt-3">
-                        <span class="text-xs md:text-sm font-bold text-slate-400 tracking-widest uppercase font-mono">🚀 RSI मोमेंटम (स्पीडोमीटर)</span>
-                        <span id="rsi-val" class="text-xl font-black text-slate-800 font-mono mt-1"><span class="mr-1">{{ m.rsi_color }}</span> {{ m.rsi }} <span class="text-xs md:text-sm text-slate-500 font-bold">({{ m.rsi_status }})</span></span>
+                    <div>
+                        <p id="scalp-action" class="text-base md:text-xl font-black tracking-wide font-mono leading-snug text-white">⚡ {{ m.scalp_action }}</p>
+                    </div>
+                    <div class="bg-blue-950/40 border border-blue-400/30 rounded-xl p-4 mt-2">
+                        <span class="text-xs font-black text-amber-300 tracking-wider uppercase font-mono block mb-1">🎯 इंट्राडे स्काल्प ट्रिगर टारगेट</span>
+                        <p id="directional-long" class="text-sm md:text-base font-black font-mono tracking-wide text-white leading-relaxed">{{ m.directional_long }}</p>
                     </div>
                 </div>
-
-                <div class="bg-gradient-to-br from-blue-600 to-indigo-700 text-white rounded-xl p-6 flex flex-col justify-between shadow-md min-h-[220px]">
-                    <div class="space-y-4">
-                        <div class="flex justify-between items-center border-b border-blue-400/30 pb-2">
-                            <span class="text-xs font-black text-blue-100 tracking-widest uppercase font-mono">⚡ लाइव स्ट्रेटेजी राउटर</span>
-                            <span class="bg-white/20 text-white font-mono text-xs px-2.5 py-0.5 rounded-md uppercase font-bold tracking-wide">देशी इंजन</span>
-                        </div>
-                        <div>
-                            <p id="scalp-action" class="text-base md:text-lg font-black tracking-wide font-mono leading-snug text-white">⚡ {{ m.scalp_action }}</p>
-                        </div>
-                        <div class="bg-blue-950/40 border border-blue-400/30 rounded-xl p-3.5 mt-1">
-                            <span class="text-xs font-black text-amber-300 tracking-wider uppercase font-mono block mb-1">🎯 इंट्राडे स्काल्प ट्रिगर टारगेट</span>
-                            <p id="directional-long" class="text-sm md:text-base font-black font-mono tracking-wide text-white leading-relaxed">{{ m.directional_long }}</p>
-                        </div>
-                    </div>
-                </div>
-                
             </div>
         </section>
     </main>
@@ -196,70 +195,4 @@ def fetch_live_market_data():
         calculated_rsi = round(58.5 + (sim_drift * 0.5), 1)
         
         return {
-            "spot_price": spot_price, "pcr": calculated_pcr, "day_high": day_high,
-            "day_low": day_low, "vwap": calculated_vwap, "rsi": calculated_rsi
-        }
-
-# 🧠 3. ALGORITHMIC ENGINE (Pure Hindi Data Nodes Integration)
-def process_goat_pro_intelligence(data):
-    if not data:
-        return {}
-
-    spot = data["spot_price"]
-    vwap = data["vwap"]
-    rsi = data["rsi"]
-    pcr = data["pcr"]
-    
-    range_median = (data["day_high"] + data["day_low"]) / 2
-    jadui_spot_trigger = round((range_median + vwap) / 2, 2)
-
-    if rsi >= 68:
-        rsi_status = "ज्यादा खरीददारी (थक गया है)"
-        rsi_color = "🔴"
-    elif rsi <= 35:
-        rsi_status = "ज्यादा बिकवाली (बाउंस ज़ोन)"
-        rsi_color = "🟢"
-    else:
-        rsi_status = "मजबूत मोमेंटम"
-        rsi_color = "🟡"
-
-    long_trigger = round(max(jadui_spot_trigger, vwap) + 6.5, 1)
-    directional_long = f"कॉल एंट्री (CE): निफ्टी {long_trigger} के ऊपर खरीदें | SL: {long_trigger - 20:.1f} | टारगेट: {long_trigger + 35:.1f}"
-
-    if spot < vwap:
-        trend = "मंदी का माहौल"
-        scalp_action = f"निफ्टी ATM PE खरीदें {round(spot - 4, 1)} के नीचे | SL: 20 pts | टारगेट: +35 pts"
-        intraday_prompt = "⚠️ मार्केट मंदी में है: भाव VWAP और लक्ष्मण रेखा के नीचे है। कॉल (CE) खरीदना बिल्कुल मना है!"
-    elif spot >= vwap and pcr >= 0.75:
-        trend = "तेज़ी का माहौल"
-        scalp_action = f"निफ्टी ATM CE खरीदें {round(jadui_spot_trigger, 1)} के ऊपर | SL: 20 pts | टारगेट: +35 pts"
-        intraday_prompt = "🔥 मार्केट तेज़ी में है: मोमेंटम मजबूत है। स्टॉप-लॉस ट्रेल करते हुए टारगेट का पीछा करो!"
-    else:
-        trend = "साइडवेज़ (मार्केट फंसा है)"
-        scalp_action = "नो ट्रेडिंग ज़ोन: प्रीमियम गल रहा है, शांति से बैठो"
-        intraday_prompt = "😴 मार्केट साइडवेज़ है: किसी बड़े ब्रेकआउट या भारी वॉल्यूम का इंतजार करो।"
-
-    return {
-        "spot": spot, "pcr": pcr, "vwap": vwap, "jadui_spot": jadui_spot_trigger,
-        "rsi": rsi, "rsi_status": rsi_status, "rsi_color": rsi_color, "trend": trend,
-        "scalp_action": scalp_action, "intraday_prompt": intraday_prompt,
-        "directional_long": directional_long,
-        "day_high": data["day_high"], "day_low": data["day_low"]
-    }
-
-# 🌐 4. ROUTING LAYER WITH RENDER DYNAMIC PORTS
-@app.route('/')
-def index():
-    raw_data = fetch_live_market_data()
-    processed_metrics = process_goat_pro_intelligence(raw_data)
-    return render_template_string(HTML_TEMPLATE, m=processed_metrics)
-
-@app.route('/api/refresh', methods=['GET'])
-def api_refresh():
-    raw_data = fetch_live_market_data()
-    processed_metrics = process_goat_pro_intelligence(raw_data)
-    return jsonify(processed_metrics)
-
-if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port, debug=False)
+            "spot_price": spot
