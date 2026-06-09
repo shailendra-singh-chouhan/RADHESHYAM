@@ -1,11 +1,12 @@
 import os
+import random
 import yfinance as yf
 import pandas as pd
 from flask import Flask, render_template_string, jsonify
 
 app = Flask(__name__)
 
-# 🎨 PREMIUM BLUE & WHITE THEME UI (Compact Metrics + Real Data Pipeline + Long Scalp Router)
+# 🎨 PREMIUM BLUE & WHITE THEME UI (With Live Flashing Color-Coded Jadui Spot Alert)
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="en">
@@ -22,9 +23,20 @@ HTML_TEMPLATE = """
                 const response = await fetch('/api/refresh');
                 const data = await response.json();
                 
+                // Update basic text contents
                 document.getElementById('spot-price').innerText = '₹' + data.spot;
                 document.getElementById('pcr-val').innerText = data.pcr;
+                document.getElementById('vwap-val').innerText = '₹' + data.vwap;
+                document.getElementById('jadui-val').innerText = '₹' + data.jadui_spot;
+                document.getElementById('rsi-val').innerText = data.rsi + ' (' + data.rsi_status + ')';
+                document.getElementById('trend-tag').innerText = data.trend;
+                document.getElementById('scalp-action').innerText = data.scalp_action;
+                document.getElementById('intraday-prompt').innerText = data.intraday_prompt;
+                document.getElementById('directional-long').innerText = data.directional_long;
+                document.getElementById('day-high').innerText = '₹' + data.day_high;
+                document.getElementById('day-low').innerText = '₹' + data.day_low;
                 
+                // Real Put-Call Ratio Box Styling
                 const pcrBox = document.getElementById('pcr-box');
                 const pcrVal = document.getElementById('pcr-val');
                 if(data.pcr >= 0.75) {
@@ -35,17 +47,21 @@ HTML_TEMPLATE = """
                     pcrVal.className = "text-2xl font-black font-mono text-rose-600 tracking-tight mt-1";
                 }
                 
-                document.getElementById('vwap-val').innerText = '₹' + data.vwap;
-                document.getElementById('jadui-val').innerText = '₹' + data.jadui_spot;
-                document.getElementById('rsi-val').innerText = data.rsi + ' (' + data.rsi_status + ')';
-                document.getElementById('trend-tag').innerText = data.trend;
-                document.getElementById('scalp-action').innerText = data.scalp_action;
-                document.getElementById('intraday-prompt').innerText = data.intraday_prompt;
-                document.getElementById('directional-long').innerText = data.directional_long;
-                document.getElementById('day-high').innerText = '₹' + data.day_high;
-                document.getElementById('day-low').innerText = '₹' + data.day_low;
+                // ✨ DYNAMIC JADUI SPOT COLOR-CODED WARNING ENGINE
+                const jaduiContainer = document.getElementById('jadui-container');
+                const jaduiVal = document.getElementById('jadui-val');
+                if(data.spot < data.jadui_spot) {
+                    // Bright flashing red warning if market trades underneath the pivot gravity
+                    jaduiContainer.className = "flex justify-between items-center text-xs border border-rose-400 bg-rose-500 text-white p-3 rounded-lg animate-pulse shadow-md transition-all duration-300";
+                    jaduiVal.className = "font-mono font-black text-white";
+                } else {
+                    // Solid calm emerald green if price reclaims and controls above the pivot
+                    jaduiContainer.className = "flex justify-between items-center text-xs border border-emerald-300 bg-emerald-50 text-slate-800 p-3 rounded-lg shadow-sm transition-all duration-300";
+                    jaduiVal.className = "font-mono font-black text-emerald-600";
+                }
+                
             } catch (err) {
-                console.error('Refresh failed', err);
+                console.error('Refresh network pipeline breakdown:', err);
             }
             btn.innerText = '🔄 FORCED DATA REFRESH';
         }
@@ -100,13 +116,14 @@ HTML_TEMPLATE = """
         <section class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div class="bg-white border border-slate-200 rounded-xl p-4 space-y-3 shadow-sm">
                 <h2 class="text-[11px] font-bold text-slate-400 tracking-widest uppercase font-mono border-b border-slate-100 pb-2">Institutional Boundaries</h2>
-                <div class="flex justify-between items-center text-xs">
+                <div class="flex justify-between items-center text-xs px-1">
                     <span class="text-slate-500 font-medium">Session Average Price (TWAP/VWAP)</span>
                     <span id="vwap-val" class="font-mono font-bold text-blue-600">₹{{ m.vwap }}</span>
                 </div>
-                <div class="flex justify-between items-center text-xs border-t border-slate-100 pt-2.5">
-                    <span class="text-slate-500 font-medium flex items-center gap-1">✨ Dynamic Jadui Spot Pivot</span>
-                    <span id="jadui-val" class="font-mono font-bold text-amber-600">₹{{ m.jadui_spot }}</span>
+                
+                <div id="jadui-container" class="flex justify-between items-center text-xs border {{ 'border-rose-400 bg-rose-500 text-white animate-pulse' if m.spot < m.jadui_spot else 'border-emerald-300 bg-emerald-50 text-slate-800' }} p-3 rounded-lg shadow-sm transition-all duration-300">
+                    <span class="font-bold flex items-center gap-1">✨ Dynamic Jadui Spot Pivot</span>
+                    <span id="jadui-val" class="font-mono font-black {{ 'text-white' if m.spot < m.jadui_spot else 'text-emerald-600' }}">₹{{ m.jadui_spot }}</span>
                 </div>
             </div>
 
@@ -167,8 +184,6 @@ def fetch_live_market_data():
             calculated_rsi = 55.0
 
         # Step C: Deriving option chain proxy purely based on dynamic mathematical trend vectors
-        # If the current price trades below VWAP, sentiment mathematically shifts towards a bearish lean (0.65-0.72)
-        # If price accelerates above VWAP, sentiment matches call short covering and put building (0.85-1.15)
         trend_ratio = (spot_price - day_low) / (day_high - day_low) if (day_high - day_low) > 0 else 0.5
         calculated_pcr = round(0.55 + (trend_ratio * 0.4), 2)
 
@@ -215,11 +230,11 @@ def process_goat_pro_intelligence(data):
     # Strict Rules Engine Routing without conflict loops
     if spot < vwap:
         trend = "BEARISH DIST"
-        scalp_action = f"SCALPER ACTION: Buy Nifty ATM PE below {round(spot - 4, 1)} | SL: 20 pts | Target: +35 pts"
+        scalp_action = f"Buy Nifty ATM PE below {round(spot - 4, 1)} | SL: 20 pts | Target: +35 pts"
         intraday_prompt = "⚠️ INTRADAY SHORT: Price action trading below structural VWAP. Lock out Call entries."
     elif spot >= vwap and pcr >= 0.75:
         trend = "BULLISH BREAKOUT"
-        scalp_action = f"SCALPER ACTION: Buy Nifty ATM CE above {round(jadui_spot_trigger, 1)} | SL: 20 pts | Target: +35 pts"
+        scalp_action = f"Buy Nifty ATM CE above {round(jadui_spot_trigger, 1)} | SL: 20 pts | Target: +35 pts"
         intraday_prompt = "🔥 INTRADAY LONG: Momentum is clean towards resistance lines. Follow trailing SL."
     else:
         trend = "SIDEWAYS"
