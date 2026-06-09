@@ -56,7 +56,7 @@ HTML_TEMPLATE = """
         <div class="bg-amber-950/40 border border-amber-800/60 p-4 rounded-xl flex items-center space-x-3">
             <span class="text-xl">📢</span>
             <p class="text-sm font-medium text-amber-300">
-                <span class="font-bold">लाइव मार्केट चेतावनी:</span> <span id="warning">{{ m.warning }}</span>
+                <span class="font-bold">लाइव破解 मार्केट चेतावनी:</span> <span id="warning">{{ m.warning }}</span>
             </p>
         </div>
 
@@ -91,7 +91,7 @@ HTML_TEMPLATE = """
             <div class="bg-slate-900 border border-slate-800 rounded-xl p-5">
                 <span class="text-xs font-bold text-slate-400 block mb-1">💼 बड़े प्लेयर्स का रेट (VWAP)</span>
                 <h3 id="vwap" class="text-2xl font-black text-white">₹{{ m.vwap }}</h3>
-                <p class="text-xs text-slate-500 mt-1">बड़े इंस्टीट्यूशंस की एवरेज रेंज।</p>
+                <p class="text-xs text-slate-500 mt-1">बड़े इंस्टीट्यूशंस की एवरेज乘 रेंज।</p>
             </div>
             <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 border-l-4 border-purple-500">
                 <span class="text-xs font-bold text-purple-400 block mb-1">✨ जादुई स्पॉट (लक्ष्मण रेखा)</span>
@@ -175,4 +175,17 @@ def process_core_metrics():
         return {
             "spot": 23254.8, "high": 23290.00, "low": 23160.00, "crude": 8384.00,
             "vwap": 23201.7, "jadui_spot": 23193.71, "pcr": 0.78, "rsi": 71.7,
-            "rsi_status": "OVERBOUGHT", "warning": "Data engine initializing
+            "rsi_status": "OVERBOUGHT", "warning": "Data engine initializing standard buffers...",
+            "signal": "BUY CALL ABOVE 23201.7", "target": "T1: 23290 | SL: 23175"
+        }
+
+@app.route('/')
+def index():
+    return render_template_string(HTML_TEMPLATE, m=process_core_metrics())
+
+@app.route('/api/refresh')
+def api_refresh():
+    return jsonify(process_core_metrics())
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 5000)))
