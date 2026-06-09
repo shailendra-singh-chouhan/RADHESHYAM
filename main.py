@@ -144,14 +144,13 @@ def process_core_metrics():
             high = round(n_backup['High'].iloc[-1], 2)
             low = round(n_backup['Low'].iloc[-1], 2)
 
-        # Crude Stream Pricing (MCX Aligned)
+        # Crude Stream Pricing (Fixed Multiplier to 95.4 for ~8384 Range)
         c_ticker = yf.Ticker("CL=F")
         c_data = c_ticker.history(period="1d")
         if not c_data.empty:
-            # Scaled multiplier to tightly map standard MCX pricing patterns (~8400 range)
-            crude_val = round(c_data['Close'].iloc[-1] * 114.5, 2)
+            crude_val = round(c_data['Close'].iloc[-1] * 95.4, 2)
         else:
-            crude_val = 8421.00
+            crude_val = 8384.00
 
         # Math Logic for Trading Bands
         vwap = round(low + (high - low) * 0.42, 2)
@@ -174,19 +173,6 @@ def process_core_metrics():
     except:
         # Strict fallback array to secure UI stability
         return {
-            "spot": 23254.8, "high": 23290.00, "low": 23160.00, "crude": 8421.00,
+            "spot": 23254.8, "high": 23290.00, "low": 23160.00, "crude": 8384.00,
             "vwap": 23201.7, "jadui_spot": 23193.71, "pcr": 0.78, "rsi": 71.7,
-            "rsi_status": "OVERBOUGHT", "warning": "Data engine initializing standard buffers...",
-            "signal": "BUY CALL ABOVE 23201.7", "target": "T1: 23290 | SL: 23175"
-        }
-
-@app.route('/')
-def index():
-    return render_template_string(HTML_TEMPLATE, m=process_core_metrics())
-
-@app.route('/api/refresh')
-def api_refresh():
-    return jsonify(process_core_metrics())
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 5000)))
+            "rsi_status": "OVERBOUGHT", "warning": "Data engine initializing
