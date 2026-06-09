@@ -6,261 +6,367 @@ from flask import Flask, render_template_string, jsonify
 
 app = Flask(__name__)
 
-# 🎨 PREMIUM BLUE & WHITE THEME UI (Grid Geometry Symmetry Overhaul)
-HTML_TEMPLATE = """
-<!DOCTYPE html>
+HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GOAT PRO Command Center</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        async function refreshData() {
-            const btn = document.getElementById('refresh-btn');
-            btn.innerText = '🔄 SYNCING TICK...';
-            try {
-                const response = await fetch('/api/refresh');
-                const data = await response.json();
-                
-                // Segment Core Section Updates
-                document.getElementById('spot-price').innerText = '₹' + data.spot;
-                document.getElementById('day-high').innerText = '₹' + data.day_high;
-                document.getElementById('day-low').innerText = '₹' + data.day_low;
-                document.getElementById('vwap-val').innerText = '₹' + data.vwap;
-                document.getElementById('jadui-val').innerText = '₹' + data.jadui_spot;
-                
-                // Indicators & Strategy Updates
-                document.getElementById('pcr-val').innerText = data.pcr;
-                document.getElementById('rsi-val').innerText = data.rsi + ' (' + data.rsi_status + ')';
-                document.getElementById('trend-tag').innerText = data.trend;
-                document.getElementById('scalp-action').innerText = data.scalp_action;
-                document.getElementById('intraday-prompt').innerText = data.intraday_prompt;
-                document.getElementById('directional-long').innerText = data.directional_long;
-                
-                // Put-Call Ratio Dynamic Sizing and Color Filter
-                const pcrVal = document.getElementById('pcr-val');
-                if(data.pcr >= 0.75) {
-                    pcrVal.className = "text-4xl font-black font-mono text-emerald-600 tracking-tight";
-                } else {
-                    pcrVal.className = "text-4xl font-black font-mono text-rose-600 tracking-tight";
-                }
-                
-                // Jadui Spot Alert Element Balanced Dynamic State Trigger
-                const jaduiContainer = document.getElementById('jadui-container');
-                const jaduiVal = document.getElementById('jadui-val');
-                if(data.spot < data.jadui_spot) {
-                    jaduiContainer.className = "bg-rose-500 border border-rose-600 text-white p-5 rounded-xl animate-pulse flex flex-col justify-between shadow-md h-full transition-all duration-300";
-                    jaduiVal.className = "font-mono font-black text-3xl md:text-4xl text-white mt-2";
-                } else {
-                    jaduiContainer.className = "bg-emerald-50 border border-emerald-400 text-slate-800 p-5 rounded-xl flex flex-col justify-between shadow-sm h-full transition-all duration-300";
-                    jaduiVal.className = "font-mono font-black text-3xl md:text-4xl text-emerald-600 mt-2";
-                }
-                
-            } catch (err) {
-                console.error('Refresh network pipeline breakdown:', err);
-            }
-            btn.innerText = '🔄 FORCED DATA REFRESH';
-        }
-        setInterval(refreshData, 15000);
-    </script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>⚡ GOAT PRO — Live Command Center</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700;800&display=swap');
+  .mono { font-family: 'JetBrains Mono', monospace; }
+  @keyframes pulse-slow { 0%,100%{opacity:1} 50%{opacity:.65} }
+  .jadui-red { animation: pulse-slow 1.4s ease-in-out infinite; }
+</style>
 </head>
-<body class="bg-slate-50 text-slate-800 font-sans min-h-screen antialiased">
+<body class="bg-slate-100 text-slate-800 min-h-screen antialiased">
 
-    <header class="border-b border-blue-100 bg-white sticky top-0 z-50 px-6 py-4 flex flex-wrap justify-between items-center gap-4 shadow-sm">
-        <div class="flex items-center gap-3">
-            <div class="h-3 w-3 rounded-full bg-blue-600 animate-pulse"></div>
-            <h1 class="text-xl md:text-2xl font-black tracking-wider text-slate-900 font-mono">⚡ GOAT PRO <span class="text-xs bg-blue-50 text-blue-600 px-2.5 py-1 rounded border border-blue-200 ml-2 font-bold">DATA CORE LIVE</span></h1>
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50 shadow-sm">
+  <div class="max-w-6xl mx-auto px-5 py-3 flex flex-wrap items-center justify-between gap-3">
+    <div class="flex items-center gap-3">
+      <span class="h-2.5 w-2.5 rounded-full bg-blue-600 animate-pulse inline-block"></span>
+      <h1 class="mono text-lg font-extrabold tracking-widest text-slate-900">⚡ GOAT PRO
+        <span class="text-[10px] bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded ml-2 font-bold tracking-wide">LIVE DATA CORE</span>
+        {% if data_source == 'fallback' %}
+        <span class="text-[10px] bg-amber-50 text-amber-700 border border-amber-300 px-2 py-0.5 rounded ml-1 font-bold">⚠ SIM MODE</span>
+        {% endif %}
+      </h1>
+    </div>
+    <button id="refresh-btn" onclick="refreshData()"
+      class="mono bg-blue-600 hover:bg-blue-700 active:scale-95 text-white px-5 py-2 rounded-xl text-sm font-bold tracking-wider transition-all shadow">
+      🔄 REFRESH
+    </button>
+  </div>
+</header>
+
+<main class="max-w-6xl mx-auto px-5 py-5 space-y-5">
+
+  <!-- Strategy Banner -->
+  <div class="bg-blue-50 border border-blue-200 rounded-2xl p-4 flex items-start gap-3 shadow-sm">
+    <span class="text-xl mt-0.5">📢</span>
+    <div>
+      <p class="mono text-[10px] font-bold text-blue-700 tracking-widest uppercase mb-1">System Strategy Engine</p>
+      <p id="intraday-prompt" class="mono text-sm font-bold text-slate-800 leading-relaxed">{{ m.intraday_prompt }}</p>
+    </div>
+  </div>
+
+  <!-- Section 1: Price Blocks (3-col) -->
+  <div>
+    <p class="mono text-sm font-black text-blue-900 uppercase tracking-wider border-l-4 border-blue-600 pl-3 mb-3">📊 Nifty Segment Core</p>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-stretch">
+
+      <!-- Nifty Spot -->
+      <div class="bg-white border border-slate-200 rounded-2xl p-5 flex flex-col justify-between shadow-sm min-h-[160px]">
+        <p class="mono text-[10px] font-bold text-slate-400 tracking-widest uppercase">Nifty Spot</p>
+        <p id="spot-price" class="mono text-4xl font-black text-blue-600 tracking-tight mt-2">₹{{ m.spot }}</p>
+        <div class="flex justify-between mono text-xs text-slate-400 mt-4 pt-3 border-t border-slate-100">
+          <span>H: <span id="day-high" class="text-slate-700 font-bold">₹{{ m.day_high }}</span></span>
+          <span>L: <span id="day-low" class="text-slate-700 font-bold">₹{{ m.day_low }}</span></span>
         </div>
-        <button id="refresh-btn" onclick="refreshData()" class="bg-blue-600 hover:bg-blue-700 text-white active:scale-95 px-6 py-2.5 rounded-xl font-mono text-sm font-bold tracking-wider transition-all duration-150 shadow-md">
-            🔄 FORCED DATA REFRESH
-        </button>
-    </header>
+      </div>
 
-    <main class="max-w-7xl mx-auto p-4 md:p-6 space-y-6">
-        
-        <div class="bg-blue-50 border border-blue-200 rounded-xl p-5 shadow-sm flex items-start gap-4">
-            <div class="text-2xl">📢</div>
-            <div>
-                <h3 class="font-black text-blue-900 text-sm tracking-widest uppercase font-mono">System Strategy Engine</h3>
-                <p id="intraday-prompt" class="text-slate-800 mt-1 text-sm md:text-base font-bold tracking-wide leading-relaxed">{{ m.intraday_prompt }}</p>
-            </div>
+      <!-- VWAP -->
+      <div class="bg-white border border-slate-200 rounded-2xl p-5 flex flex-col justify-between shadow-sm min-h-[160px]">
+        <p class="mono text-[10px] font-bold text-slate-400 tracking-widest uppercase">Session VWAP</p>
+        <p id="vwap-val" class="mono text-4xl font-black text-blue-600 tracking-tight mt-2">₹{{ m.vwap }}</p>
+        <p class="mono text-[10px] text-slate-400 mt-4 pt-3 border-t border-slate-100 leading-relaxed">
+          Volume-weighted avg · 1-min close array
+        </p>
+      </div>
+
+      <!-- Jadui Spot -->
+      <div class="flex flex-col min-h-[160px]">
+        <div id="jadui-container"
+          class="flex flex-col justify-between rounded-2xl p-5 shadow-sm h-full border-2
+          {% if m.spot < m.jadui_spot %}jadui-red bg-red-500 border-red-600 text-white{% else %}bg-emerald-50 border-emerald-400 text-slate-800{% endif %}">
+          <p class="mono text-[10px] font-bold tracking-widest uppercase
+            {% if m.spot < m.jadui_spot %}text-red-100{% else %}text-slate-400{% endif %}">
+            ✨ Jadui Spot Pivot
+          </p>
+          <p id="jadui-val" class="mono text-4xl font-black tracking-tight mt-2
+            {% if m.spot < m.jadui_spot %}text-white{% else %}text-emerald-600{% endif %}">
+            ₹{{ m.jadui_spot }}
+          </p>
+          <p class="mono text-[10px] mt-4 pt-3 border-t leading-relaxed
+            {% if m.spot < m.jadui_spot %}border-red-400/40 text-red-100{% else %}border-emerald-200 text-slate-400{% endif %}">
+            {% if m.spot < m.jadui_spot %}🔴 PRICE BELOW PIVOT — caution{% else %}🟢 PRICE ABOVE PIVOT — bullish{% endif %}
+          </p>
         </div>
+      </div>
 
-        <section class="space-y-3">
-            <h2 class="text-base md:text-lg font-black text-blue-900 uppercase tracking-wider border-l-4 border-blue-600 pl-2 font-mono">📊 Nifty Segment Core (Market Price Blocks)</h2>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-5 items-stretch">
-                <div class="bg-white border border-slate-200 rounded-xl p-5 flex flex-col justify-between shadow-sm min-h-[150px]">
-                    <span class="text-xs md:text-sm font-bold text-slate-400 tracking-widest uppercase font-mono">NIFTY SPOT TICK</span>
-                    <span id="spot-price" class="text-3xl md:text-4xl font-black text-blue-600 tracking-tight mt-2 font-mono">₹{{ m.spot }}</span>
-                    <div class="flex justify-between text-xs md:text-sm font-mono text-slate-400 mt-4 pt-2 border-t border-slate-100">
-                        <span>High: <span id="day-high" class="text-slate-700 font-bold">₹{{ m.day_high }}</span></span>
-                        <span>Low: <span id="day-low" class="text-slate-700 font-bold">₹{{ m.day_low }}</span></span>
-                    </div>
-                </div>
+    </div>
+  </div>
 
-                <div class="bg-white border border-slate-200 rounded-xl p-5 flex flex-col justify-between shadow-sm min-h-[150px]">
-                    <span class="text-xs md:text-sm font-bold text-slate-400 tracking-widest uppercase font-mono">Session Average Price (VWAP)</span>
-                    <span id="vwap-val" class="font-mono font-black text-blue-600 text-3xl md:text-4xl mt-2">₹{{ m.vwap }}</span>
-                    <p class="text-[11px] text-slate-400 font-medium border-t border-slate-100 pt-2 mt-4">Interval distribution weighted matrix calculation.</p>
-                </div>
+  <!-- Section 2: Indicators + Strategy (2-col) -->
+  <div>
+    <p class="mono text-sm font-black text-indigo-900 uppercase tracking-wider border-l-4 border-indigo-600 pl-3 mb-3">🧠 Indicators & Strategy Engine</p>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch">
 
-                <div class="h-full">
-                    <div id="jadui-container" class="border {{ 'bg-rose-500 border-rose-600 text-white animate-pulse' if m.spot < m.jadui_spot else 'bg-emerald-50 border-emerald-400 text-slate-800' }} p-5 rounded-xl flex flex-col justify-between shadow-sm h-full transition-all duration-300">
-                        <span class="text-xs md:text-sm font-bold uppercase tracking-widest font-mono {{ 'text-rose-100' if m.spot < m.jadui_spot else 'text-slate-400' }}">✨ Jadui Spot Pivot</span>
-                        <span id="jadui-val" class="font-mono font-black text-3xl md:text-4xl mt-2 {{ 'text-white' if m.spot < m.jadui_spot else 'text-emerald-600' }}">₹{{ m.jadui_spot }}</span>
-                        <p class="text-[11px] border-t pt-2 mt-4 {{ 'border-rose-400/30 text-rose-100' if m.spot < m.jadui_spot else 'border-slate-200 text-slate-400' }}">Equilibrium marker point tracking value anchors.</p>
-                    </div>
-                </div>
-            </div>
-        </section>
+      <!-- PCR + RSI + EMA card -->
+      <div class="bg-white border border-slate-200 rounded-2xl p-5 flex flex-col justify-between shadow-sm min-h-[240px]">
+        <!-- PCR row -->
+        <div class="flex justify-between items-start border-b border-slate-100 pb-4">
+          <div>
+            <p class="mono text-[10px] font-bold text-slate-400 tracking-widest uppercase mb-1">Est. PCR</p>
+            <p id="pcr-val"
+              class="mono text-4xl font-black tracking-tight
+              {% if m.pcr >= 0.75 %}text-emerald-600{% else %}text-red-500{% endif %}">
+              {{ m.pcr }}
+            </p>
+          </div>
+          <span id="trend-tag"
+            class="mono text-xs font-black uppercase tracking-wider px-3 py-1.5 rounded-lg border
+            {% if m.trend == 'BULLISH BREAKOUT' %}bg-emerald-50 border-emerald-300 text-emerald-700
+            {% elif m.trend == 'BEARISH DIST' %}bg-red-50 border-red-300 text-red-700
+            {% else %}bg-slate-100 border-slate-200 text-slate-600{% endif %}">
+            {{ m.trend }}
+          </span>
+        </div>
+        <!-- RSI row -->
+        <div class="border-b border-slate-100 py-4">
+          <p class="mono text-[10px] font-bold text-slate-400 tracking-widest uppercase mb-1">RSI (14)</p>
+          <p id="rsi-val"
+            class="mono text-2xl font-black
+            {% if m.rsi >= 68 %}text-red-500{% elif m.rsi <= 35 %}text-emerald-600{% else %}text-amber-500{% endif %}">
+            {{ m.rsi_color }} {{ m.rsi }}
+            <span class="text-sm text-slate-500 font-bold">({{ m.rsi_status }})</span>
+          </p>
+        </div>
+        <!-- EMA row -->
+        <div class="pt-4 grid grid-cols-2 gap-3">
+          <div>
+            <p class="mono text-[10px] font-bold text-slate-400 tracking-widest uppercase mb-1">EMA 9</p>
+            <p id="ema9-val" class="mono text-lg font-black
+              {% if m.ema9 > m.ema21 %}text-emerald-600{% else %}text-red-500{% endif %}">
+              {{ m.ema9 }}
+            </p>
+          </div>
+          <div>
+            <p class="mono text-[10px] font-bold text-slate-400 tracking-widest uppercase mb-1">EMA 21</p>
+            <p id="ema21-val" class="mono text-lg font-black
+              {% if m.ema21 < m.ema9 %}text-emerald-600{% else %}text-red-500{% endif %}">
+              {{ m.ema21 }}
+            </p>
+          </div>
+        </div>
+      </div>
 
-        <section class="space-y-3 pt-2">
-            <h2 class="text-base md:text-lg font-black text-blue-900 uppercase tracking-wider border-l-4 border-indigo-600 pl-2 font-mono">🧠 Algorithmic Indicators & Strategy Engine</h2>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-5 items-stretch">
-                
-                <div class="bg-white border border-slate-200 rounded-xl p-6 flex flex-col justify-between shadow-sm min-h-[220px]">
-                    <div class="flex justify-between items-start border-b border-slate-100 pb-4">
-                        <div class="flex flex-col space-y-1">
-                            <span class="text-xs md:text-sm font-bold text-slate-400 tracking-widest uppercase font-mono">REAL PCR (HIGH VISIBILITY)</span>
-                            <span id="pcr-val" class="text-4xl font-black tracking-tight font-mono {{ 'text-emerald-600' if m.pcr >= 0.75 else 'text-rose-600' }}">{{ m.pcr }}</span>
-                        </div>
-                        <span id="trend-tag" class="text-xs font-black uppercase tracking-wider font-mono bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 mt-1">{{ m.trend }}</span>
-                    </div>
-                    
-                    <div class="flex flex-col space-y-1 pt-3">
-                        <span class="text-xs md:text-sm font-bold text-slate-400 tracking-widest uppercase font-mono">RSI MOMENTUM COUNTER</span>
-                        <span id="rsi-val" class="text-xl font-black text-slate-800 font-mono mt-1"><span class="mr-1">{{ m.rsi_color }}</span> {{ m.rsi }} <span class="text-xs md:text-sm text-slate-500 font-bold">({{ m.rsi_status }})</span></span>
-                    </div>
-                </div>
+      <!-- Strategy Router card -->
+      <div class="bg-gradient-to-br from-blue-700 to-indigo-800 text-white rounded-2xl p-5 flex flex-col justify-between shadow-md min-h-[240px]">
+        <div class="flex justify-between items-center border-b border-blue-500/30 pb-3">
+          <p class="mono text-[10px] font-black text-blue-200 tracking-widest uppercase">Live Strategy Router</p>
+          <span class="mono text-[9px] bg-white/20 px-2 py-0.5 rounded font-bold tracking-wide uppercase">Alpha Engine</span>
+        </div>
+        <p id="scalp-action" class="mono text-base font-black tracking-wide text-white leading-snug mt-3">
+          ⚡ {{ m.scalp_action }}
+        </p>
+        <div class="bg-blue-950/40 border border-blue-400/30 rounded-xl p-4 mt-3">
+          <p class="mono text-[9px] font-black text-amber-300 tracking-widest uppercase mb-1.5">🎯 Intraday Long Scalp Trigger</p>
+          <p id="directional-long" class="mono text-sm font-black text-white leading-relaxed">
+            {{ m.directional_long }}
+          </p>
+        </div>
+      </div>
 
-                <div class="bg-gradient-to-br from-blue-600 to-indigo-700 text-white rounded-xl p-6 flex flex-col justify-between shadow-md min-h-[220px]">
-                    <div class="space-y-4">
-                        <div class="flex justify-between items-center border-b border-blue-400/30 pb-2">
-                            <span class="text-xs font-black text-blue-100 tracking-widest uppercase font-mono">LIVE STRATEGY ROUTER</span>
-                            <span class="bg-white/20 text-white font-mono text-xs px-2.5 py-0.5 rounded-md uppercase font-bold tracking-wide">Alpha Engine</span>
-                        </div>
-                        <div>
-                            <p id="scalp-action" class="text-base md:text-lg font-black tracking-wide font-mono leading-snug text-white">⚡ {{ m.scalp_action }}</p>
-                        </div>
-                        <div class="bg-blue-950/40 border border-blue-400/30 rounded-xl p-3.5 mt-1">
-                            <span class="text-xs font-black text-amber-300 tracking-wider uppercase font-mono block mb-1">🎯 Directional Pick for Intraday Long Scalp</span>
-                            <p id="directional-long" class="text-sm md:text-base font-black font-mono tracking-wide text-white leading-relaxed">{{ m.directional_long }}</p>
-                        </div>
-                    </div>
-                </div>
-                
-            </div>
-        </section>
-    </main>
+    </div>
+  </div>
 
+  <!-- Footer disclaimer -->
+  <div class="bg-amber-50 border border-amber-300 rounded-xl p-4 text-xs text-amber-800 mono leading-relaxed">
+    ⚖️ <strong>Legal:</strong> Sirf personal educational use. SEBI registered financial advice nahi. Trading mein risk hota hai — apni responsibility pe trade karo.
+  </div>
+
+</main>
+
+<script>
+async function refreshData() {
+  const btn = document.getElementById('refresh-btn');
+  btn.innerText = '⏳ SYNCING...';
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/refresh');
+    const d = await r.json();
+
+    document.getElementById('spot-price').innerText   = '₹' + d.spot;
+    document.getElementById('day-high').innerText     = '₹' + d.day_high;
+    document.getElementById('day-low').innerText      = '₹' + d.day_low;
+    document.getElementById('vwap-val').innerText     = '₹' + d.vwap;
+    document.getElementById('jadui-val').innerText    = '₹' + d.jadui_spot;
+    document.getElementById('pcr-val').innerText      = d.pcr;
+    document.getElementById('rsi-val').innerText      = d.rsi_color + ' ' + d.rsi + ' (' + d.rsi_status + ')';
+    document.getElementById('trend-tag').innerText    = d.trend;
+    document.getElementById('scalp-action').innerText = '⚡ ' + d.scalp_action;
+    document.getElementById('intraday-prompt').innerText = d.intraday_prompt;
+    document.getElementById('directional-long').innerText = d.directional_long;
+    document.getElementById('ema9-val').innerText     = d.ema9;
+    document.getElementById('ema21-val').innerText    = d.ema21;
+
+    // PCR color
+    const pcr = document.getElementById('pcr-val');
+    pcr.className = 'mono text-4xl font-black tracking-tight ' + (d.pcr >= 0.75 ? 'text-emerald-600' : 'text-red-500');
+
+    // RSI color
+    const rsi = document.getElementById('rsi-val');
+    const rsiColor = d.rsi >= 68 ? 'text-red-500' : d.rsi <= 35 ? 'text-emerald-600' : 'text-amber-500';
+    rsi.className = 'mono text-2xl font-black ' + rsiColor;
+
+    // EMA cross color
+    const ema9cl  = d.ema9 > d.ema21 ? 'text-emerald-600' : 'text-red-500';
+    const ema21cl = d.ema21 < d.ema9  ? 'text-emerald-600' : 'text-red-500';
+    document.getElementById('ema9-val').className  = 'mono text-lg font-black ' + ema9cl;
+    document.getElementById('ema21-val').className = 'mono text-lg font-black ' + ema21cl;
+
+    // Trend tag color
+    const tt = document.getElementById('trend-tag');
+    if (d.trend === 'BULLISH BREAKOUT')
+      tt.className = 'mono text-xs font-black uppercase tracking-wider px-3 py-1.5 rounded-lg border bg-emerald-50 border-emerald-300 text-emerald-700';
+    else if (d.trend === 'BEARISH DIST')
+      tt.className = 'mono text-xs font-black uppercase tracking-wider px-3 py-1.5 rounded-lg border bg-red-50 border-red-300 text-red-700';
+    else
+      tt.className = 'mono text-xs font-black uppercase tracking-wider px-3 py-1.5 rounded-lg border bg-slate-100 border-slate-200 text-slate-600';
+
+    // Jadui Spot color toggle
+    const jc = document.getElementById('jadui-container');
+    const jv = document.getElementById('jadui-val');
+    if (d.spot < d.jadui_spot) {
+      jc.className = 'flex flex-col justify-between rounded-2xl p-5 shadow-sm h-full border-2 jadui-red bg-red-500 border-red-600 text-white';
+      jv.className = 'mono text-4xl font-black tracking-tight mt-2 text-white';
+    } else {
+      jc.className = 'flex flex-col justify-between rounded-2xl p-5 shadow-sm h-full border-2 bg-emerald-50 border-emerald-400 text-slate-800';
+      jv.className = 'mono text-4xl font-black tracking-tight mt-2 text-emerald-600';
+    }
+  } catch(e) {
+    console.error('Refresh failed:', e);
+  }
+  btn.innerText = '🔄 REFRESH';
+  btn.disabled = false;
+}
+setInterval(refreshData, 15000);
+</script>
 </body>
-</html>
-"""
+</html>"""
 
-# 📊 2. REAL-TIME DATA LAYER (Robust Live Pipeline with Dynamic Micro-Fluctuations)
+
 def fetch_live_market_data():
+    source = 'live'
     try:
         ticker = yf.Ticker("^NSEI")
         hist = ticker.history(period="1d", interval="1m")
-        
-        if not hist.empty and len(hist) > 1:
-            spot_price = round(hist['Close'].iloc[-1], 2)
-            day_high = round(hist['High'].max(), 2)
-            day_low = round(hist['Low'].min(), 2)
-            calculated_vwap = round(hist['Close'].mean(), 2)
-            
-            # Intraday RSI Calculation
-            delta = hist['Close'].dropna().diff()
-            gain = delta.clip(lower=0)
-            loss = -delta.clip(upper=0)
-            avg_gain = gain.rolling(window=14, min_periods=1).mean().iloc[-1]
-            avg_loss = loss.rolling(window=14, min_periods=1).mean().iloc[-1]
-            calculated_rsi = round(100 - (100 / (1 + (avg_gain / avg_loss))), 1) if avg_loss > 0 else 50.0
-        else:
-            raise ValueError("Empty intraday array dataset")
+        if hist.empty or len(hist) < 5:
+            raise ValueError("Insufficient data")
 
-        trend_ratio = (spot_price - day_low) / (day_high - day_low) if (day_high - day_low) > 0 else 0.5
-        calculated_pcr = round(0.68 + (trend_ratio * 0.12), 2)
+        closes = hist['Close'].dropna()
+        spot_price      = round(float(closes.iloc[-1]), 2)
+        day_high        = round(float(hist['High'].max()), 2)
+        day_low         = round(float(hist['Low'].min()), 2)
+        calculated_vwap = round(float(closes.mean()), 2)
+
+        # RSI 14
+        delta    = closes.diff()
+        gain     = delta.clip(lower=0)
+        loss     = -delta.clip(upper=0)
+        avg_gain = float(gain.rolling(14, min_periods=1).mean().iloc[-1])
+        avg_loss = float(loss.rolling(14, min_periods=1).mean().iloc[-1])
+        if avg_loss == 0:
+            calculated_rsi = 100.0 if avg_gain > 0 else 50.0
+        else:
+            calculated_rsi = round(100 - (100 / (1 + avg_gain / avg_loss)), 1)
+
+        # EMA 9 and EMA 21
+        ema9  = round(float(closes.ewm(span=9,  adjust=False).mean().iloc[-1]), 2)
+        ema21 = round(float(closes.ewm(span=21, adjust=False).mean().iloc[-1]), 2)
+
+        trend_ratio    = (spot_price - day_low) / (day_high - day_low) if (day_high - day_low) > 0 else 0.5
+        calculated_pcr = round(0.68 + trend_ratio * 0.12, 2)
 
         return {
-            "spot_price": spot_price, "pcr": calculated_pcr, "day_high": day_high,
-            "day_low": day_low, "vwap": calculated_vwap, "rsi": calculated_rsi
+            "spot_price": spot_price, "pcr": calculated_pcr,
+            "day_high": day_high, "day_low": day_low,
+            "vwap": calculated_vwap, "rsi": calculated_rsi,
+            "ema9": ema9, "ema21": ema21, "source": source
         }
     except Exception as e:
-        # 🚨 PIPELINE RECONCILIATION: Auto-locks onto live June 9 base values + loops rolling micro-ticks
-        sim_drift = random.uniform(-1.8, 1.8)
-        spot_price = round(23133.85 + sim_drift, 2)
-        day_high = 23259.45
-        day_low = 23148.70
-        calculated_vwap = round(23146.30 + (sim_drift * 0.4), 2)
-        calculated_pcr = round(0.72 + (sim_drift * 0.002), 2)
-        calculated_rsi = round(58.5 + (sim_drift * 0.5), 1)
-        
+        print(f"[DATA] yfinance failed: {e} — using sim fallback")
+        d = random.uniform(-2.5, 2.5)
+        base = 24350.0
         return {
-            "spot_price": spot_price, "pcr": calculated_pcr, "day_high": day_high,
-            "day_low": day_low, "vwap": calculated_vwap, "rsi": calculated_rsi
+            "spot_price": round(base + d, 2),
+            "pcr":        round(0.72 + d * 0.001, 2),
+            "day_high":   round(base + 120, 2),
+            "day_low":    round(base - 80,  2),
+            "vwap":       round(base + d * 0.3, 2),
+            "rsi":        round(56.5 + d * 0.4, 1),
+            "ema9":       round(base + d * 0.5, 2),
+            "ema21":      round(base - 10 + d * 0.2, 2),
+            "source":     "fallback"
         }
 
-# 🧠 3. ALGORITHMIC ENGINE (RECONCILIATION & STRATEGY FILTER)
-def process_goat_pro_intelligence(data):
-    if not data:
-        return {}
 
-    spot = data["spot_price"]
-    vwap = data["vwap"]
-    rsi = data["rsi"]
-    pcr = data["pcr"]
-    
-    range_median = (data["day_high"] + data["day_low"]) / 2
-    jadui_spot_trigger = round((range_median + vwap) / 2, 2)
+def process_intelligence(data):
+    spot  = data["spot_price"]
+    vwap  = data["vwap"]
+    rsi   = data["rsi"]
+    pcr   = data["pcr"]
+    ema9  = data["ema9"]
+    ema21 = data["ema21"]
+    high  = data["day_high"]
+    low   = data["day_low"]
+
+    range_median      = (high + low) / 2
+    jadui_spot        = round((range_median + vwap) / 2, 2)
 
     if rsi >= 68:
-        rsi_status = "SATURATED"
-        rsi_color = "🔴"
+        rsi_status, rsi_color = "SATURATED", "🔴"
     elif rsi <= 35:
-        rsi_status = "OVERSOLD"
-        rsi_color = "🟢"
+        rsi_status, rsi_color = "OVERSOLD",  "🟢"
     else:
-        rsi_status = "STABLE"
-        rsi_color = "🟡"
+        rsi_status, rsi_color = "STABLE",    "🟡"
 
-    long_trigger = round(max(jadui_spot_trigger, vwap) + 6.5, 1)
-    directional_long = f"BUY NIFTY ATM CE ABOVE {long_trigger} | SL: {long_trigger - 20:.1f} | TG: {long_trigger + 35:.1f}"
+    long_trigger      = round(max(jadui_spot, vwap) + 6.5, 1)
+    directional_long  = f"BUY CE ABOVE {long_trigger} | SL {long_trigger-20:.1f} | TGT {long_trigger+35:.1f}"
+
+    ema_bull = ema9 > ema21
 
     if spot < vwap:
-        trend = "BEARISH DIST"
-        scalp_action = f"Buy Nifty ATM PE below {round(spot - 4, 1)} | SL: 20 pts | Target: +35 pts"
-        intraday_prompt = "⚠️ INTRADAY SHORT: Price action trading below structural VWAP. Lock out Call entries."
+        trend          = "BEARISH DIST"
+        scalp_action   = f"Buy ATM PE below {round(spot-4,1)} | SL 20 pts | TGT +35 pts"
+        intraday_prompt = "⚠️ INTRADAY SHORT — Price below VWAP. Lock out CE entries."
+    elif spot >= vwap and pcr >= 0.75 and ema_bull:
+        trend          = "BULLISH BREAKOUT"
+        scalp_action   = f"Buy ATM CE above {round(jadui_spot,1)} | SL 20 pts | TGT +35 pts"
+        intraday_prompt = "🔥 INTRADAY LONG — VWAP + PCR + EMA all bullish. Trail SL."
     elif spot >= vwap and pcr >= 0.75:
-        trend = "BULLISH BREAKOUT"
-        scalp_action = f"Buy Nifty ATM CE above {round(jadui_spot_trigger, 1)} | SL: 20 pts | Target: +35 pts"
-        intraday_prompt = "🔥 INTRADAY LONG: Momentum is clean towards resistance lines. Follow trailing SL."
+        trend          = "BULLISH BREAKOUT"
+        scalp_action   = f"Buy ATM CE above {round(jadui_spot,1)} | SL 20 pts | TGT +35 pts"
+        intraday_prompt = "📈 LONG SETUP — Price above VWAP, PCR bullish. EMA cross pending."
     else:
-        trend = "SIDEWAYS"
-        scalp_action = "NO TRADING ZONE: Premium Decay Active"
-        intraday_prompt = "😴 RANGE-BOUND CORRIDOR: Wait for institutional volume validation block."
+        trend          = "SIDEWAYS"
+        scalp_action   = "NO TRADE ZONE — Premium decay active"
+        intraday_prompt = "😴 RANGE-BOUND — Wait for VWAP + PCR confluence."
 
     return {
-        "spot": spot, "pcr": pcr, "vwap": vwap, "jadui_spot": jadui_spot_trigger,
-        "rsi": rsi, "rsi_status": rsi_status, "rsi_color": rsi_color, "trend": trend,
-        "scalp_action": scalp_action, "intraday_prompt": intraday_prompt,
-        "directional_long": directional_long,
-        "day_high": data["day_high"], "day_low": data["day_low"]
+        "spot": spot, "pcr": pcr, "vwap": vwap, "jadui_spot": jadui_spot,
+        "rsi": rsi, "rsi_status": rsi_status, "rsi_color": rsi_color,
+        "ema9": ema9, "ema21": ema21,
+        "trend": trend, "scalp_action": scalp_action,
+        "intraday_prompt": intraday_prompt, "directional_long": directional_long,
+        "day_high": high, "day_low": low
     }
 
-# 🌐 4. ROUTING LAYER WITH RENDER DYNAMIC PORTS
+
 @app.route('/')
 def index():
-    raw_data = fetch_live_market_data()
-    processed_metrics = process_goat_pro_intelligence(raw_data)
-    return render_template_string(HTML_TEMPLATE, m=processed_metrics)
+    raw  = fetch_live_market_data()
+    m    = process_intelligence(raw)
+    return render_template_string(HTML_TEMPLATE, m=m, data_source=raw["source"])
 
-@app.route('/api/refresh', methods=['GET'])
+
+@app.route('/api/refresh')
 def api_refresh():
-    raw_data = fetch_live_market_data()
-    processed_metrics = process_goat_pro_intelligence(raw_data)
-    return jsonify(processed_metrics)
+    raw = fetch_live_market_data()
+    return jsonify(process_intelligence(raw))
+
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
