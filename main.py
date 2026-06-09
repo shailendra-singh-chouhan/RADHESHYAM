@@ -6,14 +6,14 @@ import pytz
 
 app = Flask(__name__)
 
-# Ultra-Compact Symmetrical Brahmastra UI
+# Ultimate Symmetrical Trader-Centric UI V4.0
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="hi">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BRAHMASTRA DRISHTI V3.5</title>
+    <title>BRAHMASTRA DRISHTI V4.0</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         async function dataEngine() {
@@ -21,11 +21,10 @@ HTML_TEMPLATE = """
                 const res = await fetch('/api/refresh');
                 const d = await res.json();
                 
-                // Top Master Controller
                 document.getElementById('market_status').innerText = d.market_status;
                 document.getElementById('warning').innerText = d.warning;
 
-                // Nifty Drishti Core
+                // Nifty Core
                 document.getElementById('spot').innerText = '₹' + d.spot;
                 document.getElementById('high').innerText = '₹' + d.high;
                 document.getElementById('low').innerText = '₹' + d.low;
@@ -36,14 +35,13 @@ HTML_TEMPLATE = """
                 document.getElementById('target').innerText = d.target;
                 document.getElementById('nifty_strike').innerText = d.nifty_strike;
                 
-                // Nifty CPR Color Indicator Dynamic
-                if(d.nifty_cpr_state.includes("TRAP")) {
+                if(d.nifty_cpr_state.includes("TRAP") || d.nifty_cpr_state.includes("PARKING")) {
                     document.getElementById('nifty_cpr_box').className = "bg-rose-950/40 border border-rose-900 rounded p-1 text-center font-bold text-rose-400";
                 } else {
                     document.getElementById('nifty_cpr_box').className = "bg-emerald-950/40 border border-emerald-900 rounded p-1 text-center font-bold text-emerald-400";
                 }
 
-                // Crude Drishti Core
+                // Crude Core
                 document.getElementById('crude').innerText = '₹' + d.crude;
                 document.getElementById('crude_high').innerText = '₹' + d.crude_high;
                 document.getElementById('crude_low').innerText = '₹' + d.crude_low;
@@ -61,13 +59,13 @@ HTML_TEMPLATE = """
                 }
 
                 if(d.nifty_closed) {
-                    document.getElementById('nifty_router').className = "bg-slate-950 border border-slate-800 rounded-lg p-2 border-l-4 border-l-blue-500 text-xs";
+                    document.getElementById('nifty_router').className = "bg-slate-950 border border-slate-800 rounded-lg p-2 border-l-4 border-l-orange-500 text-xs";
                 } else {
                     document.getElementById('nifty_router').className = "bg-gradient-to-r from-blue-950 to-slate-900 border border-blue-900 rounded-lg p-2 border-l-4 border-l-emerald-500 text-xs";
                 }
                 
             } catch (err) {
-                console.log("Drishti Engine Stream Error");
+                console.log("Stream Sync Error");
             }
         }
         setInterval(dataEngine, 5000);
@@ -78,24 +76,24 @@ HTML_TEMPLATE = """
         
         <header class="flex justify-between items-center border-b border-slate-800 pb-1">
             <div>
-                <h1 class="text-base font-black text-blue-400 tracking-tight">👁️ ब्रह्मास्त्र दृष्टि • DUAL CORE MONITOR</h1>
+                <h1 class="text-base font-black text-blue-400 tracking-tight">👁️ ब्रह्मास्त्र दृष्टि • TRADER CORE V4.0</h1>
                 <p class="text-[9px] text-slate-500 font-mono">System: <span id="market_status" class="text-amber-400 font-bold">{{ m.market_status }}</span></p>
             </div>
             <button onclick="dataEngine()" class="bg-slate-900 hover:bg-slate-800 border border-slate-700 px-2 py-0.5 rounded text-[10px] font-bold transition-all">
-                👁️ लाइव दृष्टि री-स्कैन
+                🔄 लाइव दृष्टि स्कैन
             </button>
         </header>
 
         <div class="bg-slate-900/60 border border-slate-800 p-1 rounded flex items-center space-x-2 text-[10px] text-slate-400">
-            <span class="text-xs">🛡️</span>
+            <span>🛡️</span>
             <p id="warning" class="truncate font-medium">{{ m.warning }}</p>
         </div>
 
         <div class="grid grid-cols-2 gap-3">
             
-            <div class="bg-slate-900/30 border border-blue-950/60 p-2 rounded-xl space-y-2 relative">
-                <div class="bg-blue-950/30 border border-blue-900/40 rounded-lg p-2 relative">
-                    <span class="text-[9px] font-black text-blue-400 tracking-wider block">📊 NIFTY CORE INSTANT</span>
+            <div class="bg-slate-900/30 border border-blue-950/60 p-2 rounded-xl space-y-2">
+                <div class="bg-blue-950/30 border border-blue-900/40 rounded-lg p-2">
+                    <span class="text-[9px] font-black text-blue-400 tracking-wider block">📊 NIFTY 50 INDEX</span>
                     <h2 id="spot" class="text-2xl font-black text-white tracking-tight mt-0.5">₹{{ m.spot }}</h2>
                     <div class="grid grid-cols-2 gap-1 mt-1 border-t border-slate-800/80 pt-1 text-[10px]">
                         <div><span class="text-slate-500">आज का हाई:</span> <span id="high" class="font-bold text-emerald-400">₹{{ m.high }}</span></div>
@@ -103,7 +101,7 @@ HTML_TEMPLATE = """
                     </div>
                 </div>
                 
-                <div id="nifty_cpr_box" class="{% if 'TRAP' in m.nifty_cpr_state %}bg-rose-950/40 border border-rose-900/60{% else %}bg-emerald-950/40 border border-emerald-900/60{% endif %} rounded p-1 text-center font-bold text-xs">
+                <div id="nifty_cpr_box" class="bg-emerald-950/40 border border-emerald-900/60 rounded p-1 text-center font-bold text-xs">
                     🛡️ <span id="nifty_cpr_state" class="text-[10px] uppercase tracking-wide">{{ m.nifty_cpr_state }}</span>
                 </div>
 
@@ -124,7 +122,7 @@ HTML_TEMPLATE = """
                         <div id="signal" class="font-black text-white leading-tight mt-0.5">{{ m.signal }}</div>
                     </div>
                     <div>
-                        <span class="text-[9px] font-bold text-slate-500 block">🎯 स्नाइपर रिस्क मैनेजमेंट (1:2)</span>
+                        <span class="text-[9px] font-bold text-slate-500 block">🎯 स्नाइपर रिस्क मैनेजमेंट</span>
                         <div id="target" class="text-[10px] font-mono text-blue-400 bg-slate-900/60 p-0.5 px-1.5 rounded inline-block mt-0.5">{{ m.target }}</div>
                     </div>
                     <div class="border-t border-slate-800/80 pt-1 flex justify-between items-center">
@@ -134,8 +132,8 @@ HTML_TEMPLATE = """
                 </div>
             </div>
 
-            <div class="bg-slate-900/30 border border-orange-950/60 p-2 rounded-xl space-y-2 relative">
-                <div class="bg-orange-950/20 border border-orange-900/40 rounded-lg p-2 relative">
+            <div class="bg-slate-900/30 border border-orange-950/60 p-2 rounded-xl space-y-2">
+                <div class="bg-orange-950/20 border border-orange-900/40 rounded-lg p-2">
                     <span class="text-[9px] font-black text-orange-400 tracking-wider block">🛢️ CRUDE CORE INSTANT</span>
                     <h2 id="crude" class="text-2xl font-black text-white tracking-tight mt-0.5">₹{{ m.crude }}</h2>
                     <div class="grid grid-cols-2 gap-1 mt-1 border-t border-slate-800/80 pt-1 text-[10px]">
@@ -144,7 +142,7 @@ HTML_TEMPLATE = """
                     </div>
                 </div>
                 
-                <div id="crude_cpr_box" class="{% if 'TRAP' in m.crude_cpr_state %}bg-rose-950/40 border border-rose-900/60{% else %}bg-emerald-950/40 border border-emerald-900/60{% endif %} rounded p-1 text-center font-bold text-xs">
+                <div id="crude_cpr_box" class="bg-emerald-950/40 border border-emerald-900/60 rounded p-1 text-center font-bold text-xs">
                     🛡️ <span id="crude_cpr_state" class="text-[10px] uppercase tracking-wide">{{ m.crude_cpr_state }}</span>
                 </div>
 
@@ -165,7 +163,7 @@ HTML_TEMPLATE = """
                         <div id="crude_signal" class="font-black text-white leading-tight mt-0.5">{{ m.crude_signal }}</div>
                     </div>
                     <div>
-                        <span class="text-[9px] font-bold text-slate-500 block">🎯 स्नाइपर रिस्क मैनेजमेंट (1:2)</span>
+                        <span class="text-[9px] font-bold text-slate-500 block">🎯 स्नाइपर रिस्क मैनेजमेंट</span>
                         <div id="crude_target" class="text-[10px] font-mono text-orange-400 bg-slate-900/60 p-0.5 px-1.5 rounded inline-block mt-0.5">{{ m.crude_target }}</div>
                     </div>
                     <div class="border-t border-slate-800/80 pt-1 flex justify-between items-center">
@@ -193,7 +191,7 @@ def process_core_metrics():
     try:
         n_closed = check_nifty_status()
         
-        # 1. Nifty Live Stream
+        # 1. Nifty Parsing
         n_ticker = yf.Ticker("^NSEI")
         n_data = n_ticker.history(period="1d", interval="1m")
         if not n_data.empty:
@@ -202,68 +200,80 @@ def process_core_metrics():
             n_backup = n_ticker.history(period="1d")
             spot, high, low = round(n_backup['Close'].iloc[-1], 2), round(n_backup['High'].iloc[-1], 2), round(n_backup['Low'].iloc[-1], 2)
 
-        # 2. Crude Live Stream
+        # 2. Crude Parsing (Tight Multiplier adjusted to match ~8325 area perfectly)
         c_ticker = yf.Ticker("CL=F")
         c_data = c_ticker.history(period="1d")
-        mult = 95.4
+        mult = 95.1 
         if not c_data.empty:
             crude_val = round(c_data['Close'].iloc[-1] * mult, 2)
             crude_high, crude_low = round(c_data['High'].max() * mult, 2), round(c_data['Low'].min() * mult, 2)
         else:
-            crude_val, crude_high, crude_low = 8367.00, 8733.87, 8335.10
+            crude_val, crude_high, crude_low = 8325.00, 8710.00, 8310.00
 
-        # --- ADVANCED BRAHMASTRA DRISHTI MATHS ---
-        
-        # Nifty CPR Calculation
+        # Calculations
         n_pivot = round((high + low + spot) / 3, 2)
         n_bc = round((high + low) / 2, 2)
         n_tc = round((2 * n_pivot) - n_bc, 2)
         n_cpr_top, n_cpr_bottom = max(n_tc, n_bc), min(n_tc, n_bc)
-        nifty_cpr_state = "⚠️ CPR TRAP (NO TRADE ZONE)" if (n_cpr_bottom <= spot <= n_cpr_top) else "🚀 CPR BREAKOUT ACTIVE"
 
-        # Crude CPR Calculation
         c_pivot = round((crude_high + crude_low + crude_val) / 3, 2)
         c_bc = round((crude_high + crude_low) / 2, 2)
         c_tc = round((2 * c_pivot) - c_bc, 2)
         c_cpr_top, c_cpr_bottom = max(c_tc, c_bc), min(c_tc, c_bc)
-        crude_cpr_state = "⚠️ CPR TRAP (CHOPPY RANGE)" if (c_cpr_bottom <= crude_val <= c_cpr_top) else "🚀 TRENDING MOMENTUM"
 
-        # ATM Strike Selection Calculations
         atm_nifty = int(round(spot / 50.0) * 50)
-        nifty_strike = f"BUY {atm_nifty} CE" if spot > n_pivot else f"BUY {atm_nifty} PE"
-        
         atm_crude = int(round(crude_val / 100.0) * 100)
-        crude_strike = f"BUY {atm_crude} CE" if crude_val > c_pivot else f"BUY {atm_crude} PE"
 
-        # Institutional Execution Zones (VWAP)
         vwap = round(low + (high - low) * 0.42, 2)
         crude_vwap = round(crude_low + (crude_high - crude_low) * 0.42, 2)
 
-        # Timed State Output
+        # Output Management
         if n_closed:
             market_status = "निफ्टी क्लोज्ड"
-            warning = "भारतीय शेयर बाजार बंद है। ब्रह्मास्त्र पोजीशनल क्लोजिंग बाउंड्रीज एक्टिवेटेड।"
-            signal = f"📦 STRATEGIC RANGE: {low} - {high}"
-            target = f"T1 RES: {high} | T2 SUPP: {low}"
-            nifty_strike = "MARKET CLOSED"
+            warning = "मार्केट बंद है। कल सुबह की तैयारी के लिए एडवांस रेजिस्टेंस (R1) और सपोर्ट (S1) लेवल्स रेडी हैं।"
+            
+            # Smart Tomorrow Pivot Logic
+            tomorrow_r1 = round((2 * n_pivot) - low, 1)
+            tomorrow_s1 = round((2 * n_pivot) - high, 1)
+            
             nifty_cpr_state = "⏸️ PARKING RANGE MODE"
+            signal = f"🔮 NEXT DAY PREP: BREAKOUT ABOVE {tomorrow_r1}"
+            target = f"🎯 R1 LEVEL: {tomorrow_r1} | S1 LEVEL: {tomorrow_s1}"
+            nifty_strike = "WATCH MORNING ATM"
         else:
             market_status = "निफ्टी लाइव"
-            warning = "मार्केट लाइव है। CPR ट्रैप और संस्थागत एंट्री लेवल्स पर कड़ी दृष्टि रखें।"
+            warning = "मार्केट लाइव है। करंट लाइव प्राइस ब्रेकआउट्स और CPR ट्रैप जोन पर नजर रखें।"
+            nifty_cpr_state = "⚠️ CPR TRAP (NO TRADE)" if (n_cpr_bottom <= spot <= n_cpr_top) else "🚀 CPR BREAKOUT ACTIVE"
+            
             if "TRAP" in nifty_cpr_state:
-                signal = "❌ NO TRADE: WAIT FOR CPR RANGE BREAK"
-                target = "SL: COUNTER BREAK | RISK: HIGH"
+                signal = "❌ WAIT: PRICE INSIDE CHOPPY CPR"
+                target = "CAPITAL PROTECTION IS LIVE"
+                nifty_strike = "NO STRIKE"
             else:
-                signal = f"SCALP BUY CALL ABOVE {round(vwap + 5, 1)}" if spot > vwap else f"SCALP PUT BELOW {round(vwap - 5, 1)}"
-                target = f"T1: +35 pts | T2: +70 pts | Strict SL: -25 pts"
+                if spot > vwap:
+                    signal = f"LIVE SNIPER: BUY CE ABOVE {round(spot + 5, 1)}"
+                    target = "T1: +35 Pts | T2: +70 Pts | SL: -25 Pts"
+                    nifty_strike = f"BUY {atm_nifty} CE"
+                else:
+                    signal = f"LIVE SNIPER: BUY PE BELOW {round(spot - 5, 1)}"
+                    target = "T1: +35 Pts | T2: +70 Pts | SL: -25 Pts"
+                    nifty_strike = f"BUY {atm_nifty} PE"
 
-        # Crude Utility Execution Loop (Runs until 11:30 PM IST)
+        # Crude Live Scalping Logic (Relative to Current Spot Price)
+        crude_cpr_state = "⚠️ CPR TRAP (CHOPPY)" if (c_cpr_bottom <= crude_val <= c_cpr_top) else "🚀 TRENDING MOMENTUM"
         if "TRAP" in crude_cpr_state:
-            crude_signal = "❌ WAIT: PRICE TRAPPED INSIDE CPR BANDS"
-            crude_target = "NO TARGET | SAVING CAPITAL FIRST"
+            crude_signal = "❌ NO TRADE: CRUDE IN SIDEWAVES CPR"
+            crude_target = "HOLD CASH"
+            crude_strike = "WAIT"
         else:
-            crude_signal = f"CRUDE sniper BUY ABOVE {round(crude_vwap + 10, 1)}" if crude_val > crude_vwap else f"CRUDE sniper PE BELOW {round(crude_vwap - 10, 1)}"
-            crude_target = f"T1: +45 pts | T2: +90 pts | Strict SL: -30 pts"
+            if crude_val > c_pivot:
+                crude_signal = f"CRUDE sniper: BUY CE ABOVE {round(crude_val + 5, 1)}"
+                crude_target = "T1: +40 Pts | T2: +80 Pts | SL: -25 Pts"
+                crude_strike = f"BUY {atm_crude} CE"
+            else:
+                crude_signal = f"CRUDE sniper: BUY PE BELOW {round(crude_val - 5, 1)}"
+                crude_target = "T1: +40 Pts | T2: +80 Pts | SL: -25 Pts"
+                crude_strike = f"BUY {atm_crude} PE"
 
         return {
             "spot": spot, "high": high, "low": low, "vwap": vwap, "jadui_spot": n_pivot,
@@ -277,7 +287,7 @@ def process_core_metrics():
         return {
             "spot": 23254.8, "high": 23279.35, "low": 23105.1, "vwap": 23178.28, "jadui_spot": 23213.08,
             "signal": "ENGINE SYNCING...", "target": "WAITING FOR FEED", "nifty_strike": "-", "nifty_cpr_state": "WARMUP",
-            "crude": 8367.00, "crude_high": 8733.87, "crude_low": 8335.1, "crude_vwap": 8502.58, "crude_jadui": 8473.75,
+            "crude": 8325.00, "crude_high": 8710.00, "crude_low": 8310.00, "crude_vwap": 8502.58, "crude_jadui": 8473.75,
             "crude_signal": "CRUDE SCANNING...", "crude_target": "FETCHING", "crude_strike": "-", "crude_cpr_state": "WARMUP",
             "warning": "Drishti engine system backup online.", "market_status": "OFFLINE", "nifty_closed": True
         }
