@@ -136,6 +136,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             {% if m.trend == 'BULLISH' %}bg-emerald-50 border-emerald-300 text-emerald-700
             {% elif m.trend == 'BEARISH' %}bg-red-50 border-red-300 text-red-700
             {% elif m.trend == 'WAIT RSI' %}bg-amber-50 border-amber-300 text-amber-700
+            {% elif m.trend == 'VWAP ZONE' %}bg-yellow-50 border-yellow-400 text-yellow-700
             {% else %}bg-slate-100 border-slate-200 text-slate-600{% endif %}">
             {{ m.trend }}
           </span>
@@ -315,6 +316,8 @@ async function refreshData() {
       tt.className = 'mono text-xs font-black uppercase tracking-wider px-3 py-1.5 rounded-lg border mt-1 bg-red-50 border-red-300 text-red-700';
     else if (d.trend === 'WAIT RSI')
       tt.className = 'mono text-xs font-black uppercase tracking-wider px-3 py-1.5 rounded-lg border mt-1 bg-amber-50 border-amber-300 text-amber-700';
+    else if (d.trend === 'VWAP ZONE')
+      tt.className = 'mono text-xs font-black uppercase tracking-wider px-3 py-1.5 rounded-lg border mt-1 bg-yellow-50 border-yellow-400 text-yellow-700';
     else
       tt.className = 'mono text-xs font-black uppercase tracking-wider px-3 py-1.5 rounded-lg border mt-1 bg-slate-100 border-slate-200 text-slate-600';
 
@@ -439,36 +442,57 @@ def process_intelligence(data):
     else:
         rsi_status, rsi_color = "STABLE",    "🟡"
 
-    above_vwap = spot >= vwap
-    pcr_ok     = pcr >= 0.72
-    ema_bull   = ema9 > ema21
-    rsi_ok     = rsi < 68
+    # VWAP buffer zone: ±5 pts = "at VWAP" (noise filter)
+    vwap_buffer   = 5.0
+    clearly_above = spot > vwap + vwap_buffer
+    clearly_below = spot < vwap - vwap_buffer
+    at_vwap       = not clearly_above and not clearly_below
 
-    # 4-state logic
-    if not above_vwap:
-        bias          = "SHORT"
-        trend         = "BEARISH"
-        scalp_action  = f"Buy ATM PE below {round(spot-4,1)} | SL 20 pts | TGT +35 pts"
-        intraday_prompt = "🔴 INTRADAY SHORT — Price below VWAP. Avoid CE entries."
-    elif above_vwap and pcr_ok and ema_bull and rsi_ok:
-        bias          = "LONG"
-        trend         = "BULLISH"
-        scalp_action  = f"Buy ATM CE above {round(jadui_spot,1)} | SL 20 pts | TGT +35 pts"
+    pcr_ok   = pcr >= 0.72
+    ema_bull = ema9 > ema21
+    rsi_ok   = rsi < 68
+
+    # 5-state logic
+    if clearly_below:
+        bias            = "SHORT"
+        trend           = "BEARISH"
+        scalp_action    = f"Buy ATM PE below {round(spot-4,1)} | SL 20 pts | TGT +35 pts"
+        intraday_prompt = "🔴 INTRADAY SHORT — Price clearly below VWAP. Avoid CE entries."
+
+    elif at_vwap and pcr_ok and ema_bull and rsi_ok:
+        bias            = "LONG"
+        trend           = "VWAP ZONE"
+        scalp_action    = f"Buy ATM CE above {round(jadui_spot,1)} | SL 20 pts | TGT +35 pts"
+        intraday_prompt = f"🟡 VWAP ZONE — Spot within {vwap_buffer} pts of VWAP. PCR ✅ EMA ✅ RSI ✅ — cautious long OK."
+
+    elif at_vwap:
+        bias            = "NEUTRAL"
+        trend           = "VWAP ZONE"
+        scalp_action    = "WAIT — At VWAP decision zone. Let price pick direction."
+        intraday_prompt = f"⚡ VWAP DECISION ZONE — Spot within {vwap_buffer} pts of VWAP. Wait for clear breakout."
+
+    elif clearly_above and pcr_ok and ema_bull and rsi_ok:
+        bias            = "LONG"
+        trend           = "BULLISH"
+        scalp_action    = f"Buy ATM CE above {round(jadui_spot,1)} | SL 20 pts | TGT +35 pts"
         intraday_prompt = "🟢 INTRADAY LONG — VWAP ✅ PCR ✅ EMA ✅ RSI ✅ — Strong confluence."
-    elif above_vwap and pcr_ok and not rsi_ok:
-        bias          = "WAIT_RSI"
-        trend         = "WAIT RSI"
-        scalp_action  = f"Setup ready — wait for RSI < 65 before CE entry"
+
+    elif clearly_above and pcr_ok and not rsi_ok:
+        bias            = "WAIT_RSI"
+        trend           = "WAIT RSI"
+        scalp_action    = f"Setup ready — wait for RSI < 65 before CE entry"
         intraday_prompt = f"🟡 SETUP READY — Price & PCR bullish but RSI {rsi} overbought. Wait for RSI pullback."
-    elif above_vwap and not pcr_ok:
-        bias          = "NEUTRAL"
-        trend         = "SIDEWAYS"
-        scalp_action  = "NO TRADE — PCR weak. Wait for option writers to build puts."
+
+    elif clearly_above and not pcr_ok:
+        bias            = "NEUTRAL"
+        trend           = "SIDEWAYS"
+        scalp_action    = "NO TRADE — PCR weak. Wait for put writers to step in."
         intraday_prompt = "😴 RANGE-BOUND — Price above VWAP but PCR not confirming. Wait."
+
     else:
-        bias          = "NEUTRAL"
-        trend         = "SIDEWAYS"
-        scalp_action  = "NO TRADE ZONE — Premium decay active"
+        bias            = "NEUTRAL"
+        trend           = "SIDEWAYS"
+        scalp_action    = "NO TRADE ZONE — Premium decay active"
         intraday_prompt = "😴 SIDEWAYS — No clear directional confluence."
 
     return dict(spot=spot, pcr=pcr, vwap=vwap, jadui_spot=jadui_spot,
