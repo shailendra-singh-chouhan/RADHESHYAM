@@ -6,7 +6,7 @@ from flask import Flask, render_template_string, jsonify
 
 app = Flask(__name__)
 
-# 🎨 PREMIUM BLUE & WHITE THEME UI (Upscaled Font Sizes & High-Visibility Layout)
+# 🎨 PREMIUM BLUE & WHITE THEME UI (Segment Symmetrical Grouping + High Visibility Fonts)
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="en">
@@ -23,20 +23,22 @@ HTML_TEMPLATE = """
                 const response = await fetch('/api/refresh');
                 const data = await response.json();
                 
-                // Update text contents with scaled up sizes
+                // Segment Core Section Sizing
                 document.getElementById('spot-price').innerText = '₹' + data.spot;
-                document.getElementById('pcr-val').innerText = data.pcr;
+                document.getElementById('day-high').innerText = '₹' + data.day_high;
+                document.getElementById('day-low').innerText = '₹' + data.day_low;
                 document.getElementById('vwap-val').innerText = '₹' + data.vwap;
                 document.getElementById('jadui-val').innerText = '₹' + data.jadui_spot;
+                
+                // Indicators & Strategy Sizing
+                document.getElementById('pcr-val').innerText = data.pcr;
                 document.getElementById('rsi-val').innerText = data.rsi + ' (' + data.rsi_status + ')';
                 document.getElementById('trend-tag').innerText = data.trend;
                 document.getElementById('scalp-action').innerText = data.scalp_action;
                 document.getElementById('intraday-prompt').innerText = data.intraday_prompt;
                 document.getElementById('directional-long').innerText = data.directional_long;
-                document.getElementById('day-high').innerText = '₹' + data.day_high;
-                document.getElementById('day-low').innerText = '₹' + data.day_low;
                 
-                // Real Put-Call Ratio Box Dynamic Styling (Font Size: text-4xl)
+                // Put-Call Ratio Element Dynamic Toggle
                 const pcrBox = document.getElementById('pcr-box');
                 const pcrVal = document.getElementById('pcr-val');
                 if(data.pcr >= 0.75) {
@@ -47,14 +49,14 @@ HTML_TEMPLATE = """
                     pcrVal.className = "text-4xl font-black font-mono text-rose-600 tracking-tight mt-1";
                 }
                 
-                // ✨ DYNAMIC JADUI SPOT COLOR-CODED WARNING ENGINE (Font Size: text-sm/text-base)
+                // Jadui Spot Alert Element Dynamic Toggle
                 const jaduiContainer = document.getElementById('jadui-container');
                 const jaduiVal = document.getElementById('jadui-val');
                 if(data.spot < data.jadui_spot) {
-                    jaduiContainer.className = "flex justify-between items-center text-sm md:text-base border-2 border-rose-500 bg-rose-500 text-white p-4 rounded-lg animate-pulse shadow-md transition-all duration-300";
+                    jaduiContainer.className = "flex justify-between items-center border-2 border-rose-500 bg-rose-500 text-white p-4 rounded-xl animate-pulse shadow-md transition-all duration-300";
                     jaduiVal.className = "font-mono font-black text-white text-lg md:text-xl";
                 } else {
-                    jaduiContainer.className = "flex justify-between items-center text-sm md:text-base border-2 border-emerald-400 bg-emerald-50 text-slate-800 p-4 rounded-lg shadow-sm transition-all duration-300";
+                    jaduiContainer.className = "flex justify-between items-center border-2 border-emerald-400 bg-emerald-50 text-slate-800 p-4 rounded-xl shadow-sm transition-all duration-300";
                     jaduiVal.className = "font-mono font-black text-emerald-600 text-lg md:text-xl";
                 }
                 
@@ -78,7 +80,7 @@ HTML_TEMPLATE = """
         </button>
     </header>
 
-    <main class="max-w-7xl mx-auto p-4 md:p-6 space-y-5">
+    <main class="max-w-7xl mx-auto p-4 md:p-6 space-y-6">
         
         <div class="bg-blue-50 border border-blue-200 rounded-xl p-5 shadow-sm flex items-start gap-4">
             <div class="text-2xl">📢</div>
@@ -88,55 +90,61 @@ HTML_TEMPLATE = """
             </div>
         </div>
 
-        <section class="grid grid-cols-1 md:grid-cols-3 gap-5">
-            <div class="bg-white border border-slate-200 rounded-xl p-5 flex flex-col justify-between shadow-sm">
-                <span class="text-xs md:text-sm font-bold text-slate-400 tracking-widest uppercase font-mono">NIFTY SPOT TICK</span>
-                <span id="spot-price" class="text-3xl md:text-4xl font-black text-blue-600 tracking-tight mt-2 font-mono">₹{{ m.spot }}</span>
-                <div class="flex justify-between text-xs md:text-sm font-mono text-slate-400 mt-4 pt-3 border-t border-slate-100">
-                    <span>H: <span id="day-high" class="text-slate-700 font-bold">₹{{ m.day_high }}</span></span>
-                    <span>L: <span id="day-low" class="text-slate-700 font-bold">₹{{ m.day_low }}</span></span>
+        <section class="space-y-3">
+            <h2 class="text-base md:text-lg font-black text-blue-900 uppercase tracking-wider border-l-4 border-blue-600 pl-2 font-mono">📊 Nifty Segment Core (Market Price Blocks)</h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+                <div class="bg-white border border-slate-200 rounded-xl p-5 flex flex-col justify-between shadow-sm">
+                    <span class="text-xs md:text-sm font-bold text-slate-400 tracking-widest uppercase font-mono">NIFTY SPOT TICK</span>
+                    <span id="spot-price" class="text-3xl md:text-4xl font-black text-blue-600 tracking-tight mt-2 font-mono">₹{{ m.spot }}</span>
+                    <div class="flex justify-between text-xs md:text-sm font-mono text-slate-400 mt-4 pt-3 border-t border-slate-100">
+                        <span>High: <span id="day-high" class="text-slate-700 font-bold">₹{{ m.day_high }}</span></span>
+                        <span>Low: <span id="day-low" class="text-slate-700 font-bold">₹{{ m.day_low }}</span></span>
+                    </div>
                 </div>
-            </div>
 
-            <div id="pcr-box" class="bg-white border {{ 'border-emerald-300' if m.pcr >= 0.75 else 'border-rose-300' }} rounded-xl p-5 flex flex-col justify-between shadow-sm">
-                <span class="text-xs md:text-sm font-bold text-slate-400 tracking-widest uppercase font-mono">REAL PCR (HIGH VISIBILITY)</span>
-                <span id="pcr-val" class="text-3xl md:text-4xl font-black tracking-tight mt-1 font-mono {{ 'text-emerald-600' if m.pcr >= 0.75 else 'text-rose-600' }}">{{ m.pcr }}</span>
-                <span id="trend-tag" class="text-xs font-black uppercase tracking-wider mt-4 font-mono bg-slate-100 px-3 py-1 rounded border border-slate-200 w-max text-slate-600">{{ m.trend }}</span>
-            </div>
+                <div class="bg-white border border-slate-200 rounded-xl p-5 flex flex-col justify-center gap-2 shadow-sm">
+                    <span class="text-xs md:text-sm font-bold text-slate-400 tracking-widest uppercase font-mono">Session Average Price (VWAP)</span>
+                    <span id="vwap-val" class="font-mono font-black text-blue-600 text-2xl md:text-3xl mt-1">₹{{ m.vwap }}</span>
+                    <p class="text-[11px] text-slate-400 font-medium">Weighted matrix derived via 1-minute interval distribution arrays.</p>
+                </div>
 
-            <div class="bg-white border border-slate-200 rounded-xl p-5 flex flex-col justify-between shadow-sm">
-                <span class="text-xs md:text-sm font-bold text-slate-400 tracking-widest uppercase font-mono">RSI MOMENTUM COUNTER</span>
-                <span id="rsi-val" class="text-lg md:text-xl font-black text-slate-800 mt-2 font-mono"><span class="mr-1">{{ m.rsi_color }}</span> {{ m.rsi }} <span class="text-xs md:text-sm text-slate-500 font-bold">({{ m.rsi_status }})</span></span>
-                <p class="text-xs text-slate-400 font-medium leading-relaxed mt-4">Calculated mathematically from active 1-minute interval arrays.</p>
+                <div class="bg-white border border-slate-200 rounded-xl p-5 flex flex-col justify-center shadow-sm">
+                    <div id="jadui-container" class="flex justify-between items-center text-sm md:text-base border {{ 'border-rose-400 bg-rose-500 text-white animate-pulse' if m.spot < m.jadui_spot else 'border-emerald-300 bg-emerald-50 text-slate-800' }} p-4 rounded-xl shadow-sm transition-all duration-300 w-full">
+                        <span class="font-black flex items-center gap-1">✨ Jadui Spot Pivot</span>
+                        <span id="jadui-val" class="font-mono font-black text-lg md:text-xl {{ 'text-white' if m.spot < m.jadui_spot else 'text-emerald-600' }}">₹{{ m.jadui_spot }}</span>
+                    </div>
+                </div>
             </div>
         </section>
 
-        <section class="grid grid-cols-1 md:grid-cols-2 gap-5">
-            <div class="bg-white border border-slate-200 rounded-xl p-5 space-y-4 shadow-sm">
-                <h2 class="text-xs md:text-sm font-black text-slate-400 tracking-widest uppercase font-mono border-b border-slate-100 pb-2">Institutional Boundaries</h2>
-                <div class="flex justify-between items-center text-sm md:text-base px-1 py-1">
-                    <span class="text-slate-600 font-medium">Session Average Price (TWAP/VWAP)</span>
-                    <span id="vwap-val" class="font-mono font-black text-blue-600 text-base md:text-lg">₹{{ m.vwap }}</span>
+        <section class="space-y-3 pt-2">
+            <h2 class="text-base md:text-lg font-black text-blue-900 uppercase tracking-wider border-l-4 border-indigo-600 pl-2 font-mono">🧠 Algorithmic Indicators & Strategy Engine</h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+                <div id="pcr-box" class="bg-white border {{ 'border-emerald-300' if m.pcr >= 0.75 else 'border-rose-300' }} rounded-xl p-5 flex flex-col justify-between shadow-sm">
+                    <span class="text-xs md:text-sm font-bold text-slate-400 tracking-widest uppercase font-mono">REAL PCR (HIGH VISIBILITY)</span>
+                    <span id="pcr-val" class="text-3xl md:text-4xl font-black tracking-tight mt-1 font-mono {{ 'text-emerald-600' if m.pcr >= 0.75 else 'text-rose-600' }}">{{ m.pcr }}</span>
+                    <span id="trend-tag" class="text-xs font-black uppercase tracking-wider mt-4 font-mono bg-slate-100 px-3 py-1 rounded border border-slate-200 w-max text-slate-600">{{ m.trend }}</span>
                 </div>
-                
-                <div id="jadui-container" class="flex justify-between items-center text-sm md:text-base border {{ 'border-rose-400 bg-rose-500 text-white animate-pulse' if m.spot < m.jadui_spot else 'border-emerald-300 bg-emerald-50 text-slate-800' }} p-4 rounded-lg shadow-sm transition-all duration-300">
-                    <span class="font-black flex items-center gap-1">✨ Dynamic Jadui Spot Pivot</span>
-                    <span id="jadui-val" class="font-mono font-black text-lg md:text-xl {{ 'text-white' if m.spot < m.jadui_spot else 'text-emerald-600' }}">₹{{ m.jadui_spot }}</span>
-                </div>
-            </div>
 
-            <div class="bg-gradient-to-br from-blue-600 to-indigo-700 text-white rounded-xl p-5 flex flex-col justify-between shadow-md">
-                <div class="space-y-4">
-                    <div class="flex justify-between items-center border-b border-blue-400/30 pb-2">
-                        <span class="text-xs font-black text-blue-100 tracking-widest uppercase font-mono">LIVE STRATEGY ROUTER</span>
-                        <span class="bg-white/20 text-white font-mono text-xs px-2.5 py-0.5 rounded-md uppercase font-bold tracking-wide">Alpha Engine</span>
-                    </div>
-                    <div>
-                        <p id="scalp-action" class="text-base md:text-lg font-black tracking-wide font-mono leading-snug text-white">⚡ {{ m.scalp_action }}</p>
-                    </div>
-                    <div class="bg-blue-950/40 border border-blue-400/30 rounded-xl p-3.5 mt-2">
-                        <span class="text-xs font-black text-amber-300 tracking-wider uppercase font-mono block mb-1">🎯 Directional Pick for Intraday Long Scalp</span>
-                        <p id="directional-long" class="text-sm md:text-base font-black font-mono tracking-wide text-white leading-relaxed">{{ m.directional_long }}</p>
+                <div class="bg-white border border-slate-200 rounded-xl p-5 flex flex-col justify-between shadow-sm">
+                    <span class="text-xs md:text-sm font-bold text-slate-400 tracking-widest uppercase font-mono">RSI MOMENTUM COUNTER</span>
+                    <span id="rsi-val" class="text-lg md:text-xl font-black text-slate-800 mt-2 font-mono"><span class="mr-1">{{ m.rsi_color }}</span> {{ m.rsi }} <span class="text-xs md:text-sm text-slate-500 font-bold">({{ m.rsi_status }})</span></span>
+                    <p class="text-xs text-slate-400 font-medium leading-relaxed mt-4">Real-time velocity momentum index mapping overbought / oversold curves.</p>
+                </div>
+
+                <div class="bg-gradient-to-br from-blue-600 to-indigo-700 text-white rounded-xl p-5 flex flex-col justify-between shadow-md">
+                    <div class="space-y-4">
+                        <div class="flex justify-between items-center border-b border-blue-400/30 pb-2">
+                            <span class="text-xs font-black text-blue-100 tracking-widest uppercase font-mono">LIVE STRATEGY ROUTER</span>
+                            <span class="bg-white/20 text-white font-mono text-xs px-2.5 py-0.5 rounded-md uppercase font-bold tracking-wide">Alpha Engine</span>
+                        </div>
+                        <div>
+                            <p id="scalp-action" class="text-base md:text-lg font-black tracking-wide font-mono leading-snug text-white">⚡ {{ m.scalp_action }}</p>
+                        </div>
+                        <div class="bg-blue-950/40 border border-blue-400/30 rounded-xl p-3.5 mt-1">
+                            <span class="text-xs font-black text-amber-300 tracking-wider uppercase font-mono block mb-1">🎯 Directional Pick for Intraday Long Scalp</span>
+                            <p id="directional-long" class="text-sm md:text-base font-black font-mono tracking-wide text-white leading-relaxed">{{ m.directional_long }}</p>
+                        </div>
                     </div>
                 </div>
             </div>
