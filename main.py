@@ -1,5 +1,5 @@
+import os
 import requests
-import round from math
 from flask import Flask, render_template, jsonify
 
 app = Flask(__name__)
@@ -8,13 +8,12 @@ app = Flask(__name__)
 def fetch_live_market_data():
     """
     Fetches real-time option chain data and index spot levels.
-    Replace with your actual NSE/Groww API endpoint or scraping broker daemon.
     """
     try:
         # Simulated structure mimicking live exchange payloads from Groww
         # In production, replace this dict with your actual live API request response
         live_payload = {
-            "spot_price": 23240.75,
+            "spot_price": 23245.15,
             "total_put_oi": 2090491,
             "total_call_oi": 3236796,
             "day_high": 23266.85,
@@ -89,19 +88,15 @@ def process_goat_pro_intelligence(data):
 def index():
     raw_data = fetch_live_market_data()
     processed_metrics = process_goat_pro_intelligence(raw_data)
-    
-    # Returns data directly to your frontend template (e.g., index.html)
     return render_template('index.html', m=processed_metrics)
 
 @app.route('/api/refresh', methods=['GET'])
 def api_refresh():
-    """ Trigger endpoint for the [🔄 FORCED DATA REFRESH] client UI button """
     raw_data = fetch_live_market_data()
     processed_metrics = process_goat_pro_intelligence(raw_data)
     return jsonify(processed_metrics)
 
 if __name__ == '__main__':
     # Configured to bind correctly to Render's dynamic port environment variable
-    import os
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
