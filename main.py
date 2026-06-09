@@ -3,7 +3,7 @@ from flask import Flask, render_template_string, jsonify
 
 app = Flask(__name__)
 
-# Surgical Blue Theme Layout
+# Template wahi hai, bas function ke variables ke sath matched hai
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
@@ -14,7 +14,6 @@ HTML_TEMPLATE = """
     <div class="max-w-4xl mx-auto space-y-6">
         <header class="flex justify-between items-center border-b border-blue-800 pb-4">
             <h1 class="text-2xl font-black text-blue-400">⚡ GOAT PRO COMMAND CENTER</h1>
-            <a href="/api/refresh" class="text-xs bg-blue-900 px-3 py-1 rounded">🔄 Refresh</a>
         </header>
 
         <div class="grid grid-cols-2 gap-4">
@@ -53,34 +52,30 @@ HTML_TEMPLATE = """
 
 def get_data():
     try:
-        # Fetching Nifty and Global Crude
         nifty = yf.Ticker("^NSEI").history(period="1d")
         crude = yf.Ticker("CL=F").history(period="1d")
         
-        spot = round(nifty['Close'].iloc[-1], 2)
-        # Using a multiplier if needed for local price alignment, else keeping raw
-        crude_val = round(crude['Close'].iloc[-1] * 83.5, 2) # Approximation for INR conversion if needed
-        
-        # Indicators Logic
-        pcr = 0.78 
-        rsi = 54.2
-        trend = "BULLISH" if spot > 23200 else "BEARISH"
-        signal = "BUY CALL ABOVE 23200"
+        spot = round(nifty['Close'].iloc[-1], 2) if not nifty.empty else 0.0
+        crude_val = round(crude['Close'].iloc[-1] * 83.5, 2) if not crude.empty else 0.0
         
         return {
             "spot": spot, 
             "crude": crude_val, 
-            "pcr": pcr, 
-            "rsi": rsi, 
-            "trend": trend,
-            "signal": signal
+            "pcr": 0.78, 
+            "rsi": 54.2, 
+            "trend": "BULLISH" if spot > 23200 else "BEARISH", 
+            "signal": "BUY CALL ABOVE 23200"
         }
-    except Exception as e:
+    except:
         return {"spot": 0, "crude": 0, "pcr": 0, "rsi": 0, "trend": "Error", "signal": "Data Error"}
 
 @app.route('/')
 def index():
     return render_template_string(HTML_TEMPLATE, m=get_data())
+
+@app.route('/api/refresh')
+def api_refresh():
+    return jsonify(get_data())
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
