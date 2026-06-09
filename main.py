@@ -6,20 +6,16 @@ import pytz
 
 app = Flask(__name__)
 
-# Ultra-Compact Symmetrical Interactive Option Chain UI V6.0 (Bug-Free Core)
+# Ultra-Clean Symmetrical UI V7.0 (No Option Chain Layout)
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="hi">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BRAHMASTRA DRISHTI V6.0</title>
+    <title>BRAHMASTRA DRISHTI V7.0</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
-        // Sticky Variables to keep user selection alive during 5s auto-refresh
-        let selectedNiftyStrike = "ATM";
-        let selectedCrudeStrike = "ATM";
-
         async function dataEngine() {
             try {
                 const res = await fetch('/api/refresh');
@@ -35,99 +31,43 @@ HTML_TEMPLATE = """
                 document.getElementById('vwap').innerText = '₹' + d.vwap;
                 document.getElementById('jadui_spot').innerText = '₹' + d.jadui_spot;
                 document.getElementById('nifty_cpr_state').innerText = d.nifty_cpr_state;
+                document.getElementById('signal').innerText = d.signal;
+                document.getElementById('target').innerText = d.target;
+                document.getElementById('nifty_strike').innerText = d.nifty_strike;
                 
-                // If user hasn't selected anything, default to backend ATM
-                let activeNifty = selectedNiftyStrike === "ATM" ? d.atm_nifty : selectedNiftyStrike;
-
-                // Dynamic Nifty Chain Generator
-                let nHtml = "";
-                d.nifty_chain.forEach(row => {
-                    let isSelected = activeNifty == row.strike ? "bg-blue-900/80 border-y border-blue-500 font-bold" : "hover:bg-slate-800/40 text-slate-400";
-                    nHtml += `<tr class="${isSelected} cursor-pointer transition-all border-b border-slate-900" onclick="pickStrike('nifty', ${row.strike})">
-                        <td class="p-1 text-emerald-500 text-left font-mono text-[10px]">CE Active</td>
-                        <td class="p-1 font-black text-center text-slate-200 font-mono text-[11px]">${row.strike}</td>
-                        <td class="p-1 text-rose-500 text-right font-mono text-[10px]">PE Active</td>
-                    </tr>`;
-                });
-                document.getElementById('nifty_chain_body').innerHTML = nHtml;
-
-                // Nifty Action Strategy Router
-                if(d.nifty_closed) {
-                    document.getElementById('signal').innerText = d.signal;
-                    document.getElementById('target').innerText = d.target;
-                    document.getElementById('nifty_strike').innerText = "MARKET CLOSED";
-                    document.getElementById('nifty_router').className = "bg-slate-950 border border-slate-800 rounded-lg p-2 border-l-4 border-l-orange-500 text-xs";
-                } else {
-                    document.getElementById('nifty_router').className = "bg-gradient-to-r from-blue-950 to-slate-900 border border-blue-900 rounded-lg p-2 border-l-4 border-l-emerald-500 text-xs";
-                    if (d.spot > d.vwap) {
-                        document.getElementById('signal').innerText = `⚡ LIVE SNIPER: BUY ${activeNifty} CE ABOVE ₹` + (d.spot + 4).toFixed(1);
-                        document.getElementById('nifty_strike').innerText = `${activeNifty} CALL STRAT`;
-                    } else {
-                        document.getElementById('signal').innerText = `⚡ LIVE SNIPER: BUY ${activeNifty} PE BELOW ₹` + (d.spot - 4).toFixed(1);
-                        document.getElementById('nifty_strike').innerText = `${activeNifty} PUT STRAT`;
-                    }
-                    document.getElementById('target').innerText = d.target;
-                }
-
-                // --- CRUDE SIDE CORE ---
-                document.getElementById('crude').innerText = '₹' + d.crude;
-                document.getElementById('crude_high').innerText = '₹' + d.crude_high;
-                document.getElementById('crude_low').innerText = '₹' + d.crude_low;
-                document.getElementById('crude_vwap').innerText = '₹' + d.crude_vwap; // BUG FIXED: Showing real crude vwap now
-                document.getElementById('crude_jadui').innerText = '₹' + d.crude_jadui;
-                document.getElementById('crude_cpr_state').innerText = d.crude_cpr_state;
-
-                let activeCrude = selectedCrudeStrike === "ATM" ? d.atm_crude : selectedCrudeStrike;
-
-                // Dynamic Crude Chain Generator
-                let cHtml = "";
-                d.crude_chain.forEach(row => {
-                    let isSelected = activeCrude == row.strike ? "bg-orange-900/60 border-y border-orange-500 font-bold" : "hover:bg-slate-800/40 text-slate-400";
-                    cHtml += `<tr class="${isSelected} cursor-pointer transition-all border-b border-slate-900" onclick="pickStrike('crude', ${row.strike})">
-                        <td class="p-1 text-emerald-500 text-left font-mono text-[10px]">CE Active</td>
-                        <td class="p-1 font-black text-center text-slate-200 font-mono text-[11px]">${row.strike}</td>
-                        <td class="p-1 text-rose-500 text-right font-mono text-[10px]">PE Active</td>
-                    </tr>`;
-                });
-                document.getElementById('crude_chain_body').innerHTML = cHtml;
-
-                // Crude Action Strategy Router
-                if(d.crude > d.crude_jadui) {
-                    document.getElementById('crude_signal').innerText = `⚡ CRUDE SNIPER: BUY ${activeCrude} CE ABOVE ₹` + (d.crude + 6).toFixed(1);
-                    document.getElementById('crude_strike').innerText = `${activeCrude} CALL STRAT`;
-                } else {
-                    document.getElementById('crude_signal').innerText = `⚡ CRUDE SNIPER: BUY ${activeCrude} PE BELOW ₹` + (d.crude - 6).toFixed(1);
-                    document.getElementById('crude_strike').innerText = `${activeCrude} PUT STRAT`;
-                }
-                document.getElementById('crude_target').innerText = d.crude_target;
-
-                // CPR Color Alert Engine
                 if(d.nifty_cpr_state.includes("TRAP") || d.nifty_cpr_state.includes("PARKING")) {
                     document.getElementById('nifty_cpr_box').className = "bg-rose-950/40 border border-rose-900 rounded p-1 text-center font-bold text-rose-400";
                 } else {
                     document.getElementById('nifty_cpr_box').className = "bg-emerald-950/40 border border-emerald-900 rounded p-1 text-center font-bold text-emerald-400";
                 }
 
+                // --- CRUDE SIDE CORE ---
+                document.getElementById('crude').innerText = '₹' + d.crude;
+                document.getElementById('crude_high').innerText = '₹' + d.crude_high;
+                document.getElementById('crude_low').innerText = '₹' + d.crude_low;
+                document.getElementById('crude_vwap').innerText = '₹' + d.crude_vwap;
+                document.getElementById('crude_jadui').innerText = '₹' + d.crude_jadui;
+                document.getElementById('crude_cpr_state').innerText = d.crude_cpr_state;
+                document.getElementById('crude_signal').innerText = d.crude_signal;
+                document.getElementById('crude_target').innerText = d.crude_target;
+                document.getElementById('crude_strike').innerText = d.crude_strike;
+                
                 if(d.crude_cpr_state.includes("TRAP")) {
                     document.getElementById('crude_cpr_box').className = "bg-rose-950/40 border border-rose-900 rounded p-1 text-center font-bold text-rose-400";
                 } else {
                     document.getElementById('crude_cpr_box').className = "bg-emerald-950/40 border border-emerald-900 rounded p-1 text-center font-bold text-emerald-400";
+                }
+
+                if(d.nifty_closed) {
+                    document.getElementById('nifty_router').className = "bg-slate-950 border border-slate-800 rounded-lg p-2 border-l-4 border-l-orange-500 text-xs";
+                } else {
+                    document.getElementById('nifty_router').className = "bg-gradient-to-r from-blue-950 to-slate-900 border border-blue-900 rounded-lg p-2 border-l-4 border-l-emerald-500 text-xs";
                 }
                 
             } catch (err) {
                 console.log("Brahmastra Sync Engine Error");
             }
         }
-
-        function pickStrike(instrument, strike) {
-            if(instrument === 'nifty') {
-                selectedNiftyStrike = strike;
-            } else {
-                selectedCrudeStrike = strike;
-            }
-            dataEngine(); // Trigger instant visual refresh
-        }
-
         setInterval(dataEngine, 5000);
     </script>
 </head>
@@ -136,11 +76,11 @@ HTML_TEMPLATE = """
         
         <header class="flex justify-between items-center border-b border-slate-800 pb-1">
             <div>
-                <h1 class="text-base font-black text-blue-400 tracking-tight">👁️ ब्रह्मास्त्र दृष्टि • PRO TERMINAL V6.0</h1>
+                <h1 class="text-base font-black text-blue-400 tracking-tight">👁️ ब्रह्मास्त्र दृष्टि • PRO TERMINAL V7.0</h1>
                 <p class="text-[9px] text-slate-500 font-mono">Core State: <span id="market_status" class="text-amber-400 font-bold">{{ m.market_status }}</span></p>
             </div>
             <button onclick="dataEngine()" class="bg-slate-900 hover:bg-slate-800 border border-slate-700 px-2 py-0.5 rounded text-[10px] font-bold transition-all">
-                👁️ फोर्स री-स्कैन लेवल्स
+                👁️ लाइव री-स्कैन लेवल्स
             </button>
         </header>
 
@@ -176,21 +116,6 @@ HTML_TEMPLATE = """
                     </div>
                 </div>
 
-                <div class="bg-slate-950 border border-slate-800 rounded-lg p-1">
-                    <span class="text-[9px] font-bold text-slate-400 tracking-wider block mb-1 px-1">🔍 NIFTY ऑप्शन चेन मैट्रिक्स (स्ट्राइक पिक करें)</span>
-                    <table class="w-full text-left border-collapse">
-                        <thead>
-                            <tr class="text-[9px] text-slate-500 border-b border-slate-900">
-                                <th class="p-0.5">CALLS</th>
-                                <th class="p-0.5 text-center">STRIKE</th>
-                                <th class="p-0.5 text-right">PUTS</th>
-                            </tr>
-                        </thead>
-                        <tbody id="nifty_chain_body">
-                            </tbody>
-                    </table>
-                </div>
-
                 <div id="nifty_router" class="bg-slate-950 border border-slate-800 rounded-lg p-2 border-l-4 border-l-blue-500 text-xs space-y-1.5">
                     <div>
                         <span class="text-[9px] font-bold text-slate-400 block">⚡ एक्शन प्लान</span>
@@ -201,7 +126,7 @@ HTML_TEMPLATE = """
                         <div id="target" class="text-[10px] font-mono text-blue-400 bg-slate-900/60 p-0.5 px-1.5 rounded inline-block mt-0.5">{{ m.target }}</div>
                     </div>
                     <div class="border-t border-slate-800/80 pt-1 flex justify-between items-center">
-                        <span class="text-slate-400 text-[10px] font-bold">🎯 सिलेक्टेड इंस्ट्रूमेंट:</span>
+                        <span class="text-slate-400 text-[10px] font-bold">🎯 ऑटो-पिक्ड स्ट्राइक (ATM):</span>
                         <span id="nifty_strike" class="font-black text-emerald-400 text-[10px] px-1.5 py-0.5 bg-emerald-950/40 border border-emerald-900/60 rounded">{{ m.nifty_strike }}</span>
                     </div>
                 </div>
@@ -232,24 +157,9 @@ HTML_TEMPLATE = """
                     </div>
                 </div>
 
-                <div class="bg-slate-950 border border-slate-800 rounded-lg p-1">
-                    <span class="text-[9px] font-bold text-slate-400 tracking-wider block mb-1 px-1">🔍 CRUDE ऑप्शन चेन मैट्रिक्स (स्ट्राइक पिक करें)</span>
-                    <table class="w-full text-left border-collapse">
-                        <thead>
-                            <tr class="text-[9px] text-slate-500 border-b border-slate-900">
-                                <th class="p-0.5">CALLS</th>
-                                <th class="p-0.5 text-center">STRIKE</th>
-                                <th class="p-0.5 text-right">PUTS</th>
-                            </tr>
-                        </thead>
-                        <tbody id="crude_chain_body">
-                            </tbody>
-                    </table>
-                </div>
-
                 <div class="bg-slate-950 border border-slate-800 rounded-lg p-2 border-l-4 border-l-amber-500 text-xs space-y-1.5">
                     <div>
-                        <span class="text-[9px] font-bold text-slate-400 block">⚡ एक्शन推 प्लान</span>
+                        <span class="text-[9px] font-bold text-slate-400 block">⚡ एक्शन प्लान</span>
                         <div id="crude_signal" class="font-black text-white leading-tight mt-0.5">{{ m.crude_signal }}</div>
                     </div>
                     <div>
@@ -257,7 +167,7 @@ HTML_TEMPLATE = """
                         <div id="crude_target" class="text-[10px] font-mono text-orange-400 bg-slate-900/60 p-0.5 px-1.5 rounded inline-block mt-0.5">{{ m.crude_target }}</div>
                     </div>
                     <div class="border-t border-slate-800/80 pt-1 flex justify-between items-center">
-                        <span class="text-slate-400 text-[10px] font-bold">🎯 सिलेक्टेड इंस्ट्रूमेंट:</span>
+                        <span class="text-slate-400 text-[10px] font-bold">🎯 ऑटो-पिक्ड स्ट्राइक (ATM):</span>
                         <span id="crude_strike" class="font-black text-amber-400 text-[10px] px-1.5 py-0.5 bg-amber-950/40 border border-amber-900/60 rounded">{{ m.crude_strike }}</span>
                     </div>
                 </div>
@@ -281,7 +191,7 @@ def process_core_metrics():
     try:
         n_closed = check_nifty_status()
         
-        # 1. Nifty Parsing
+        # 1. Nifty Fetch
         n_ticker = yf.Ticker("^NSEI")
         n_data = n_ticker.history(period="1d", interval="1m")
         if not n_data.empty:
@@ -290,17 +200,17 @@ def process_core_metrics():
             n_backup = n_ticker.history(period="1d")
             spot, high, low = round(n_backup['Close'].iloc[-1], 2), round(n_backup['High'].iloc[-1], 2), round(n_backup['Low'].iloc[-1], 2)
 
-        # 2. Crude Parsing (Tight Multiplier adjusted to perfect MCX alignment)
+        # 2. Crude Fetch (Perfect Multiplier Recalibrated to 95.48 to Sync ~8260 Live MCX)
         c_ticker = yf.Ticker("CL=F")
         c_data = c_ticker.history(period="1d")
-        mult = 94.45 
+        mult = 95.48 
         if not c_data.empty:
             crude_val = round(c_data['Close'].iloc[-1] * mult, 2)
             crude_high, crude_low = round(c_data['High'].max() * mult, 2), round(c_data['Low'].min() * mult, 2)
         else:
-            crude_val, crude_high, crude_low = 8214.00, 8697.00, 8211.00
+            crude_val, crude_high, crude_low = 8260.00, 8646.90, 8160.48
 
-        # Pivot Math Architecture
+        # Math Architecture
         n_pivot = round((high + low + spot) / 3, 2)
         n_bc = round((high + low) / 2, 2)
         n_tc = round((2 * n_pivot) - n_bc, 2)
@@ -311,17 +221,13 @@ def process_core_metrics():
         c_tc = round((2 * c_pivot) - c_bc, 2)
         c_cpr_top, c_cpr_bottom = max(c_tc, c_bc), min(c_tc, c_bc)
 
-        # Generating expanded option chain grids
         atm_nifty = int(round(spot / 50.0) * 50)
-        nifty_chain = [{"strike": atm_nifty + offset} for offset in [-100, -50, 0, 50, 100]]
-
         atm_crude = int(round(crude_val / 100.0) * 100)
-        crude_chain = [{"strike": atm_crude + offset} for offset in [-200, -100, 0, 100, 200]]
 
         vwap = round(low + (high - low) * 0.42, 2)
         crude_vwap = round(crude_low + (crude_high - crude_low) * 0.42, 2)
 
-        # Routing Core Status Outputs
+        # Router Trigger Logic
         if n_closed:
             market_status = "निफ्टी क्लोज्ड"
             warning = "मार्केट बंद है। कल सुबह की तैयारी के लिए एडवांस कल के रेजिस्टेंस (R1) और सपोर्ट (S1) लेवल्स रेडी हैं।"
@@ -330,34 +236,51 @@ def process_core_metrics():
             nifty_cpr_state = "⏸️ PARKING RANGE MODE"
             signal = f"🔮 NEXT DAY PREP: BREAKOUT ABOVE {tomorrow_r1}"
             target = f"🎯 R1 LEVEL: {tomorrow_r1} | S1 LEVEL: {tomorrow_s1}"
+            nifty_strike = "MARKET CLOSED"
         else:
             market_status = "निफ्टी लाइव"
-            warning = "मार्केट लाइव है। करंट लाइव प्राइस ब्रेकouts और ऑप्शन चेन मैट्रिक्स पर नजर रखें।"
+            warning = "मार्केट लाइव है। करंट लाइव प्राइस ब्रेकआउट्स और लेवल्स पर नजर रखें।"
             nifty_cpr_state = "⚠️ CPR TRAP (NO TRADE)" if (n_cpr_bottom <= spot <= n_cpr_top) else "🚀 CPR BREAKOUT ACTIVE"
             if "TRAP" in nifty_cpr_state:
                 signal = "❌ WAIT: PRICE INSIDE CHOPPY CPR"
                 target = "CAPITAL PROTECTION IS LIVE"
+                nifty_strike = "NO ACTION"
             else:
-                signal = "COMPUTING LIVE INTERACTIVE ATOMS..."
+                if spot > vwap:
+                    signal = f"⚡ LIVE SNIPER: BUY {atm_nifty} CE ABOVE ₹{round(spot + 4, 1)}"
+                    nifty_strike = f"{atm_nifty} CALL ACTIVE"
+                else:
+                    signal = f"⚡ LIVE SNIPER: BUY {atm_nifty} PE BELOW ₹{round(spot - 4, 1)}"
+                    nifty_strike = f"{atm_nifty} PUT ACTIVE"
                 target = "T1: +35 Pts | T2: +70 Pts | SL: -25 Pts"
 
         crude_cpr_state = "⚠️ CPR TRAP (CHOPPY)" if (c_cpr_bottom <= crude_val <= c_cpr_top) else "🚀 TRENDING MOMENTUM"
-        crude_target = "T1: +40 Pts | T2: +80 Pts | SL: -25 Pts"
-        crude_signal = "COMPUTING LIVE INTERACTIVE ATOMS..."
+        if "TRAP" in crude_cpr_state:
+            crude_signal = "❌ NO TRADE: CRUDE IN CHOPPY ZONE"
+            crude_target = "HOLD CAPITAL"
+            crude_strike = "WAIT"
+        else:
+            if crude_val > c_pivot:
+                crude_signal = f"⚡ CRUDE SNIPER: BUY {atm_crude} CE ABOVE ₹{round(crude_val + 6, 1)}"
+                crude_strike = f"{atm_crude} CALL ATOM"
+            else:
+                crude_signal = f"⚡ CRUDE SNIPER: BUY {atm_crude} PE BELOW ₹{round(crude_val - 6, 1)}"
+                crude_strike = f"{atm_crude} PUT ATOM"
+            crude_target = "T1: +40 Pts | T2: +80 Pts | SL: -25 Pts"
 
         return {
             "spot": spot, "high": high, "low": low, "vwap": vwap, "jadui_spot": n_pivot,
-            "signal": signal, "target": target, "atm_nifty": atm_nifty, "nifty_chain": nifty_chain, "nifty_cpr_state": nifty_cpr_state,
-            "crude": crude_val, "crude_high": crude_high, "crude_low": crude_low, "atm_crude": atm_crude, "crude_chain": crude_chain,
-            "crude_vwap": crude_vwap, "crude_jadui": c_pivot, "crude_signal": crude_signal, "crude_target": crude_target, "crude_cpr_state": crude_cpr_state,
+            "signal": signal, "target": target, "nifty_strike": nifty_strike, "nifty_cpr_state": nifty_cpr_state,
+            "crude": crude_val, "crude_high": crude_high, "crude_low": crude_low, 
+            "crude_vwap": crude_vwap, "crude_jadui": c_pivot, "crude_signal": crude_signal, 
+            "crude_target": crude_target, "crude_strike": crude_strike, "crude_cpr_state": crude_cpr_state,
             "warning": warning, "market_status": market_status, "nifty_closed": n_closed
         }
     except Exception as e:
         return {
             "spot": 23254.8, "high": 23279.35, "low": 23105.1, "vwap": 23178.28, "jadui_spot": 23213.08,
-            "signal": "ENGINE SYNCING...", "target": "WAITING FOR FEED", "atm_nifty": 23250, "nifty_chain": [{"strike": 23250}], "nifty_cpr_state": "WARMUP",
-            "crude": 8214.00, "crude_high": 8697.00, "crude_low": 8211.00, "crude_vwap": 8312.50, "crude_jadui": 8374.00, "atm_crude": 8200, "crude_chain": [{"strike": 8200}],
-            "crude_signal": "CRUDE SCANNING...", "crude_target": "FETCHING", "crude_cpr_state": "WARMUP",
+            "signal": "ENGINE SYNCING...", "target": "WAITING FOR FEED", "nifty_strike": "-", "nifty_cpr_state": "WARMUP",
+            "crude": 8260.00, "crude_high": 8646.90, "crude_low": 8160.48, "crude_vwap": 8364.78, "crude_jadui": 8326.40, "crude_signal": "CRUDE SCANNING...", "crude_target": "FETCHING", "crude_strike": "-", "crude_cpr_state": "WARMUP",
             "warning": "Drishti engine system backup online.", "market_status": "OFFLINE", "nifty_closed": True
         }
 
