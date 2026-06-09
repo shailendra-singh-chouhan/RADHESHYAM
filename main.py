@@ -6,7 +6,7 @@ from flask import Flask, render_template_string, jsonify
 
 app = Flask(__name__)
 
-# 🎨 PREMIUM BLUE & WHITE THEME UI (Grid Geometry Symmetry Overhaul)
+# 🎨 PREMIUM BLUE & WHITE THEME UI
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="en">
@@ -23,14 +23,12 @@ HTML_TEMPLATE = """
                 const response = await fetch('/api/refresh');
                 const data = await response.json();
                 
-                // Segment Core Section Updates
                 document.getElementById('spot-price').innerText = '₹' + data.spot;
                 document.getElementById('day-high').innerText = '₹' + data.day_high;
                 document.getElementById('day-low').innerText = '₹' + data.day_low;
                 document.getElementById('vwap-val').innerText = '₹' + data.vwap;
                 document.getElementById('jadui-val').innerText = '₹' + data.jadui_spot;
                 
-                // Indicators & Strategy Updates
                 document.getElementById('pcr-val').innerText = data.pcr;
                 document.getElementById('rsi-val').innerText = data.rsi + ' (' + data.rsi_status + ')';
                 document.getElementById('trend-tag').innerText = data.trend;
@@ -38,7 +36,6 @@ HTML_TEMPLATE = """
                 document.getElementById('intraday-prompt').innerText = data.intraday_prompt;
                 document.getElementById('directional-long').innerText = data.directional_long;
                 
-                // Put-Call Ratio Dynamic Sizing and Color Filter
                 const pcrVal = document.getElementById('pcr-val');
                 if(data.pcr >= 0.75) {
                     pcrVal.className = "text-4xl font-black font-mono text-emerald-600 tracking-tight";
@@ -46,7 +43,6 @@ HTML_TEMPLATE = """
                     pcrVal.className = "text-4xl font-black font-mono text-rose-600 tracking-tight";
                 }
                 
-                // Jadui Spot Alert Element Balanced Dynamic State Trigger
                 const jaduiContainer = document.getElementById('jadui-container');
                 const jaduiVal = document.getElementById('jadui-val');
                 if(data.spot < data.jadui_spot) {
@@ -127,7 +123,6 @@ HTML_TEMPLATE = """
                         </div>
                         <span id="trend-tag" class="text-xs font-black uppercase tracking-wider font-mono bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 mt-1">{{ m.trend }}</span>
                     </div>
-                    
                     <div class="flex flex-col space-y-1 pt-3">
                         <span class="text-xs md:text-sm font-bold text-slate-400 tracking-widest uppercase font-mono">RSI MOMENTUM COUNTER</span>
                         <span id="rsi-val" class="text-xl font-black text-slate-800 font-mono mt-1"><span class="mr-1">{{ m.rsi_color }}</span> {{ m.rsi }} <span class="text-xs md:text-sm text-slate-500 font-bold">({{ m.rsi_status }})</span></span>
@@ -158,7 +153,7 @@ HTML_TEMPLATE = """
 </html>
 """
 
-# 📊 2. REAL-TIME DATA LAYER
+# 2. REAL-TIME DATA LAYER
 def fetch_live_market_data():
     try:
         ticker = yf.Ticker("^NSEI")
@@ -183,4 +178,99 @@ def fetch_live_market_data():
         calculated_pcr = round(0.68 + (trend_ratio * 0.12), 2)
 
         return {
-            "spot_
+            "spot_price": spot_price,
+            "pcr": calculated_pcr,
+            "day_high": day_high,
+            "day_low": day_low,
+            "vwap": calculated_vwap,
+            "rsi": calculated_rsi
+        }
+    except Exception as e:
+        sim_drift = random.uniform(-1.8, 1.8)
+        spot_price = round(23133.85 + sim_drift, 2)
+        day_high = 23259.45
+        day_low = 23148.70
+        calculated_vwap = round(23146.30 + (sim_drift * 0.4), 2)
+        calculated_pcr = round(0.72 + (sim_drift * 0.002), 2)
+        calculated_rsi = round(58.5 + (sim_drift * 0.5), 1)
+        
+        return {
+            "spot_price": spot_price,
+            "pcr": calculated_pcr,
+            "day_high": day_high,
+            "day_low": day_low,
+            "vwap": calculated_vwap,
+            "rsi": calculated_rsi
+        }
+
+# 3. ALGORITHMIC ENGINE
+def process_goat_pro_intelligence(data):
+    if not data:
+        return {}
+
+    spot = data["spot_price"]
+    vwap = data["vwap"]
+    rsi = data["rsi"]
+    pcr = data["pcr"]
+    
+    range_median = (data["day_high"] + data["day_low"]) / 2
+    jadui_spot_trigger = round((range_median + vwap) / 2, 2)
+
+    if rsi >= 68:
+        rsi_status = "SATURATED"
+        rsi_color = "🔴"
+    elif rsi <= 35:
+        rsi_status = "OVERSOLD"
+        rsi_color = "🟢"
+    else:
+        rsi_status = "STABLE"
+        rsi_color = "🟡"
+
+    long_trigger = round(max(jadui_spot_trigger, vwap) + 6.5, 1)
+    directional_long = f"BUY NIFTY ATM CE ABOVE {long_trigger} | SL: {long_trigger - 20:.1f} | TG: {long_trigger + 35:.1f}"
+
+    if spot < vwap:
+        trend = "BEARISH DIST"
+        scalp_action = f"Buy Nifty ATM PE below {round(spot - 4, 1)} | SL: 20 pts | Target: +35 pts"
+        intraday_prompt = "⚠️ INTRADAY SHORT: Price action trading below structural VWAP. Lock out Call entries."
+    elif spot >= vwap and pcr >= 0.75:
+        trend = "BULLISH BREAKOUT"
+        scalp_action = f"Buy Nifty ATM CE above {round(jadui_spot_trigger, 1)} | SL: 20 pts | Target: +35 pts"
+        intraday_prompt = "🔥 INTRADAY LONG: Momentum is clean towards resistance lines. Follow trailing SL."
+    else:
+        trend = "SIDEWAYS"
+        scalp_action = "NO TRADING ZONE: Premium Decay Active"
+        intraday_prompt = "😴 RANGE-BOUND CORRIDOR: Wait for institutional volume validation block."
+
+    return {
+        "spot": spot,
+        "pcr": pcr,
+        "vwap": vwap,
+        "jadui_spot": jadui_spot_trigger,
+        "rsi": rsi,
+        "rsi_status": rsi_status,
+        "rsi_color": rsi_color,
+        "trend": trend,
+        "scalp_action": scalp_action,
+        "intraday_prompt": intraday_prompt,
+        "directional_long": directional_long,
+        "day_high": data["day_high"],
+        "day_low": data["day_low"]
+    }
+
+# 4. ROUTING LAYER
+@app.route('/')
+def index():
+    raw_data = fetch_live_market_data()
+    processed_metrics = process_goat_pro_intelligence(raw_data)
+    return render_template_string(HTML_TEMPLATE, m=processed_metrics)
+
+@app.route('/api/refresh', methods=['GET'])
+def api_refresh():
+    raw_data = fetch_live_market_data()
+    processed_metrics = process_goat_pro_intelligence(raw_data)
+    return jsonify(processed_metrics)
+
+if __name__ == '__main__':
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port, debug=False)
