@@ -6,7 +6,7 @@ from flask import Flask, render_template_string, jsonify
 
 app = Flask(__name__)
 
-# 🎨 PREMIUM BLUE & WHITE THEME UI (Segment Grouping + Big Symmetrical Sizing)
+# 🎨 PREMIUM BLUE & WHITE THEME UI (Symmetrical 2-Section Grid + Combined PCR & RSI Card)
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="en">
@@ -38,25 +38,22 @@ HTML_TEMPLATE = """
                 document.getElementById('intraday-prompt').innerText = data.intraday_prompt;
                 document.getElementById('directional-long').innerText = data.directional_long;
                 
-                // Put-Call Ratio Element Dynamic Toggle
-                const pcrBox = document.getElementById('pcr-box');
+                // Put-Call Ratio Dynamic Text Color Toggle
                 const pcrVal = document.getElementById('pcr-val');
                 if(data.pcr >= 0.75) {
-                    pcrBox.className = "bg-white border-2 border-emerald-400 rounded-xl p-5 flex flex-col justify-between shadow-sm transition-all duration-300";
-                    pcrVal.className = "text-4xl font-black font-mono text-emerald-600 tracking-tight mt-1";
+                    pcrVal.className = "text-3xl md:text-4xl font-black font-mono text-emerald-600 tracking-tight mt-1";
                 } else {
-                    pcrBox.className = "bg-white border-2 border-rose-400 rounded-xl p-5 flex flex-col justify-between shadow-sm transition-all duration-300";
-                    pcrVal.className = "text-4xl font-black font-mono text-rose-600 tracking-tight mt-1";
+                    pcrVal.className = "text-3xl md:text-4xl font-black font-mono text-rose-600 tracking-tight mt-1";
                 }
                 
                 // Jadui Spot Alert Element Dynamic Toggle
                 const jaduiContainer = document.getElementById('jadui-container');
                 const jaduiVal = document.getElementById('jadui-val');
                 if(data.spot < data.jadui_spot) {
-                    jaduiContainer.className = "flex justify-between items-center border-2 border-rose-500 bg-rose-500 text-white p-4 rounded-xl animate-pulse shadow-md transition-all duration-300";
+                    jaduiContainer.className = "flex justify-between items-center border-2 border-rose-500 bg-rose-500 text-white p-4 rounded-xl animate-pulse shadow-md transition-all duration-300 w-full";
                     jaduiVal.className = "font-mono font-black text-white text-lg md:text-xl";
                 } else {
-                    jaduiContainer.className = "flex justify-between items-center border-2 border-emerald-400 bg-emerald-50 text-slate-800 p-4 rounded-xl shadow-sm transition-all duration-300";
+                    jaduiContainer.className = "flex justify-between items-center border-2 border-emerald-400 bg-emerald-50 text-slate-800 p-4 rounded-xl shadow-sm transition-all duration-300 w-full";
                     jaduiVal.className = "font-mono font-black text-emerald-600 text-lg md:text-xl";
                 }
                 
@@ -119,17 +116,21 @@ HTML_TEMPLATE = """
 
         <section class="space-y-3 pt-2">
             <h2 class="text-base md:text-lg font-black text-blue-900 uppercase tracking-wider border-l-4 border-indigo-600 pl-2 font-mono">🧠 Algorithmic Indicators & Strategy Engine</h2>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
-                <div id="pcr-box" class="bg-white border {{ 'border-emerald-300' if m.pcr >= 0.75 else 'border-rose-300' }} rounded-xl p-5 flex flex-col justify-between shadow-sm">
-                    <span class="text-xs md:text-sm font-bold text-slate-400 tracking-widest uppercase font-mono">REAL PCR (HIGH VISIBILITY)</span>
-                    <span id="pcr-val" class="text-3xl md:text-4xl font-black tracking-tight mt-1 font-mono {{ 'text-emerald-600' if m.pcr >= 0.75 else 'text-rose-600' }}">{{ m.pcr }}</span>
-                    <span id="trend-tag" class="text-xs font-black uppercase tracking-wider mt-4 font-mono bg-slate-100 px-3 py-1 rounded border border-slate-200 w-max text-slate-600">{{ m.trend }}</span>
-                </div>
-
-                <div class="bg-white border border-slate-200 rounded-xl p-5 flex flex-col justify-between shadow-sm">
-                    <span class="text-xs md:text-sm font-bold text-slate-400 tracking-widest uppercase font-mono">RSI MOMENTUM COUNTER</span>
-                    <span id="rsi-val" class="text-lg md:text-xl font-black text-slate-800 mt-2 font-mono"><span class="mr-1">{{ m.rsi_color }}</span> {{ m.rsi }} <span class="text-xs md:text-sm text-slate-500 font-bold">({{ m.rsi_status }})</span></span>
-                    <p class="text-xs text-slate-400 font-medium leading-relaxed mt-4">Real-time velocity momentum index mapping overbought / oversold curves.</p>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                
+                <div class="bg-white border border-slate-200 rounded-xl p-5 flex flex-col justify-between shadow-sm space-y-4">
+                    <div class="flex justify-between items-center border-b border-slate-100 pb-4">
+                        <div class="flex flex-col">
+                            <span class="text-xs md:text-sm font-bold text-slate-400 tracking-widest uppercase font-mono">REAL PCR (HIGH VISIBILITY)</span>
+                            <span id="pcr-val" class="text-3xl md:text-4xl font-black tracking-tight mt-1 font-mono {{ 'text-emerald-600' if m.pcr >= 0.75 else 'text-rose-600' }}">{{ m.pcr }}</span>
+                        </div>
+                        <span id="trend-tag" class="text-xs font-black uppercase tracking-wider font-mono bg-slate-100 px-3 py-1 rounded border border-slate-200 text-slate-600">{{ m.trend }}</span>
+                    </div>
+                    
+                    <div class="flex flex-col pt-1">
+                        <span class="text-xs md:text-sm font-bold text-slate-400 tracking-widest uppercase font-mono">RSI MOMENTUM COUNTER</span>
+                        <span id="rsi-val" class="text-lg md:text-xl font-black text-slate-800 mt-1 font-mono"><span class="mr-1">{{ m.rsi_color }}</span> {{ m.rsi }} <span class="text-xs md:text-sm text-slate-500 font-bold">({{ m.rsi_status }})</span></span>
+                    </div>
                 </div>
 
                 <div class="bg-gradient-to-br from-blue-600 to-indigo-700 text-white rounded-xl p-5 flex flex-col justify-between shadow-md">
@@ -147,6 +148,7 @@ HTML_TEMPLATE = """
                         </div>
                     </div>
                 </div>
+                
             </div>
         </section>
     </main>
@@ -159,7 +161,6 @@ HTML_TEMPLATE = """
 def fetch_live_market_data():
     try:
         ticker = yf.Ticker("^NSEI")
-        # Using history fetch instead of download to dramatically avoid cloud blocks
         hist = ticker.history(period="1d", interval="1m")
         
         if not hist.empty and len(hist) > 1:
@@ -247,7 +248,7 @@ def process_goat_pro_intelligence(data):
         "day_high": data["day_high"], "day_low": data["day_low"]
     }
 
-# 🌐 4. ROUTING LAYER
+# 🌐 4. ROUTING LAYER WITH RENDER DYNAMIC PORTS
 @app.route('/')
 def index():
     raw_data = fetch_live_market_data()
