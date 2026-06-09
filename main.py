@@ -6,7 +6,7 @@ from flask import Flask, render_template_string, jsonify
 
 app = Flask(__name__)
 
-# 🎨 PREMIUM BLUE & WHITE THEME UI (Perfect Symmetrical Sizing Rows + Balanced Heights)
+# 🎨 PREMIUM BLUE & WHITE THEME UI (Grid Geometry Symmetry Overhaul)
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="en">
@@ -23,14 +23,14 @@ HTML_TEMPLATE = """
                 const response = await fetch('/api/refresh');
                 const data = await response.json();
                 
-                // Segment Core Section Sizing
+                // Segment Core Section Updates
                 document.getElementById('spot-price').innerText = '₹' + data.spot;
                 document.getElementById('day-high').innerText = '₹' + data.day_high;
                 document.getElementById('day-low').innerText = '₹' + data.day_low;
                 document.getElementById('vwap-val').innerText = '₹' + data.vwap;
                 document.getElementById('jadui-val').innerText = '₹' + data.jadui_spot;
                 
-                // Indicators & Strategy Sizing
+                // Indicators & Strategy Updates
                 document.getElementById('pcr-val').innerText = data.pcr;
                 document.getElementById('rsi-val').innerText = data.rsi + ' (' + data.rsi_status + ')';
                 document.getElementById('trend-tag').innerText = data.trend;
@@ -38,23 +38,23 @@ HTML_TEMPLATE = """
                 document.getElementById('intraday-prompt').innerText = data.intraday_prompt;
                 document.getElementById('directional-long').innerText = data.directional_long;
                 
-                // Put-Call Ratio Dynamic Text Color Toggle
+                // Put-Call Ratio Dynamic Sizing and Color Filter
                 const pcrVal = document.getElementById('pcr-val');
                 if(data.pcr >= 0.75) {
-                    pcrVal.className = "text-3xl md:text-4xl font-black font-mono text-emerald-600 tracking-tight mt-1";
+                    pcrVal.className = "text-4xl font-black font-mono text-emerald-600 tracking-tight";
                 } else {
-                    pcrVal.className = "text-3xl md:text-4xl font-black font-mono text-rose-600 tracking-tight mt-1";
+                    pcrVal.className = "text-4xl font-black font-mono text-rose-600 tracking-tight";
                 }
                 
-                // Jadui Spot Alert Element Dynamic Toggle
+                // Jadui Spot Alert Element Balanced Dynamic State Trigger
                 const jaduiContainer = document.getElementById('jadui-container');
                 const jaduiVal = document.getElementById('jadui-val');
                 if(data.spot < data.jadui_spot) {
-                    jaduiContainer.className = "flex justify-between items-center border-2 border-rose-500 bg-rose-500 text-white p-5 rounded-xl animate-pulse shadow-md transition-all duration-300 w-full h-full";
-                    jaduiVal.className = "font-mono font-black text-white text-xl md:text-2xl";
+                    jaduiContainer.className = "bg-rose-500 border border-rose-600 text-white p-5 rounded-xl animate-pulse flex flex-col justify-between shadow-md h-full transition-all duration-300";
+                    jaduiVal.className = "font-mono font-black text-3xl md:text-4xl text-white mt-2";
                 } else {
-                    jaduiContainer.className = "flex justify-between items-center border-2 border-emerald-400 bg-emerald-50 text-slate-800 p-4 rounded-xl shadow-sm transition-all duration-300 w-full h-full";
-                    jaduiVal.className = "font-mono font-black text-emerald-600 text-xl md:text-2xl";
+                    jaduiContainer.className = "bg-emerald-50 border border-emerald-400 text-slate-800 p-5 rounded-xl flex flex-col justify-between shadow-sm h-full transition-all duration-300";
+                    jaduiVal.className = "font-mono font-black text-3xl md:text-4xl text-emerald-600 mt-2";
                 }
                 
             } catch (err) {
@@ -90,7 +90,7 @@ HTML_TEMPLATE = """
         <section class="space-y-3">
             <h2 class="text-base md:text-lg font-black text-blue-900 uppercase tracking-wider border-l-4 border-blue-600 pl-2 font-mono">📊 Nifty Segment Core (Market Price Blocks)</h2>
             <div class="grid grid-cols-1 md:grid-cols-3 gap-5 items-stretch">
-                <div class="bg-white border border-slate-200 rounded-xl p-5 flex flex-col justify-between shadow-sm min-h-[140px]">
+                <div class="bg-white border border-slate-200 rounded-xl p-5 flex flex-col justify-between shadow-sm min-h-[150px]">
                     <span class="text-xs md:text-sm font-bold text-slate-400 tracking-widest uppercase font-mono">NIFTY SPOT TICK</span>
                     <span id="spot-price" class="text-3xl md:text-4xl font-black text-blue-600 tracking-tight mt-2 font-mono">₹{{ m.spot }}</span>
                     <div class="flex justify-between text-xs md:text-sm font-mono text-slate-400 mt-4 pt-2 border-t border-slate-100">
@@ -99,16 +99,17 @@ HTML_TEMPLATE = """
                     </div>
                 </div>
 
-                <div class="bg-white border border-slate-200 rounded-xl p-5 flex flex-col justify-between shadow-sm min-h-[140px]">
+                <div class="bg-white border border-slate-200 rounded-xl p-5 flex flex-col justify-between shadow-sm min-h-[150px]">
                     <span class="text-xs md:text-sm font-bold text-slate-400 tracking-widest uppercase font-mono">Session Average Price (VWAP)</span>
                     <span id="vwap-val" class="font-mono font-black text-blue-600 text-3xl md:text-4xl mt-2">₹{{ m.vwap }}</span>
                     <p class="text-[11px] text-slate-400 font-medium border-t border-slate-100 pt-2 mt-4">Interval distribution weighted matrix calculation.</p>
                 </div>
 
-                <div class="flex flex-col justify-stretch items-stretch min-h-[140px]">
-                    <div id="jadui-container" class="flex justify-between items-center border-2 {{ 'border-rose-400 bg-rose-500 text-white animate-pulse' if m.spot < m.jadui_spot else 'border-emerald-400 bg-emerald-50 text-slate-800' }} p-5 rounded-xl shadow-sm transition-all duration-300 w-full h-full">
-                        <span class="font-black flex items-center gap-1 text-sm md:text-base">✨ Jadui Spot Pivot</span>
-                        <span id="jadui-val" class="font-mono font-black text-xl md:text-2xl {{ 'text-white' if m.spot < m.jadui_spot else 'text-emerald-600' }}">₹{{ m.jadui_spot }}</span>
+                <div class="h-full">
+                    <div id="jadui-container" class="border {{ 'bg-rose-500 border-rose-600 text-white animate-pulse' if m.spot < m.jadui_spot else 'bg-emerald-50 border-emerald-400 text-slate-800' }} p-5 rounded-xl flex flex-col justify-between shadow-sm h-full transition-all duration-300">
+                        <span class="text-xs md:text-sm font-bold uppercase tracking-widest font-mono {{ 'text-rose-100' if m.spot < m.jadui_spot else 'text-slate-400' }}">✨ Jadui Spot Pivot</span>
+                        <span id="jadui-val" class="font-mono font-black text-3xl md:text-4xl mt-2 {{ 'text-white' if m.spot < m.jadui_spot else 'text-emerald-600' }}">₹{{ m.jadui_spot }}</span>
+                        <p class="text-[11px] border-t pt-2 mt-4 {{ 'border-rose-400/30 text-rose-100' if m.spot < m.jadui_spot else 'border-slate-200 text-slate-400' }}">Equilibrium marker point tracking value anchors.</p>
                     </div>
                 </div>
             </div>
@@ -118,23 +119,23 @@ HTML_TEMPLATE = """
             <h2 class="text-base md:text-lg font-black text-blue-900 uppercase tracking-wider border-l-4 border-indigo-600 pl-2 font-mono">🧠 Algorithmic Indicators & Strategy Engine</h2>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-5 items-stretch">
                 
-                <div class="bg-white border border-slate-200 rounded-xl p-5 flex flex-col justify-between shadow-sm min-h-[190px]">
-                    <div class="flex justify-between items-center border-b border-slate-100 pb-4">
-                        <div class="flex flex-col">
+                <div class="bg-white border border-slate-200 rounded-xl p-6 flex flex-col justify-between shadow-sm min-h-[220px]">
+                    <div class="flex justify-between items-start border-b border-slate-100 pb-4">
+                        <div class="flex flex-col space-y-1">
                             <span class="text-xs md:text-sm font-bold text-slate-400 tracking-widest uppercase font-mono">REAL PCR (HIGH VISIBILITY)</span>
-                            <span id="pcr-val" class="text-3xl md:text-4xl font-black tracking-tight mt-1 font-mono {{ 'text-emerald-600' if m.pcr >= 0.75 else 'text-rose-600' }}">{{ m.pcr }}</span>
+                            <span id="pcr-val" class="text-4xl font-black tracking-tight font-mono {{ 'text-emerald-600' if m.pcr >= 0.75 else 'text-rose-600' }}">{{ m.pcr }}</span>
                         </div>
-                        <span id="trend-tag" class="text-xs font-black uppercase tracking-wider font-mono bg-slate-100 px-3 py-1 rounded border border-slate-200 text-slate-600">{{ m.trend }}</span>
+                        <span id="trend-tag" class="text-xs font-black uppercase tracking-wider font-mono bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 mt-1">{{ m.trend }}</span>
                     </div>
                     
-                    <div class="flex flex-col pt-2">
+                    <div class="flex flex-col space-y-1 pt-3">
                         <span class="text-xs md:text-sm font-bold text-slate-400 tracking-widest uppercase font-mono">RSI MOMENTUM COUNTER</span>
-                        <span id="rsi-val" class="text-lg md:text-xl font-black text-slate-800 mt-1 font-mono"><span class="mr-1">{{ m.rsi_color }}</span> {{ m.rsi }} <span class="text-xs md:text-sm text-slate-500 font-bold">({{ m.rsi_status }})</span></span>
+                        <span id="rsi-val" class="text-xl font-black text-slate-800 font-mono mt-1"><span class="mr-1">{{ m.rsi_color }}</span> {{ m.rsi }} <span class="text-xs md:text-sm text-slate-500 font-bold">({{ m.rsi_status }})</span></span>
                     </div>
                 </div>
 
-                <div class="bg-gradient-to-br from-blue-600 to-indigo-700 text-white rounded-xl p-5 flex flex-col justify-between shadow-md min-h-[190px]">
-                    <div class="space-y-3">
+                <div class="bg-gradient-to-br from-blue-600 to-indigo-700 text-white rounded-xl p-6 flex flex-col justify-between shadow-md min-h-[220px]">
+                    <div class="space-y-4">
                         <div class="flex justify-between items-center border-b border-blue-400/30 pb-2">
                             <span class="text-xs font-black text-blue-100 tracking-widest uppercase font-mono">LIVE STRATEGY ROUTER</span>
                             <span class="bg-white/20 text-white font-mono text-xs px-2.5 py-0.5 rounded-md uppercase font-bold tracking-wide">Alpha Engine</span>
@@ -142,8 +143,8 @@ HTML_TEMPLATE = """
                         <div>
                             <p id="scalp-action" class="text-base md:text-lg font-black tracking-wide font-mono leading-snug text-white">⚡ {{ m.scalp_action }}</p>
                         </div>
-                        <div class="bg-blue-950/40 border border-blue-400/30 rounded-xl p-3 mt-1">
-                            <span class="text-xs font-black text-amber-300 tracking-wider uppercase font-mono block mb-0.5">🎯 Directional Pick for Intraday Long Scalp</span>
+                        <div class="bg-blue-950/40 border border-blue-400/30 rounded-xl p-3.5 mt-1">
+                            <span class="text-xs font-black text-amber-300 tracking-wider uppercase font-mono block mb-1">🎯 Directional Pick for Intraday Long Scalp</span>
                             <p id="directional-long" class="text-sm md:text-base font-black font-mono tracking-wide text-white leading-relaxed">{{ m.directional_long }}</p>
                         </div>
                     </div>
@@ -187,7 +188,7 @@ def fetch_live_market_data():
             "day_low": day_low, "vwap": calculated_vwap, "rsi": calculated_rsi
         }
     except Exception as e:
-        # 🚨 HEALED PIPELINE FALLBACK: Auto-locks onto live June 9 base + simulates dynamic rolling ticks
+        # 🚨 PIPELINE RECONCILIATION: Auto-locks onto live June 9 base values + loops rolling micro-ticks
         sim_drift = random.uniform(-1.8, 1.8)
         spot_price = round(23133.85 + sim_drift, 2)
         day_high = 23259.45
