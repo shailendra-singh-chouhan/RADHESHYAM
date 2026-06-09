@@ -6,7 +6,7 @@ from flask import Flask, render_template_string, jsonify
 
 app = Flask(__name__)
 
-# 🎨 PREMIUM BLUE & WHITE THEME UI (100% Hinglish Layout Fixed)
+# 🎨 PREMIUM BLUE & WHITE THEME UI (100% Devnagari Hindi Script Core)
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="en">
@@ -18,19 +18,19 @@ HTML_TEMPLATE = """
     <script>
         async function refreshData() {
             const btn = document.getElementById('refresh-btn');
-            btn.innerText = '🔄 DATA SYNC HO RAHA HAI...';
+            btn.innerText = '🔄 डेटा सिंक हो रहा है...';
             try {
                 const response = await fetch('/api/refresh');
                 const data = await response.json();
                 
-                // Live Bhav Blocks Sizing
+                // Live Bhav Blocks
                 document.getElementById('spot-price').innerText = '₹' + data.spot;
                 document.getElementById('day-high').innerText = '₹' + data.day_high;
                 document.getElementById('day-low').innerText = '₹' + data.day_low;
                 document.getElementById('vwap-val').innerText = '₹' + data.vwap;
                 document.getElementById('jadui-val').innerText = '₹' + data.jadui_spot;
                 
-                // Indicators & Strategy Sizing
+                // Indicators & Strategy 
                 document.getElementById('pcr-val').innerText = data.pcr;
                 document.getElementById('rsi-val').innerText = data.rsi + ' (' + data.rsi_status + ')';
                 document.getElementById('trend-tag').innerText = data.trend;
@@ -38,7 +38,7 @@ HTML_TEMPLATE = """
                 document.getElementById('intraday-prompt').innerText = data.intraday_prompt;
                 document.getElementById('directional-long').innerText = data.directional_long;
                 
-                // PCR Box Dynamic Color Code
+                // PCR Box Color Filter
                 const pcrVal = document.getElementById('pcr-val');
                 if(data.pcr >= 0.75) {
                     pcrVal.className = "text-4xl font-black font-mono text-emerald-600 tracking-tight";
@@ -46,7 +46,7 @@ HTML_TEMPLATE = """
                     pcrVal.className = "text-4xl font-black font-mono text-rose-600 tracking-tight";
                 }
                 
-                // Jadui Spot Alert Box Dynamic Color Code
+                // Laxman Rekha Box Color Filter
                 const jaduiContainer = document.getElementById('jadui-container');
                 const jaduiVal = document.getElementById('jadui-val');
                 if(data.spot < data.jadui_spot) {
@@ -58,9 +58,9 @@ HTML_TEMPLATE = """
                 }
                 
             } catch (err) {
-                console.error('Data refresh pipeline mein dikkat hai:', err);
+                console.error('Data pipeline error:', err);
             }
-            btn.innerText = '🔄 FORCED DATA REFRESH';
+            btn.innerText = '🔄 डेटा रिफ्रेश करें';
         }
         setInterval(refreshData, 15000);
     </script>
@@ -70,10 +70,10 @@ HTML_TEMPLATE = """
     <header class="border-b border-blue-100 bg-white sticky top-0 z-50 px-6 py-4 flex flex-wrap justify-between items-center gap-4 shadow-sm">
         <div class="flex items-center gap-3">
             <div class="h-3 w-3 rounded-full bg-blue-600 animate-pulse"></div>
-            <h1 class="text-xl md:text-2xl font-black tracking-wider text-slate-900 font-mono">⚡ GOAT PRO <span class="text-xs bg-blue-50 text-blue-600 px-2.5 py-1 rounded border border-blue-200 ml-2 font-bold">DESI DATA CORE</span></h1>
+            <h1 class="text-xl md:text-2xl font-black tracking-wider text-slate-900 font-mono">⚡ GOAT PRO <span class="text-xs bg-blue-50 text-blue-600 px-2.5 py-1 rounded border border-blue-200 ml-2 font-bold">हिंदी डेटा कोर</span></h1>
         </div>
         <button id="refresh-btn" onclick="refreshData()" class="bg-blue-600 hover:bg-blue-700 text-white active:scale-95 px-6 py-2.5 rounded-xl font-mono text-sm font-bold tracking-wider transition-all duration-150 shadow-md">
-            🔄 FORCED DATA REFRESH
+            🔄 डेटा रिफ्रेश करें
         </button>
     </header>
 
@@ -82,54 +82,54 @@ HTML_TEMPLATE = """
         <div class="bg-blue-50 border border-blue-200 rounded-xl p-5 shadow-sm flex items-start gap-4">
             <div class="text-2xl">📢</div>
             <div>
-                <h3 class="font-black text-blue-900 text-sm tracking-widest uppercase font-mono">LIVE MARKET ADVISORY</h3>
+                <h3 class="font-bold text-blue-900 text-sm tracking-widest uppercase font-mono">लाइव मार्केट चेतावनी</h3>
                 <p id="intraday-prompt" class="text-slate-800 mt-1 text-sm md:text-base font-bold tracking-wide leading-relaxed">{{ m.intraday_prompt }}</p>
             </div>
         </div>
 
         <section class="space-y-3">
-            <h2 class="text-base md:text-lg font-black text-blue-900 uppercase tracking-wider border-l-4 border-blue-600 pl-2 font-mono">📊 Nifty Live Bhav Blocks (Segment Core)</h2>
+            <h2 class="text-base md:text-lg font-black text-blue-900 uppercase tracking-wider border-l-4 border-blue-600 pl-2 font-mono">📊 निफ्टी लाइव भाव (मेन सेगमेंट)</h2>
             <div class="grid grid-cols-1 md:grid-cols-3 gap-5 items-stretch">
                 <div class="bg-white border border-slate-200 rounded-xl p-5 flex flex-col justify-between shadow-sm min-h-[150px]">
-                    <span class="text-xs md:text-sm font-bold text-slate-400 tracking-widest uppercase font-mono">🎯 NIFTY LIVE BHAV</span>
+                    <span class="text-xs md:text-sm font-bold text-slate-400 tracking-widest uppercase font-mono">🎯 निफ्टी लाइव भाव</span>
                     <span id="spot-price" class="text-3xl md:text-4xl font-black text-blue-600 tracking-tight mt-2 font-mono">₹{{ m.spot }}</span>
                     <div class="flex justify-between text-xs md:text-sm font-mono text-slate-400 mt-4 pt-2 border-t border-slate-100">
-                        <span>Aaj Ka High: <span id="day-high" class="text-slate-700 font-bold">₹{{ m.day_high }}</span></span>
-                        <span>Aaj Ka Low: <span id="day-low" class="text-slate-700 font-bold">₹{{ m.day_low }}</span></span>
+                        <span>आज का हाई: <span id="day-high" class="text-slate-700 font-bold">₹{{ m.day_high }}</span></span>
+                        <span>आज का लो: <span id="day-low" class="text-slate-700 font-bold">₹{{ m.day_low }}</span></span>
                     </div>
                 </div>
 
                 <div class="bg-white border border-slate-200 rounded-xl p-5 flex flex-col justify-between shadow-sm min-h-[150px]">
-                    <span class="text-xs md:text-sm font-bold text-slate-400 tracking-widest uppercase font-mono">💼 BADE LOGON KA RATE (VWAP)</span>
+                    <span class="text-xs md:text-sm font-bold text-slate-400 tracking-widest uppercase font-mono">💼 बड़े प्लेयर्स का रेट (VWAP)</span>
                     <span id="vwap-val" class="font-mono font-black text-blue-600 text-3xl md:text-4xl mt-2">₹{{ m.vwap }}</span>
-                    <p class="text-[11px] text-slate-400 font-medium border-t border-slate-100 pt-2 mt-4">Institutions ki average buying/selling range zone.</p>
+                    <p class="text-[11px] text-slate-400 font-medium border-t border-slate-100 pt-2 mt-4">बड़े इंस्टीट्यूशंस की एवरेज खरीद-बिक्री का ज़ोन।</p>
                 </div>
 
                 <div class="h-full">
                     <div id="jadui-container" class="border {{ 'bg-rose-500 border-rose-600 text-white animate-pulse' if m.spot < m.jadui_spot else 'bg-emerald-50 border-emerald-400 text-slate-800' }} p-5 rounded-xl flex flex-col justify-between shadow-sm h-full transition-all duration-300">
-                        <span class="text-xs md:text-sm font-bold uppercase tracking-widest font-mono {{ 'text-rose-100' if m.spot < m.jadui_spot else 'text-slate-400' }}">✨ JADUI SPOT (LAXMAN REKHA)</span>
+                        <span class="text-xs md:text-sm font-bold uppercase tracking-widest font-mono {{ 'text-rose-100' if m.spot < m.jadui_spot else 'text-slate-400' }}">✨ जादुई स्पॉट (लक्ष्मण रेखा)</span>
                         <span id="jadui-val" class="font-mono font-black text-3xl md:text-4xl mt-2 {{ 'text-white' if m.spot < m.jadui_spot else 'text-emerald-600' }}">₹{{ m.jadui_spot }}</span>
-                        <p class="text-[11px] border-t pt-2 mt-4 {{ 'border-rose-400/30 text-rose-100' if m.spot < m.jadui_spot else 'border-slate-200 text-slate-400' }}">Market ka main gravity core aur balance point anchor.</p>
+                        <p class="text-[11px] border-t pt-2 mt-4 {{ 'border-rose-400/30 text-rose-100' if m.spot < m.jadui_spot else 'border-slate-200 text-slate-400' }}">मार्केट का सबसे बड़ा बैलेंस पॉइंट और सपोर्ट/रेसिस्टेंस एंकर।</p>
                     </div>
                 </div>
             </div>
         </section>
 
         <section class="space-y-3 pt-2">
-            <h2 class="text-base md:text-lg font-black text-blue-900 uppercase tracking-wider border-l-4 border-indigo-600 pl-2 font-mono">🧠 Indicators Aur Live Scalping Signal</h2>
+            <h2 class="text-base md:text-lg font-black text-blue-900 uppercase tracking-wider border-l-4 border-indigo-600 pl-2 font-mono">🧠 इंडिकेटर्स और लाइव स्काल्पिंग सिग्नल</h2>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-5 items-stretch">
                 
                 <div class="bg-white border border-slate-200 rounded-xl p-6 flex flex-col justify-between shadow-sm min-h-[220px]">
                     <div class="flex justify-between items-start border-b border-slate-100 pb-4">
                         <div class="flex flex-col space-y-1">
-                            <span class="text-xs md:text-sm font-bold text-slate-400 tracking-widest uppercase font-mono">📊 REAL PCR (MARKET KA MOOD)</span>
+                            <span class="text-xs md:text-sm font-bold text-slate-400 tracking-widest uppercase font-mono">📊 असली PCR (मार्केट का मूड)</span>
                             <span id="pcr-val" class="text-4xl font-black tracking-tight font-mono {{ 'text-emerald-600' if m.pcr >= 0.75 else 'text-rose-600' }}">{{ m.pcr }}</span>
                         </div>
                         <span id="trend-tag" class="text-xs font-black uppercase tracking-wider font-mono bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 mt-1">{{ m.trend }}</span>
                     </div>
                     
                     <div class="flex flex-col space-y-1 pt-3">
-                        <span class="text-xs md:text-sm font-bold text-slate-400 tracking-widest uppercase font-mono">🚀 RSI MOMENTUM (SPEEDOMETER)</span>
+                        <span class="text-xs md:text-sm font-bold text-slate-400 tracking-widest uppercase font-mono">🚀 RSI मोमेंटम (स्पीडोमीटर)</span>
                         <span id="rsi-val" class="text-xl font-black text-slate-800 font-mono mt-1"><span class="mr-1">{{ m.rsi_color }}</span> {{ m.rsi }} <span class="text-xs md:text-sm text-slate-500 font-bold">({{ m.rsi_status }})</span></span>
                     </div>
                 </div>
@@ -137,14 +137,14 @@ HTML_TEMPLATE = """
                 <div class="bg-gradient-to-br from-blue-600 to-indigo-700 text-white rounded-xl p-6 flex flex-col justify-between shadow-md min-h-[220px]">
                     <div class="space-y-4">
                         <div class="flex justify-between items-center border-b border-blue-400/30 pb-2">
-                            <span class="text-xs font-black text-blue-100 tracking-widest uppercase font-mono">⚡ LIVE STRATEGY ROUTER</span>
-                            <span class="bg-white/20 text-white font-mono text-xs px-2.5 py-0.5 rounded-md uppercase font-bold tracking-wide">Desi Engine</span>
+                            <span class="text-xs font-black text-blue-100 tracking-widest uppercase font-mono">⚡ लाइव स्ट्रेटेजी राउटर</span>
+                            <span class="bg-white/20 text-white font-mono text-xs px-2.5 py-0.5 rounded-md uppercase font-bold tracking-wide">देशी इंजन</span>
                         </div>
                         <div>
                             <p id="scalp-action" class="text-base md:text-lg font-black tracking-wide font-mono leading-snug text-white">⚡ {{ m.scalp_action }}</p>
                         </div>
                         <div class="bg-blue-950/40 border border-blue-400/30 rounded-xl p-3.5 mt-1">
-                            <span class="text-xs font-black text-amber-300 tracking-wider uppercase font-mono block mb-1">🎯 INTRADAY SCALP TRIGGER TARGET</span>
+                            <span class="text-xs font-black text-amber-300 tracking-wider uppercase font-mono block mb-1">🎯 इंट्राडे स्काल्प ट्रिगर टारगेट</span>
                             <p id="directional-long" class="text-sm md:text-base font-black font-mono tracking-wide text-white leading-relaxed">{{ m.directional_long }}</p>
                         </div>
                     </div>
@@ -177,18 +177,14 @@ def fetch_live_market_data():
             avg_loss = loss.rolling(window=14, min_periods=1).mean().iloc[-1]
             calculated_rsi = round(100 - (100 / (1 + (avg_gain / avg_loss))), 1) if avg_loss > 0 else 50.0
         else:
-            raise ValueError("Empty intraday array dataset")
+            raise ValueError("Empty array")
 
         trend_ratio = (spot_price - day_low) / (day_high - day_low) if (day_high - day_low) > 0 else 0.5
         calculated_pcr = round(0.68 + (trend_ratio * 0.12), 2)
 
         return {
-            "spot_price": spot_price,
-            "pcr": calculated_pcr,
-            "day_high": day_high,
-            "day_low": day_low,
-            "vwap": calculated_vwap,
-            "rsi": calculated_rsi
+            "spot_price": spot_price, "pcr": calculated_pcr, "day_high": day_high,
+            "day_low": day_low, "vwap": calculated_vwap, "rsi": calculated_rsi
         }
     except Exception as e:
         sim_drift = random.uniform(-1.8, 1.8)
@@ -200,15 +196,11 @@ def fetch_live_market_data():
         calculated_rsi = round(58.5 + (sim_drift * 0.5), 1)
         
         return {
-            "spot_price": spot_price,
-            "pcr": calculated_pcr,
-            "day_high": day_high,
-            "day_low": day_low,
-            "vwap": calculated_vwap,
-            "rsi": calculated_rsi
+            "spot_price": spot_price, "pcr": calculated_pcr, "day_high": day_high,
+            "day_low": day_low, "vwap": calculated_vwap, "rsi": calculated_rsi
         }
 
-# 🧠 3. ALGORITHMIC ENGINE (Hinglish Logic Transformation)
+# 🧠 3. ALGORITHMIC ENGINE (Pure Hindi Data Nodes Integration)
 def process_goat_pro_intelligence(data):
     if not data:
         return {}
@@ -222,45 +214,37 @@ def process_goat_pro_intelligence(data):
     jadui_spot_trigger = round((range_median + vwap) / 2, 2)
 
     if rsi >= 68:
-        rsi_status = "OVERBOUGHT (THAK GAYA)"
+        rsi_status = "ज्यादा खरीददारी (थक गया है)"
         rsi_color = "🔴"
     elif rsi <= 35:
-        rsi_status = "OVERSOLD (BOUNCE ZONE)"
+        rsi_status = "ज्यादा बिकवाली (बाउंस ज़ोन)"
         rsi_color = "🟢"
     else:
-        rsi_status = "STABLE MOMENTUM"
+        rsi_status = "मजबूत मोमेंटम"
         rsi_color = "🟡"
 
     long_trigger = round(max(jadui_spot_trigger, vwap) + 6.5, 1)
-    directional_long = f"CALL ENTRY: NIFTY ATM CE BUY {long_trigger} KE UPAR | SL: {long_trigger - 20:.1f} | TG: {long_trigger + 35:.1f}"
+    directional_long = f"कॉल एंट्री (CE): निफ्टी {long_trigger} के ऊपर खरीदें | SL: {long_trigger - 20:.1f} | टारगेट: {long_trigger + 35:.1f}"
 
     if spot < vwap:
-        trend = "BEARISH (MANDI)"
-        scalp_action = f"Nifty ATM PE Khareedo {round(spot - 4, 1)} ke neeche | SL: 20 pts | Target: +35 pts"
-        intraday_prompt = "⚠️ MARKET MANDI MEIN HAI: Bhav VWAP aur Laxman Rekha ke neeche chal raha hai. Call (CE) buying completely block rakho!"
+        trend = "मंदी का माहौल"
+        scalp_action = f"निफ्टी ATM PE खरीदें {round(spot - 4, 1)} के नीचे | SL: 20 pts | टारगेट: +35 pts"
+        intraday_prompt = "⚠️ मार्केट मंदी में है: भाव VWAP और लक्ष्मण रेखा के नीचे है। कॉल (CE) खरीदना बिल्कुल मना है!"
     elif spot >= vwap and pcr >= 0.75:
-        trend = "BULLISH (TEZI)"
-        scalp_action = f"Nifty ATM CE Khareedo {round(jadui_spot_trigger, 1)} ke upar | SL: 20 pts | Target: +35 pts"
-        intraday_prompt = "🔥 MARKET TEZI MEIN HAI: Momentum solid chal raha hai. Stop-Loss trail karte huye targets ko trace karo!"
+        trend = "तेज़ी का माहौल"
+        scalp_action = f"निफ्टी ATM CE खरीदें {round(jadui_spot_trigger, 1)} के ऊपर | SL: 20 pts | टारगेट: +35 pts"
+        intraday_prompt = "🔥 मार्केट तेज़ी में है: मोमेंटम मजबूत है। स्टॉप-लॉस ट्रेल करते हुए टारगेट का पीछा करो!"
     else:
-        trend = "SIDEWAYS (CHOPPY)"
-        scalp_action = "NO TRADING ZONE: Premium decay chal raha hai, shanti se baitho"
-        intraday_prompt = "😴 MARKET CHOPPY ZONE MEIN HAI: Kisi bade breakout ya institutional volume block ka intezar karo."
+        trend = "साइडवेज़ (मार्केट फंसा है)"
+        scalp_action = "नो ट्रेडिंग ज़ोन: प्रीमियम गल रहा है, शांति से बैठो"
+        intraday_prompt = "😴 मार्केट साइडवेज़ है: किसी बड़े ब्रेकआउट या भारी वॉल्यूम का इंतजार करो।"
 
     return {
-        "spot": spot,
-        "pcr": pcr,
-        "vwap": vwap,
-        "jadui_spot": jadui_spot_trigger,
-        "rsi": rsi,
-        "rsi_status": rsi_status,
-        "rsi_color": rsi_color,
-        "trend": trend,
-        "scalp_action": scalp_action,
-        "intraday_prompt": intraday_prompt,
+        "spot": spot, "pcr": pcr, "vwap": vwap, "jadui_spot": jadui_spot_trigger,
+        "rsi": rsi, "rsi_status": rsi_status, "rsi_color": rsi_color, "trend": trend,
+        "scalp_action": scalp_action, "intraday_prompt": intraday_prompt,
         "directional_long": directional_long,
-        "day_high": data["day_high"],
-        "day_low": data["day_low"]
+        "day_high": data["day_high"], "day_low": data["day_low"]
     }
 
 # 🌐 4. ROUTING LAYER WITH RENDER DYNAMIC PORTS
