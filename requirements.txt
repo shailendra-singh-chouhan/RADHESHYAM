@@ -1,3 +1,5 @@
 flask
 yfinance
+pyotp
+smartapi-python
 gunicorn
