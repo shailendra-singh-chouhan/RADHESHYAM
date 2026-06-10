@@ -10,25 +10,34 @@ def get_nifty_data():
     try:
         ticker = yf.Ticker("^NSEI")
         df = ticker.history(period="1d", interval="1m")
-        if df.empty or 'Volume' not in df.columns: return None
-        
-        # Defensive Programming: Ensure volume isn't zero
-        if df['Volume'].sum() == 0: return None
+        if df.empty: return None
         
         last_price = df['Close'].iloc[-1]
-        # Robust VWAP calculation
-        vwap = (df['Volume'] * (df['High'] + df['Low'] + df['Close']) / 3).sum() / df['Volume'].sum()
+        typical_price = (df['High'] + df['Low'] + df['Close']) / 3
+        total_volume = df['Volume'].sum()
         
+        # 🔥 FIX: Zero Volume handling for Nifty Spot Index
+        if total_volume > 0:
+            vwap = (df['Volume'] * typical_price).sum() / total_volume
+        else:
+            # Fallback to Typical Price Mean if Volume is 0 (Index data limitation)
+            vwap = typical_price.mean()
+        
+        # Core Indicators
         ema9 = df['Close'].ewm(span=9, adjust=False).mean().iloc[-1]
         ema21 = df['Close'].ewm(span=21, adjust=False).mean().iloc[-1]
         
-        # RSI with NaN handling
+        # RSI with robust NaN handling
         delta = df['Close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-        rs = gain / loss
-        rsi = 100 - (100 / (1 + rs.iloc[-1]))
         
+        if not loss.empty and loss.iloc[-1] != 0:
+            rs = gain.iloc[-1] / loss.iloc[-1]
+            rsi = 100 - (100 / (1 + rs))
+        else:
+            rsi = 50.0 # Neutral fallback
+            
         return {
             "price": round(float(last_price), 2),
             "vwap": round(float(vwap), 2),
@@ -37,7 +46,7 @@ def get_nifty_data():
             "rsi": round(float(rsi), 2) if not np.isnan(rsi) else 50.0
         }
     except Exception as e:
-        print(f"Data Error: {e}")
+        print(f"Data Core Error: {e}")
         return None
 
 def get_strategy(data):
@@ -45,7 +54,7 @@ def get_strategy(data):
     
     p, v = data['price'], data['vwap']
     
-    # 5-State Logic with VWAP Buffer
+    # 5-State Quant Logic Engine with Buffer Zone
     if p > (v + 2) and data['ema9'] > data['ema21'] and data['rsi'] < 65:
         return "🟢 BULLISH TREND", "green"
     elif p < (v - 2) and data['ema9'] < data['ema21'] and data['rsi'] > 35:
@@ -65,23 +74,26 @@ def index():
     <html>
     <head>
         <title>GOAT PRO | SYSTEM STATUS</title>
-        <meta http-equiv="refresh" content="30">
+        <meta http-equiv="refresh" content="15">
         <style>
             body {{ background: #0f172a; color: white; font-family: sans-serif; padding: 20px; }}
-            .card {{ background: #1e293b; padding: 20px; border-radius: 12px; border: 1px solid #334155; }}
-            .btn {{ padding: 12px 24px; border-radius: 8px; font-weight: bold; display: inline-block; }}
+            .card {{ background: #1e293b; padding: 20px; border-radius: 12px; border: 1px solid #334155; max-width: 500px; margin: auto; }}
+            .btn {{ padding: 12px 24px; border-radius: 8px; font-weight: bold; display: inline-block; margin-bottom: 15px; text-transform: uppercase; }}
             .green {{ background: #16a34a; }} .red {{ background: #dc2626; }}
             .orange {{ background: #d97706; }} .gray {{ background: #475569; }}
+            .metric {{ font-size: 18px; margin: 10px 0; border-bottom: 1px solid #334155; padding-bottom: 5px; }}
         </style>
     </head>
     <body>
         <div class="card">
-            <h1>⚡ GOAT PRO — SYSTEM STATUS</h1>
+            <h2>⚡ GOAT PRO — SYSTEM STATUS</h2>
             <div class="btn {color}">{state}</div>
-            <p>Nifty Spot: ₹{data['price'] if data else 'N/A'}</p>
-            <p>VWAP: ₹{data['vwap'] if data else 'N/A'}</p>
-            <p>RSI: {data['rsi'] if data else 'N/A'}</p>
-            <small>Updated: {datetime.now().strftime('%H:%M:%S')}</small>
+            <div class="metric">Nifty Spot: <strong>₹{data['price'] if data else 'N/A'}</strong></div>
+            <div class="metric">Session VWAP: <strong>₹{data['vwap'] if data else 'N/A'}</strong></div>
+            <div class="metric">RSI (14): <strong>{data['rsi'] if data else 'N/A'}</strong></div>
+            <div class="metric">EMA 9/21: <strong>{data['ema9'] if data else 'N/A'} / {data['ema21'] if data else 'N/A'}</strong></div>
+            <br>
+            <small style="color: #94a3b8;">Last Infrastructure Pulse: {datetime.now().strftime('%H:%M:%S')} IST</small>
         </div>
     </body>
     </html>
