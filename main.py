@@ -153,7 +153,7 @@ def index():
             </div>
             
             <p style="text-align: center; margin-top: 25px; font-size: 12px; color: #475569;">
-                Last Infrastructure Pulse: {datetime.now().strftime('%H:%M('%S')} IST | Auto-refresh: 15s
+                Last Infrastructure Pulse: {datetime.now().strftime('%H:%M:%S')} IST | Auto-refresh: 15s
             </p>
         </div>
     </body>
