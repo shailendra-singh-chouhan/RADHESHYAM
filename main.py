@@ -1,52 +1,57 @@
-import os
 import yfinance as yf
 import pandas as pd
-from flask import Flask, render_template_string, jsonify
+import numpy as np
+from flask import Flask, render_template_string
 from datetime import datetime
 
 app = Flask(__name__)
-
-# --- CONFIGURATION (Ensure these are in Render Env Vars) ---
-# SMART_API_KEY, SMART_CLIENT_ID, SMART_PWD, SMART_TOKEN (TOTP)
 
 def get_nifty_data():
     try:
         ticker = yf.Ticker("^NSEI")
         df = ticker.history(period="1d", interval="1m")
-        if df.empty: return None
+        if df.empty or 'Volume' not in df.columns: return None
         
-        # Calculate Indicators
+        # Defensive Programming: Ensure volume isn't zero
+        if df['Volume'].sum() == 0: return None
+        
         last_price = df['Close'].iloc[-1]
+        # Robust VWAP calculation
         vwap = (df['Volume'] * (df['High'] + df['Low'] + df['Close']) / 3).sum() / df['Volume'].sum()
+        
         ema9 = df['Close'].ewm(span=9, adjust=False).mean().iloc[-1]
         ema21 = df['Close'].ewm(span=21, adjust=False).mean().iloc[-1]
-        rsi = 100 - (100 / (1 + df['Close'].diff().clip(lower=0).mean() / df['Close'].diff().clip(upper=0).abs().mean()))
+        
+        # RSI with NaN handling
+        delta = df['Close'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+        rs = gain / loss
+        rsi = 100 - (100 / (1 + rs.iloc[-1]))
         
         return {
-            "price": round(last_price, 2),
-            "vwap": round(vwap, 2),
-            "ema9": round(ema9, 2),
-            "ema21": round(ema21, 2),
-            "rsi": round(rsi, 2)
+            "price": round(float(last_price), 2),
+            "vwap": round(float(vwap), 2),
+            "ema9": round(float(ema9), 2),
+            "ema21": round(float(ema21), 2),
+            "rsi": round(float(rsi), 2) if not np.isnan(rsi) else 50.0
         }
-    except Exception:
+    except Exception as e:
+        print(f"Data Error: {e}")
         return None
 
 def get_strategy(data):
-    if not data: return "😴 NO DATA", "gray"
+    if not data: return "❌ DATA FEED ERROR", "gray"
     
-    p = data['price']
-    v = data['vwap']
+    p, v = data['price'], data['vwap']
     
-    # 5-State Logic Engine
-    if p > (v + 5) and data['ema9'] > data['ema21'] and data['rsi'] < 65:
-        return "🟢 STRONG BULLISH (LONG)", "green"
-    elif p < (v - 5) and data['ema9'] < data['ema21'] and data['rsi'] > 35:
-        return "🔴 STRONG BEARISH (SHORT)", "red"
-    elif abs(p - v) <= 5:
-        return "🟡 VWAP ZONE (WAIT)", "orange"
-    elif data['rsi'] >= 65:
-        return "⚠️ OVERSOLD - WAIT PULLBACK", "orange"
+    # 5-State Logic with VWAP Buffer
+    if p > (v + 2) and data['ema9'] > data['ema21'] and data['rsi'] < 65:
+        return "🟢 BULLISH TREND", "green"
+    elif p < (v - 2) and data['ema9'] < data['ema21'] and data['rsi'] > 35:
+        return "🔴 BEARISH TREND", "red"
+    elif abs(p - v) <= 2:
+        return "🟡 VWAP ZONE (NEUTRAL)", "orange"
     else:
         return "😴 SIDEWAYS / CONSOLIDATION", "gray"
 
@@ -59,11 +64,12 @@ def index():
     <!DOCTYPE html>
     <html>
     <head>
-        <title>GOAT PRO | Command Center</title>
+        <title>GOAT PRO | SYSTEM STATUS</title>
+        <meta http-equiv="refresh" content="30">
         <style>
             body {{ background: #0f172a; color: white; font-family: sans-serif; padding: 20px; }}
-            .card {{ background: #1e293b; padding: 20px; border-radius: 15px; border: 1px solid #334155; }}
-            .btn {{ padding: 10px 20px; border-radius: 8px; font-weight: bold; display: inline-block; margin-top: 10px; }}
+            .card {{ background: #1e293b; padding: 20px; border-radius: 12px; border: 1px solid #334155; }}
+            .btn {{ padding: 12px 24px; border-radius: 8px; font-weight: bold; display: inline-block; }}
             .green {{ background: #16a34a; }} .red {{ background: #dc2626; }}
             .orange {{ background: #d97706; }} .gray {{ background: #475569; }}
         </style>
