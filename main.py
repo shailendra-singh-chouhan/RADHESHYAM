@@ -4,23 +4,36 @@ from flask import Flask, render_template_string, jsonify
 
 app = Flask(__name__)
 
-# Ultra-Lightweight Sniper UI
+# Reverting to the "Pro-Quant" Look but keeping it lightweight
 HTML_TEMPLATE = """
 <!DOCTYPE html>
-<html lang="hi">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <title>BRAHMASTRA V9</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 </head>
-<body class="bg-black text-white p-4">
-    <div class="max-w-sm mx-auto">
-        <h1 class="text-blue-500 font-bold">GOAT PRO QUANT</h1>
-        <div class="mt-4 p-4 bg-slate-900 rounded-lg">
-            <p>NIFTY: {{ m.spot }}</p>
-            <p class="text-orange-400">CRUDE: {{ m.crude }}</p>
+<body class="bg-slate-950 text-white font-sans p-4">
+    <div class="max-w-md mx-auto">
+        <div class="flex justify-between items-center border-b border-slate-800 pb-4">
+            <h1 class="text-lg font-black text-blue-500">GOAT PRO QUANT</h1>
+            <span class="text-[10px] text-emerald-500 font-bold">● LIVE</span>
         </div>
-        <p class="mt-4 text-xs">{{ m.signal }}</p>
+        
+        <div class="grid grid-cols-2 gap-4 mt-6">
+            <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+                <p class="text-[10px] text-slate-400">NIFTY 50</p>
+                <h2 class="text-2xl font-bold">{{ m.spot }}</h2>
+            </div>
+            <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+                <p class="text-[10px] text-slate-400">CRUDE OIL</p>
+                <h2 class="text-2xl font-bold text-orange-400">{{ m.crude }}</h2>
+            </div>
+        </div>
+
+        <div class="mt-6 bg-slate-900 border-l-4 border-emerald-500 p-4 rounded-r-xl">
+            <p class="text-[10px] text-emerald-400 font-bold uppercase">Sniper Signal</p>
+            <p class="text-sm mt-1 font-bold">{{ m.signal }}</p>
+        </div>
     </div>
 </body>
 </html>
@@ -28,17 +41,22 @@ HTML_TEMPLATE = """
 
 def get_data():
     try:
-        # केवल सबसे जरूरी डेटा, बाकी भारी कैलकुलेशन हटा दी
+        n_ticker = yf.Ticker("^NSEI")
         c_ticker = yf.Ticker("CL=F")
-        c_hist = c_ticker.history(period="1d")
-        price = round(c_hist['Close'].iloc[-1] * 96.50, 2) if not c_hist.empty else 8258.0
-        return {"spot": "23286", "crude": price, "signal": "BUY ABOVE CRUDE"}
+        n_val = n_ticker.history(period="1d")['Close'].iloc[-1]
+        c_val = c_ticker.history(period="1d")['Close'].iloc[-1] * 96.50
+        return {
+            "spot": round(n_val, 2),
+            "crude": round(c_val, 2),
+            "signal": "BUY CRUDE ABOVE 8675.00" if c_val > 8670 else "WAIT FOR BREAKOUT"
+        }
     except:
-        return {"spot": "ERR", "crude": "0", "signal": "RETRY..."}
+        return {"spot": "Loading...", "crude": "Loading...", "signal": "Syncing..."}
 
 @app.route('/')
 def index():
     return render_template_string(HTML_TEMPLATE, m=get_data())
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 5000)))
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
