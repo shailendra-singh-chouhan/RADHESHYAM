@@ -1,12 +1,3 @@
 flask
-flask-cors
 yfinance
-requests
-pandas
-numpy
-pyTelegramBotAPI
-pytz
-smartapi-python
-pyotp
-logzero
-websocket-client
+gunicorn
