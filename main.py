@@ -24,7 +24,6 @@ def get_ticker_data(symbol="^NSEI"):
         high_day = float(df['High'].max())
         low_day = float(df['Low'].min())
         
-        # Quant Pivot Levels
         pivot = (high_day + low_day + last_price) / 3
         r1 = (2 * pivot) - low_day
         s1 = (2 * pivot) - high_day
@@ -90,20 +89,27 @@ def get_strategy_and_sniper(data):
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
-    # 🔥 Get requested asset token (Default to Nifty)
     user_asset = request.form.get('asset', '^NSEI').strip().upper()
+    if not user_asset:
+        user_asset = '^NSEI'
+        
     data = get_ticker_data(user_asset)
     
-    # Fallback to Nifty if user symbol fails
+    # Anti-crash protection
     if not data:
-        user_asset = '^NSEI'
-        data = get_ticker_data('^NSEI')
+        fallback_asset = '^NSEI'
+        data = get_ticker_data(fallback_asset)
+        error_msg = f"⚠️ Could not load '{user_asset}'. Reset to Nifty Spot."
+        user_asset = fallback_asset
+    else:
+        error_msg = ""
         
     state, color, sniper, sniper_color, ema_trend, checklist = get_strategy_and_sniper(data)
     
-    # Calculate strikes only if it's Nifty or Sensex style large numbers
+    # Adaptive Option/Price matrix
     atm = round(data['price'] / 50) * 50 if data['price'] < 50000 else round(data['price'] / 100) * 100
-    strikes = [atm + 100, atm + 50, atm, atm - 50, atm - 100] if data['price'] < 50000 else [atm + 200, atm + 100, atm, atm - 100, atm - 200]
+    step = 50 if data['price'] < 50000 else 100
+    strikes = [atm + (2*step), atm + step, atm, atm - step, atm - (2*step)]
     
     checklist_html = "".join([
         f'<div style="display:flex; justify-content:space-between; font-size:12px; margin:4px 0; background:#1e293b; padding:5px 8px; border-radius:4px;">'
@@ -161,7 +167,8 @@ def index():
                     <span style="font-size: 13px; color: #94a3b8; font-weight: bold;">🔎 ANALYZE ANY STOCK / SEGMENT:</span>
                     <input type="text" name="asset" value="{user_asset}" placeholder="e.g. ^NSEI, SBIN.NS, MCX=F">
                     <button type="submit" class="search-btn">⚡ Run Deep Scan</button>
-                    <div style="font-size: 11px; color: #64748b; width: 100%;">
+                    {f'<div style="color:#ef4444; font-size:12px; width:100%; margin-top:4px;">{error_msg}</div>' if error_msg else ''}
+                    <div style="font-size: 11px; color: #64748b; width: 100%; margin-top: 2px;">
                         💡 Quick Guide: Nifty: <code>^NSEI</code> | Sensex: <code>^BSESN</code> | Crude Oil: <code>MCX=F</code> | Reliance: <code>RELIANCE.NS</code>
                     </div>
                 </form>
