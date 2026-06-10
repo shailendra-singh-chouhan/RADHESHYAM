@@ -46,31 +46,55 @@ def get_nifty_data():
         return None
 
 def get_strategy_and_sniper(data):
-    if not data: return "❌ DATA ERROR", "gray", "NO SHOT", "gray"
+    if not data: return "❌ DATA ERROR", "gray", "NO SHOT", "gray", "", []
     p, v, rsi = data['price'], data['vwap'], data['rsi']
+    e9, e21 = data['ema9'], data['ema21']
     
-    if p > (v + 2) and data['ema9'] > data['ema21'] and rsi < 65:
+    # 1. EMA Bracket Trend calculation
+    if e9 > e21 + 0.5:
+        ema_trend = "Bullish Crossover"
+    elif e9 < e21 - 0.5:
+        ema_trend = "Bearish Crossover"
+    else:
+        ema_trend = "Sideways/Squeeze"
+        
+    # 2. Checklist Verification
+    checklist = [
+        {"name": f"Price vs VWAP ({'Above' if p > v else 'Below'})", "status": "✅" if p > v else "❌"},
+        {"name": f"EMA Crossover ({'9 > 21' if e9 > e21 else '9 < 21'})", "status": "✅" if e9 > e21 else "❌"},
+        {"name": f"RSI Momentum Zone ({rsi})", "status": "✅" if 55 <= rsi <= 65 else "❌"}
+    ]
+    
+    # Strategy evaluation
+    if p > (v + 2) and e9 > e21 and rsi < 65:
         trend, color = "🟢 BULLISH TREND", "green"
         if rsi > 55:
             sniper, s_color = "🚀 SNIPER LONG ACTIVE (CE)", "green"
         else:
             sniper, s_color = "⏳ WAITING MOMENTUM", "orange"
+            checklist[2]["status"] = "❌"  # RSI out of exact sniper trigger range
             
-    elif p < (v - 2) and data['ema9'] < data['ema21'] and rsi > 35:
+    elif p < (v - 2) and e9 < e21 and rsi > 35:
         trend, color = "🔴 BEARISH TREND", "red"
+        # Update checklist for Bearish contexts
+        checklist[0]["status"] = "✅" if p < v else "❌"
+        checklist[1]["status"] = "✅" if e9 < e21 else "❌"
+        checklist[2]["status"] = "✅" if 35 <= rsi <= 45 else "❌"
+        
         if rsi < 45:
             sniper, s_color = "💥 SNIPER SHORT ACTIVE (PE)", "red"
         else:
             sniper, s_color = "⏳ WAITING MOMENTUM", "orange"
             
-    elif abs(p - v) <= 2:
-        trend, color = "🟡 VWAP ZONE (NEUTRAL)", "orange"
-        sniper, s_color = "😴 NO SHOT (STRICT AVOID)", "gray"
     else:
-        trend, color = "😴 SIDEWAYS / CONSOLIDATION", "gray"
-        sniper, s_color = "😴 NO SHOT", "gray"
+        trend, color = "🟡 CONSOLIDATION ZONE", "orange"
+        sniper, s_color = "😴 NO SHOT (STRICT AVOID)", "gray"
+        # Re-check checklist rules based on strict condition
+        checklist[0]["status"] = "✅" if (p > v and e9 > e21) or (p < v and e9 < e21) else "❌"
+        checklist[1]["status"] = "✅" if (e9 > e21 if p > v else e9 < e21) else "❌"
+        checklist[2]["status"] = "✅" if (55 <= rsi <= 65 if p > v else 35 <= rsi <= 45) else "❌"
         
-    return trend, color, sniper, s_color
+    return trend, color, sniper, s_color, ema_trend, checklist
 
 @app.route('/')
 def index():
@@ -78,10 +102,18 @@ def index():
     if not data:
         return "<h1>⚠️ Waiting for Exchange Data Stream...</h1><p>Refresh in a few seconds.</p><meta http-equiv='refresh' content='5'>"
         
-    state, color, sniper, sniper_color = get_strategy_and_sniper(data)
+    state, color, sniper, sniper_color, ema_trend, checklist = get_strategy_and_sniper(data)
     
     atm = round(data['price'] / 50) * 50
     strikes = [atm + 100, atm + 50, atm, atm - 50, atm - 100]
+    
+    # Generate checklist HTML
+    checklist_html = "".join([
+        f'<div style="display:flex; justify-content:space-between; font-size:13px; margin:4px 0; background:#1e293b; padding:6px 10px; border-radius:4px;">'
+        f'<span style="color:#cbd5e1;">{item["name"]}</span>'
+        f'<span>{item["status"]}</span>'
+        f'</div>' for item in checklist
+    ])
     
     html = f"""
     <!DOCTYPE html>
@@ -115,13 +147,19 @@ def index():
             
             <div class="card" style="border-left: 5px solid {'#10b981' if color=='green' else '#ef4444' if color=='red' else '#f59e0b'}; margin-bottom: 20px;">
                 <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
-                    <div>
+                    <div style="flex: 1; min-width: 250px;">
                         <span style="color: #94a3b8; font-size: 14px;">SYSTEM BIAS</span>
                         <div style="font-size: 24px; font-weight: bold; margin-top: 5px; color: {'#10b981' if color=='green' else '#ef4444' if color=='red' else '#f59e0b' if color=='orange' else '#94a3b8'};">{state}</div>
+                        <div style="margin-top: 15px;">
+                            <span style="color: #64748b; font-size: 12px; font-weight: bold; letter-spacing: 0.5px;">🎯 SNIPER CONFLUENCE CHECKLIST</span>
+                            <div style="margin-top: 5px;">
+                                {checklist_html}
+                            </div>
+                        </div>
                     </div>
-                    <div>
-                        <span style="color: #94a3b8; font-size: 14px;">🎯 SNIPER SHOT TRIGGER</span>
-                        <div class="btn {sniper_color}" style="display: block; margin-top: 5px; text-align: center;">{sniper}</div>
+                    <div style="text-align: right;">
+                        <span style="color: #94a3b8; font-size: 14px; display: block; margin-bottom: 5px;">🎯 SNIPER SHOT TRIGGER</span>
+                        <div class="btn {sniper_color}" style="text-align: center; min-width: 220px;">{sniper}</div>
                     </div>
                 </div>
             </div>
@@ -132,7 +170,7 @@ def index():
                     <div class="metric"><span>Nifty Spot:</span> <strong>₹{data['price']}</strong></div>
                     <div class="metric"><span>Session VWAP:</span> <strong>₹{data['vwap']}</strong></div>
                     <div class="metric"><span>RSI (14):</span> <strong style="color: {'#ef4444' if data['rsi']>65 else '#10b981' if data['rsi']<35 else '#e2e8f0'}">{data['rsi']}</strong></div>
-                    <div class="metric"><span>EMA 9 / 21:</span> <strong>{data['ema9']} / {data['ema21']}</strong></div>
+                    <div class="metric"><span>EMA 9 / 21:</span> <strong style="color: #38bdf8;">{data['ema9']} / {data['ema21']} <span style="font-size:13px; color:#94a3b8;">({ema_trend})</span></strong></div>
                 </div>
 
                 <div class="card">
