@@ -168,7 +168,7 @@ def index():
             <div class="grid">
                 <div class="card">
                     <h3 style="margin-top:0; font-size: 14px; color:#38bdf8; border-bottom: 1px solid #1f2a48; padding-bottom:6px;">📊 Spot Analytics</h3>
-                    <div class="metric"><span>Nifty Spot:</span> <strong>实时 ₹{data['price']}</strong></div>
+                    <div class="metric"><span>Nifty Spot:</span> <strong style="color: #10b981;">LIVE ₹{data['price']}</strong></div>
                     <div class="metric"><span>Session VWAP:</span> <strong>₹{data['vwap']}</strong></div>
                     <div class="metric"><span>RSI (14):</span> <strong style="color: {'#ef4444' if data['rsi']>65 else '#10b981' if data['rsi']<35 else '#e2e8f0'}">{data['rsi']}</strong></div>
                     <div class="metric"><span>EMA 9 / 21:</span> <strong style="color: #38bdf8;">{data['ema9']} / {data['ema21']} <br><span style="font-size:11px; color:#94a3b8;">({ema_trend})</span></strong></div>
