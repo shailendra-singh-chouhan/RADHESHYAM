@@ -49,18 +49,17 @@ def get_strategy_and_sniper(data):
     if not data: return "❌ DATA ERROR", "gray", "NO SHOT", "gray"
     p, v, rsi = data['price'], data['vwap'], data['rsi']
     
-    # Base Trend Matrix & Sniper Unpacking Fix
     if p > (v + 2) and data['ema9'] > data['ema21'] and rsi < 65:
         trend, color = "🟢 BULLISH TREND", "green"
         if rsi > 55:
-            sniper, s_color = "🚀 SNIPER LONG ACTIVE (BUY CE)", "green"
+            sniper, s_color = "🚀 SNIPER LONG ACTIVE (CE)", "green"
         else:
             sniper, s_color = "⏳ WAITING MOMENTUM", "orange"
             
     elif p < (v - 2) and data['ema9'] < data['ema21'] and rsi > 35:
         trend, color = "🔴 BEARISH TREND", "red"
         if rsi < 45:
-            sniper, s_color = "💥 SNIPER SHORT ACTIVE (BUY PE)", "red"
+            sniper, s_color = "💥 SNIPER SHORT ACTIVE (PE)", "red"
         else:
             sniper, s_color = "⏳ WAITING MOMENTUM", "orange"
             
@@ -81,7 +80,6 @@ def index():
         
     state, color, sniper, sniper_color = get_strategy_and_sniper(data)
     
-    # Calculate Dynamic Options Chain Matrix based on current Spot
     atm = round(data['price'] / 50) * 50
     strikes = [atm + 100, atm + 50, atm, atm - 50, atm - 100]
     
@@ -104,7 +102,9 @@ def index():
             .strike-table {{ width: 100%; border-collapse: collapse; margin-top: 10px; text-align: center; }}
             .strike-table th, .strike-table td {{ padding: 10px; border: 1px solid #1f2a48; }}
             .strike-table th {{ background: #1f2a48; color: #94a3b8; }}
-            .buy-btn {{ padding: 4px 10px; border-radius: 4px; font-weight: bold; font-size: 12px; cursor: pointer; border: none; }}
+            .zone-tag {{ font-size: 12px; font-weight: bold; padding: 4px 8px; border-radius: 4px; display: inline-block; }}
+            .ce-zone {{ background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); }}
+            .pe-zone {{ background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); }}
             .bg-atm {{ background: #1e293b; font-weight: bold; color: #38bdf8; }}
         </style>
     </head>
@@ -136,24 +136,24 @@ def index():
                 </div>
 
                 <div class="card">
-                    <h3 style="margin-top:0; color:#38bdf8; border-bottom: 1px solid #1f2a48; padding-bottom:10px;">🔔 Live Strike Matrix (ATM ± 2)</h3>
+                    <h3 style="margin-top:0; color:#38bdf8; border-bottom: 1px solid #1f2a48; padding-bottom:10px;">🔔 Strike Analytics Matrix</h3>
                     <table class="strike-table">
                         <thead>
                             <tr>
-                                <th>CALL</th>
+                                <th>CALL FOCUS</th>
                                 <th>STRIKE</th>
-                                <th>PUT</th>
+                                <th>PUT FOCUS</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {"".join([f'<tr class="{"bg-atm" if s==atm else ""}"><td><button class="buy-btn green">BUY CE</button></td><td>{s} {"(ATM)" if s==atm else ""}</td><td><button class="buy-btn red">BUY PE</button></td></tr>' for s in strikes])}
+                            {"".join([f'<tr class="{"bg-atm" if s==atm else ""}"><td><span class="zone-tag ce-zone">CE TRACK</span></td><td>{s} {"(ATM)" if s==atm else ""}</td><td><span class="zone-tag pe-zone">PE TRACK</span></td></tr>' for s in strikes])}
                         </tbody>
                     </table>
                 </div>
             </div>
             
             <p style="text-align: center; margin-top: 25px; font-size: 12px; color: #475569;">
-                Last Infrastructure Pulse: {datetime.now().strftime('%H:%M:%S')} IST | Auto-refresh: 15s
+                Last Infrastructure Pulse: {datetime.now().strftime('%H:%M('%S')} IST | Auto-refresh: 15s
             </p>
         </div>
     </body>
