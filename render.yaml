@@ -1,8 +1,1 @@
-services:
-  - type: web
-    name: nifty-bot
-    runtime: python
-    startCommand: python main.py
-    envVars:
-      - key: BOT_TOKEN
-        value: 8611386223:AAHSS_wZTrlVUhAlZ7lmaXTdjX8CcrTtqrY
+
