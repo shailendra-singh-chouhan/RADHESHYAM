@@ -1,7 +1,5 @@
 flask
-yfinance>=0.2.40
-pandas
-numpy
 smartapi-python
-gunicorn
-gevent
+pyotp
+requests
+supabase
