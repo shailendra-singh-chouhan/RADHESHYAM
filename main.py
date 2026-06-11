@@ -103,3 +103,8 @@ def dashboard():
     # इंजन से डेटा लें
     data = {"spot": 23165.4, "stats": stats}
     return render_template_string(HTML_TEMPLATE, m=data)
+from db_manager import DatabaseManager
+db = DatabaseManager()
+
+# अब stats ऐसे लें:
+stats = db.get_stats()
