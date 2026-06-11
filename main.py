@@ -3,35 +3,33 @@ import yfinance as yf
 from flask import Flask, render_template_string, request
 from logzero import logger
 from db_manager import DatabaseManager
+import time
 
 app = Flask(__name__)
+db = DatabaseManager()
 
-# Initialize DB globally but safely
-try:
-    db = DatabaseManager()
-    logger.info("Supabase DB Initialized")
-except Exception as e:
-    logger.error(f"DB Init Failed: {e}")
-    db = None
+# Simple Cache
+cache = {"price": 0, "last_updated": 0}
 
 def get_ticker_data(symbol="^NSEI"):
+    if time.time() - cache["last_updated"] < 60: # 60 सेकंड तक पुराना डेटा दिखाएं
+        return {"price": cache["price"]}
     try:
         ticker = yf.Ticker(symbol)
         df = ticker.history(period="1d", interval="1m")
-        if df.empty: return None
-        price = float(df['Close'].iloc[-1])
-        return {"price": round(price, 2)}
+        if not df.empty:
+            price = float(df['Close'].iloc[-1])
+            cache["price"] = round(price, 2)
+            cache["last_updated"] = time.time()
+            return {"price": cache["price"]}
     except Exception as e:
         logger.error(f"Ticker Fetch Error: {e}")
-        return None
+        return {"price": cache["price"]}
 
-@app.route('/', methods=['GET', 'POST'])
+@app.route('/')
 def index():
-    user_asset = request.form.get('asset', '^NSEI').strip().upper()
-    data = get_ticker_data(user_asset)
-    
-    # Fetch stats from Supabase
-    stats = db.get_stats() if db else {"wins": 0, "losses": 0}
+    data = get_ticker_data()
+    stats = db.get_stats()
     
     html = f"""
     <html>
@@ -39,11 +37,11 @@ def index():
     <body class="bg-slate-900 text-white p-8">
         <h1 class="text-blue-500 font-bold text-2xl">GOAT PRO V17 (PRODUCTION)</h1>
         <div class="mt-4 p-4 bg-slate-800 rounded">
-            <p>Asset: {user_asset}</p>
-            <p>Price: {data['price'] if data else 'N/A'}</p>
-            <hr class="my-4 border-slate-700">
-            <p class="text-green-400 font-bold">Total Wins: {stats['wins']}</p>
-            <p class="text-red-400 font-bold">Total Losses: {stats['losses']}</p>
+            <p class="text-xl">NIFTY Price: {data['price']}</p>
+            <div class="mt-4 flex gap-4">
+                <span class="text-green-400 font-bold">Wins: {stats.get('wins', 0)}</span>
+                <span class="text-red-400 font-bold">Losses: {stats.get('losses', 0)}</span>
+            </div>
         </div>
     </body>
     </html>
@@ -51,28 +49,4 @@ def index():
     return render_template_string(html)
 
 if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port)
-# ग्लोबल वेरिएबल बनाएं (मेमोरी में)
-last_fetch_time = 0
-cached_data = {"price": 0}
-
-def get_ticker_data(symbol="^NSEI"):
-    global last_fetch_time, cached_data
-    import time
-    
-    # अगर 60 सेकंड के अंदर फिर से कॉल किया, तो पुरानी वैल्यू ही वापस करें
-    if time.time() - last_fetch_time < 60:
-        return cached_data
-
-    try:
-        ticker = yf.Ticker(symbol)
-        df = ticker.history(period="1d", interval="1m")
-        if not df.empty:
-            price = float(df['Close'].iloc[-1])
-            cached_data = {"price": round(price, 2)}
-            last_fetch_time = time.time()
-            return cached_data
-    except Exception as e:
-        logger.error(f"Ticker Fetch Error: {e}")
-        return cached_data # एरर आने पर भी पुरानी वैल्यू दिखाएं
+    app.run()
