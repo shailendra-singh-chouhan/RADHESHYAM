@@ -1,13 +1,7 @@
 flask
-flask-cors
 yfinance>=0.2.40
-requests
 pandas
 numpy
-pyTelegramBotAPI
-pytz
 smartapi-python
-pyotp
-logzero
-websocket-client
 gunicorn
+gevent  # For better async
