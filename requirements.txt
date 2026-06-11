@@ -3,3 +3,5 @@ smartapi-python
 pyotp
 requests
 supabase
+logzero
+urllib3
