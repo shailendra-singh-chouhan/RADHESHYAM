@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: radheshyam
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn --worker-class gevent --workers 1 main:app
+    envVars:
+      - key: PORT
+        value: 10000  # Render default
