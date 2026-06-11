@@ -92,3 +92,14 @@ if __name__ == '__main__':
 @app.route('/health')
 def health_check():
     return {"status": "ok"}, 200
+# main.py में यह बदलाव करें
+from db_manager import DatabaseManager # SQLite imports हटा दें
+db = DatabaseManager() 
+
+@app.route('/')
+def dashboard():
+    # अब डेटा हमेशा Supabase से आएगा
+    stats = db.get_stats()
+    # इंजन से डेटा लें
+    data = {"spot": 23165.4, "stats": stats}
+    return render_template_string(HTML_TEMPLATE, m=data)
