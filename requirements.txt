@@ -1,5 +1,6 @@
 flask
 pyotp
 smartapi-python
+logzero
 requests
 gunicorn
