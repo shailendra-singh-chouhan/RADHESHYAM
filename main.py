@@ -5,7 +5,7 @@ from SmartApi import SmartConnect
 
 app = Flask(__name__)
 
-# CONFIGURATION: सिर्फ Nifty 50 का टोकन (यह जल्दी एक्सपायर नहीं होता)
+# CONFIGURATION: सिर्फ Nifty 50 का टोकन
 NIFTY_TOKEN = "99926000"  # NSE Index Token
 
 HTML_TEMPLATE = """
@@ -118,4 +118,50 @@ def fetch_angel_data():
     except Exception as e:
         return {"error": f"SYSTEM CRASH PREVENTED: {str(e)}"}
 
-def engine_
+def engine_brain():
+    feed = fetch_angel_data()
+    
+    # अगर एंजेल वन डेटा में एरर है तो स्क्रीन पर एरर दिखाओ
+    if feed.get("error"):
+        return {
+            "spot": "API ERR", 
+            "trade_type": "HALTED", "signal": feed["error"], 
+            "target": "N/A", "sl": "N/A", "gamma_blast": False, 
+            "chk": [False, False, False, False, False]
+        }
+        
+    spot = feed["spot"]
+
+    # Pure Nifty Positional Algorithmic Logic
+    if spot > 23000:
+        trade_type = "WEEKLY POSITIONAL"
+        signal = f"BUY & HOLD NIFTY ON DIP TO {round(spot - 40, 2)}"
+        target = f"{round(spot + 150, 2)}"
+        sl = f"{round(spot - 80, 2)}"
+        checklist = [True, True, True, False, True] 
+        gamma_blast = True if spot > 23500 else False 
+    else:
+        trade_type = "INTRADAY SWING"
+        signal = "ACCUMULATE NIFTY SHORTS FOR DAILY TARGETS"
+        target = f"{round(spot - 100, 2)}"
+        sl = f"{round(spot + 60, 2)}"
+        checklist = [True, False, True, True, False]
+        gamma_blast = False
+
+    return {
+        "spot": spot, "trade_type": trade_type,
+        "signal": signal, "target": target, "sl": sl,
+        "gamma_blast": gamma_blast, "chk": checklist
+    }
+
+@app.route('/')
+def index():
+    return render_template_string(HTML_TEMPLATE, m=engine_brain())
+
+@app.route('/api/refresh')
+def api_refresh():
+    return jsonify(engine_brain())
+
+if __name__ == '__main__':
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
