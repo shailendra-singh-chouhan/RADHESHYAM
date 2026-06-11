@@ -53,3 +53,26 @@ def index():
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
+# ग्लोबल वेरिएबल बनाएं (मेमोरी में)
+last_fetch_time = 0
+cached_data = {"price": 0}
+
+def get_ticker_data(symbol="^NSEI"):
+    global last_fetch_time, cached_data
+    import time
+    
+    # अगर 60 सेकंड के अंदर फिर से कॉल किया, तो पुरानी वैल्यू ही वापस करें
+    if time.time() - last_fetch_time < 60:
+        return cached_data
+
+    try:
+        ticker = yf.Ticker(symbol)
+        df = ticker.history(period="1d", interval="1m")
+        if not df.empty:
+            price = float(df['Close'].iloc[-1])
+            cached_data = {"price": round(price, 2)}
+            last_fetch_time = time.time()
+            return cached_data
+    except Exception as e:
+        logger.error(f"Ticker Fetch Error: {e}")
+        return cached_data # एरर आने पर भी पुरानी वैल्यू दिखाएं
