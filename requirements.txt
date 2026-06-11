@@ -5,3 +5,4 @@ requests
 supabase
 logzero
 urllib3
+websocket-client
