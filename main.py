@@ -3,27 +3,43 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 from flask import Flask, render_template_string, request
-from datetime import datetime
 import time
+from smartapi import SmartConnect
+import pyotp  # For TOTP if using SmartAPI login
 
 app = Flask(__name__)
 
 def get_ticker_data(symbol="^NSEI", max_retries=3):
-    """Robust MCX/NSE fetch with retries."""
+    """Robust fetch with yfinance fallback + SmartAPI attempt for MCX."""
     for attempt in range(max_retries):
         try:
+            if "MCX" in symbol.upper() or symbol.endswith("=F"):
+                # SmartAPI placeholder - expand with your credentials if configured
+                try:
+                    # Example skeleton (add env vars for API key, etc. in Render dashboard)
+                    # obj = SmartConnect(api_key=os.getenv("SMARTAPI_KEY"))
+                    # data = obj.get_market_data(...)  # Implement per your auth
+                    pass  # Replace with real call for true live MCX
+                except:
+                    pass  # Fallback to yfinance
+
             ticker = yf.Ticker(symbol)
             df = ticker.history(period="1d", interval="1m")
             if df.empty:
-                df = ticker.history(period="5d", interval="5m")  # MCX fallback
+                df = ticker.history(period="5d", interval="5m")
                 if df.empty:
-                    raise ValueError("Empty DataFrame")
-            
+                    raise ValueError("Empty DataFrame from yfinance")
+
+            # Robust calculations with NaN guards
+            df = df.dropna(subset=['Close', 'High', 'Low', 'Volume'])
+            if len(df) < 5:
+                raise ValueError("Insufficient data points")
+
             last_price = float(df['Close'].iloc[-1])
             typical_price = (df['High'] + df['Low'] + df['Close']) / 3
-            total_volume = float(df['Volume'].sum())
-            
-            vwap = (df['Volume'] * typical_price).sum() / total_volume if total_volume > 0 else float(typical_price.mean())
+            total_volume = float(df['Volume'].sum() or 1)
+
+            vwap = float((df['Volume'] * typical_price).sum() / total_volume)
             
             high_day = float(df['High'].max())
             low_day = float(df['Low'].min())
@@ -34,8 +50,8 @@ def get_ticker_data(symbol="^NSEI", max_retries=3):
             r2 = pivot + (high_day - low_day)
             s2 = pivot - (high_day - low_day)
             
-            ema9 = df['Close'].ewm(span=9, adjust=False).mean().iloc[-1]
-            ema21 = df['Close'].ewm(span=21, adjust=False).mean().iloc[-1]
+            ema9 = float(df['Close'].ewm(span=9, adjust=False).mean().iloc[-1])
+            ema21 = float(df['Close'].ewm(span=21, adjust=False).mean().iloc[-1])
             
             delta = df['Close'].diff()
             gain = delta.where(delta > 0, 0).rolling(window=14).mean()
@@ -43,21 +59,21 @@ def get_ticker_data(symbol="^NSEI", max_retries=3):
             
             rs = gain.iloc[-1] / loss.iloc[-1] if not loss.empty and loss.iloc[-1] != 0 else 1.0
             rsi = 100 - (100 / (1 + rs)) if not np.isnan(rs) else 50.0
-            
+
             return {
                 "symbol": symbol,
                 "price": round(last_price, 2),
                 "vwap": round(vwap, 2),
-                "ema9": round(float(ema9), 2),
-                "ema21": round(float(ema21), 2),
-                "rsi": round(float(rsi), 2),
+                "ema9": round(ema9, 2),
+                "ema21": round(ema21, 2),
+                "rsi": round(rsi, 2),
                 "r1": round(r1, 2), "r2": round(r2, 2),
                 "s1": round(s1, 2), "s2": round(s2, 2)
             }
         except Exception as e:
             print(f"Attempt {attempt+1}/{max_retries} failed for {symbol}: {e}")
-            time.sleep(1)
-    print(f"Failed to fetch data for {symbol} after retries.")
+            time.sleep(1.5)
+    print(f"Failed after retries for {symbol}")
     return None
 
 def get_strategy_and_sniper(data):
@@ -66,13 +82,8 @@ def get_strategy_and_sniper(data):
     p, v, rsi = data['price'], data['vwap'], data['rsi']
     e9, e21 = data['ema9'], data['ema21']
     
-    if e9 > e21 + 0.5:
-        ema_trend = "Bullish Crossover"
-    elif e9 < e21 - 0.5:
-        ema_trend = "Bearish Crossover"
-    else:
-        ema_trend = "Sideways/Squeeze"
-        
+    ema_trend = "Bullish Crossover" if e9 > e21 + 0.5 else "Bearish Crossover" if e9 < e21 - 0.5 else "Sideways/Squeeze"
+    
     checklist = [
         {"name": f"Price vs VWAP ({'Above' if p > v else 'Below'})", "status": "✅" if p > v else "❌"},
         {"name": f"EMA Crossover ({'9 > 21' if e9 > e21 else '9 < 21'})", "status": "✅" if e9 > e21 else "❌"},
@@ -114,20 +125,8 @@ def index():
     matrix_rows = ""
     for s in strikes:
         is_atm = "bg-atm" if s == atm else ""
-        if s < atm:
-            ce_status, ce_style = "🔥 ITM (High Delta)", "color: #10b981;"
-        elif s == atm:
-            ce_status, ce_style = "⚡ ATM (Max Action)", "color: #38bdf8;"
-        else:
-            ce_status, ce_style = "⏳ OTM (High Decay)", "color: #94a3b8; font-size: 10px;"
-        
-        if s > atm:
-            pe_status, pe_style = "🔥 ITM (High Delta)", "color: #ef4444;"
-        elif s == atm:
-            pe_status, pe_style = "⚡ ATM (Max Action)", "color: #38bdf8;"
-        else:
-            pe_status, pe_style = "⏳ OTM (High Decay)", "color: #94a3b8; font-size: 10px;"
-            
+        ce_status, ce_style = ("🔥 ITM (High Delta)", "color: #10b981;") if s < atm else ("⚡ ATM (Max Action)", "color: #38bdf8;") if s == atm else ("⏳ OTM (High Decay)", "color: #94a3b8; font-size: 10px;")
+        pe_status, pe_style = ("🔥 ITM (High Delta)", "color: #ef4444;") if s > atm else ("⚡ ATM (Max Action)", "color: #38bdf8;") if s == atm else ("⏳ OTM (High Decay)", "color: #94a3b8; font-size: 10px;")
         matrix_rows += f'<tr class="{is_atm}"><td style="{ce_style} text-align: left;">{ce_status}</td><td><b>{s}</b></td><td style="{pe_style} text-align: right;">{pe_status}</td></tr>'
     
     html = f"""
@@ -136,6 +135,7 @@ def index():
     <head>
         <title>GOAT PRO | QUANT TERMINAL</title>
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+        <meta http-equiv="refresh" content="30"> <!-- Auto-refresh for live feel -->
         <style>
             body {{ background: #0b0f19; color: #e2e8f0; font-family: 'Segoe UI', sans-serif; padding: 10px; margin: 0; }}
             .container {{ max-width: 950px; margin: auto; }}
@@ -179,7 +179,7 @@ def index():
                         <span style="color: #94a3b8; font-size: 11px; text-transform: uppercase;">ACTIVE TICKER: <span style="color:#38bdf8;">{data['symbol']}</span></span>
                         <div style="font-size: 18px; font-weight: bold; margin-top: 2px; color: {'#10b981' if color=='green' else '#ef4444' if color=='red' else '#f59e0b'};">{state}</div>
                         <div style="margin-top: 8px;">
-                            <span style="color: #64748b; font-size: 10px; font-weight: bold;">🎯 SNIPER CONFLUENCE CHECKLIST</span>
+                            <span style="color: #94a3b8; font-size: 10px; font-weight: bold;">🎯 SNIPER CONFLUENCE CHECKLIST</span>
                             <div style="margin-top: 4px;">{checklist_html}</div>
                         </div>
                     </div>
