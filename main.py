@@ -29,7 +29,6 @@ def get_ticker_data(symbol="^NSEI"):
 def dashboard():
     data = get_ticker_data()
     stats = db.get_stats()
-    
     try:
         alpha_picks = db.get_alpha_picks()
     except Exception as e:
@@ -85,6 +84,10 @@ def dashboard():
 @app.route('/api/price')
 def api_price():
     return jsonify(get_ticker_data())
+
+@app.route('/health')
+def health_check():
+    return {"status": "ok"}, 200
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 5000)))
