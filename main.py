@@ -4,24 +4,29 @@ import pandas as pd
 import numpy as np
 from flask import Flask, render_template_string, request
 import time
-from smartapi import SmartConnect
-import pyotp  # For TOTP if using SmartAPI login
+
+# SmartAPI optional (MCX live upgrade path)
+try:
+    from SmartApi import SmartConnect  # Correct import for smartapi-python
+    SMARTAPI_AVAILABLE = True
+except ImportError:
+    SMARTAPI_AVAILABLE = False
+    print("SmartAPI not available - using yfinance fallback")
 
 app = Flask(__name__)
 
 def get_ticker_data(symbol="^NSEI", max_retries=3):
-    """Robust fetch with yfinance fallback + SmartAPI attempt for MCX."""
+    """Robust fetch with yfinance + optional SmartAPI for MCX."""
     for attempt in range(max_retries):
         try:
-            if "MCX" in symbol.upper() or symbol.endswith("=F"):
-                # SmartAPI placeholder - expand with your credentials if configured
+            # SmartAPI attempt for MCX (placeholder - configure env vars)
+            if SMARTAPI_AVAILABLE and ("MCX" in symbol.upper() or symbol.endswith("=F")):
                 try:
-                    # Example skeleton (add env vars for API key, etc. in Render dashboard)
                     # obj = SmartConnect(api_key=os.getenv("SMARTAPI_KEY"))
-                    # data = obj.get_market_data(...)  # Implement per your auth
-                    pass  # Replace with real call for true live MCX
-                except:
-                    pass  # Fallback to yfinance
+                    # ... login + get data (expand with your creds)
+                    pass  # Replace with real call when ready
+                except Exception as api_e:
+                    print(f"SmartAPI failed: {api_e} - falling back")
 
             ticker = yf.Ticker(symbol)
             df = ticker.history(period="1d", interval="1m")
@@ -30,7 +35,6 @@ def get_ticker_data(symbol="^NSEI", max_retries=3):
                 if df.empty:
                     raise ValueError("Empty DataFrame from yfinance")
 
-            # Robust calculations with NaN guards
             df = df.dropna(subset=['Close', 'High', 'Low', 'Volume'])
             if len(df) < 5:
                 raise ValueError("Insufficient data points")
@@ -135,7 +139,7 @@ def index():
     <head>
         <title>GOAT PRO | QUANT TERMINAL</title>
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-        <meta http-equiv="refresh" content="30"> <!-- Auto-refresh for live feel -->
+        <meta http-equiv="refresh" content="30">
         <style>
             body {{ background: #0b0f19; color: #e2e8f0; font-family: 'Segoe UI', sans-serif; padding: 10px; margin: 0; }}
             .container {{ max-width: 950px; margin: auto; }}
