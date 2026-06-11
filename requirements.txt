@@ -7,3 +7,4 @@ logzero
 urllib3
 websocket-client
 gunicorn
+yfinance
