@@ -2,5 +2,6 @@ flask
 pyotp
 smartapi-python
 logzero
+websocket-client
 requests
 gunicorn
