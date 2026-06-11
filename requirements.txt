@@ -4,4 +4,4 @@ pandas
 numpy
 smartapi-python
 gunicorn
-gevent  # For better async
+gevent
