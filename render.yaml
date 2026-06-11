@@ -6,4 +6,9 @@ services:
     startCommand: gunicorn --worker-class gevent --workers 1 main:app
     envVars:
       - key: PORT
-        value: 10000  # Render default
+        value: 10000
+      # Add these later for SmartAPI MCX:
+      # - key: SMARTAPI_KEY
+      #   value: your_key
+      # - key: CLIENT_CODE
+      #   value: your_code
