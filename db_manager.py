@@ -12,7 +12,7 @@ class DatabaseManager:
 
     def get_stats(self):
         try:
-            # .single() की जगह .maybe_single() होना अनिवार्य है
+            # .single() को बदलकर .maybe_single() किया गया है ताकि 0 rows पर क्रैश न हो
             res = self.supabase.table("trade_history").select("wins,losses").eq("id", 1).maybe_single().execute()
             return res.data if res.data else {"wins": 0, "losses": 0}
         except Exception as e:
