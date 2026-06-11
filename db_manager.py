@@ -19,3 +19,11 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Supabase get_stats error: {e}")
             return {"wins": 0, "losses": 0}
+def get_stats(self):
+        try:
+            # .maybe_single() इस्तेमाल करें, यह एरर नहीं देगा अगर डेटा नहीं होगा
+            res = self.supabase.table("trade_history").select("wins,losses").eq("id", 1).maybe_single().execute()
+            return res.data if res.data else {"wins": 0, "losses": 0}
+        except Exception as e:
+            logger.error(f"Supabase error: {e}")
+            return {"wins": 0, "losses": 0}
