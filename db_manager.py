@@ -12,17 +12,18 @@ class DatabaseManager:
 
     def get_stats(self):
         try:
-            # .single() को बदलकर .maybe_single() किया गया है ताकि 0 rows पर क्रैश न हो
+            # सीधे 'trade_history' टेबल को कॉल करें
             res = self.supabase.table("trade_history").select("wins,losses").eq("id", 1).maybe_single().execute()
             return res.data if res.data else {"wins": 0, "losses": 0}
         except Exception as e:
-            logger.error(f"Supabase get_stats error: {e}")
+            logger.error(f"Supabase stats error: {e}")
             return {"wins": 0, "losses": 0}
 
     def get_alpha_picks(self):
         try:
+            # सीधे 'alpha_picks' टेबल को कॉल करें
             res = self.supabase.table("alpha_picks").select("*").eq("status", "ACTIVE").order("confidence", desc=True).limit(3).execute()
             return res.data if res.data else []
         except Exception as e:
-            logger.error(f"Supabase Alpha Picks error: {e}")
+            logger.error(f"Supabase picks error: {e}")
             return []
