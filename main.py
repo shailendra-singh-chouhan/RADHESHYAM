@@ -566,3 +566,347 @@ body{font-family:'Space Grotesk',sans-serif;background:#060b16;color:#e2e8f0}
           <span class="mono text-[8px] font-black px-1.5 py-0.5 rounded {{ 'bg-emerald-950 text-emerald-400' if t.direction=='LONG' else 'bg-red-950 text-red-400' }}">{{ t.direction }}</span>
           <span class="mono text-[8px] text-slate-500">{{ t.setup }}</span>
           {% if t.source=='AUTO' %}<span class="mono text-[7px] text-purple-400">AUTO
+          <!-- ANALYSIS TAB -->
+  <div id="pt-analysis" class="p-3 hidden">
+    {% if stats.total > 0 %}
+    <div class="grid grid-cols-2 gap-2 mb-3">
+      {% for lbl,val,col in [
+        ('Win Rate',stats.win_rate|string+'%','text-emerald-400' if stats.win_rate>=60 else 'text-amber-400' if stats.win_rate>=40 else 'text-red-400'),
+        ('Total P&L',('+' if stats.total_pnl>=0 else '')|string+stats.total_pnl|string,'text-emerald-400' if stats.total_pnl>=0 else 'text-red-400'),
+        ('Avg Win','+'+stats.avg_win|string,'text-emerald-400'),
+        ('Avg Loss',stats.avg_loss|string,'text-red-400'),
+        ('Best','+'+stats.best|string,'text-emerald-400'),
+        ('Worst',stats.worst|string,'text-red-400')
+      ] %}
+      <div class="bg-[#060b16] border border-slate-800 rounded p-2.5 text-center">
+        <p class="mono text-[8px] text-slate-600 uppercase">{{ lbl }}</p>
+        <p class="mono text-lg font-black {{ col }}">{{ val }}</p>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="bg-[#060b16] border border-slate-800 rounded p-2.5 mb-3">
+      <p class="mono text-[8px] text-slate-600 uppercase mb-1">System Expectancy / trade</p>
+      <p class="mono text-xl font-black {{ 'text-emerald-400' if stats.expectancy>=0 else 'text-red-400' }}">
+        {{ '+' if stats.expectancy>=0 else '' }}{{ stats.expectancy }} pts
+      </p>
+      <p class="mono text-[8px] text-slate-500 mt-1">
+        {% if stats.expectancy > 5 %}Edge STRONG — scale up carefully
+        {% elif stats.expectancy > 0 %}Edge marginal — need more trades
+        {% else %}Negative — DO NOT go live yet{% endif %}
+      </p>
+    </div>
+    {% if stats.by_setup %}
+    <p class="mono text-[8px] text-slate-600 uppercase tracking-widest mb-1">Setup Breakdown</p>
+    {% for setup,sd in stats.by_setup.items() %}
+    <div class="flex justify-between items-center bg-[#060b16] border border-slate-800 rounded px-2 py-1.5 mb-1">
+      <span class="mono text-[9px] text-slate-300">{{ setup }}</span>
+      <div class="flex gap-2 mono text-[8px]">
+        <span class="text-slate-500">{{ sd.count }}T</span>
+        <span class="{{ 'text-emerald-400' if sd.win_rate>=50 else 'text-red-400' }}">{{ sd.win_rate }}%W</span>
+        <span class="{{ 'text-emerald-400' if sd.pnl>=0 else 'text-red-400' }}">{{ '+' if sd.pnl>=0 else '' }}{{ sd.pnl }}pts</span>
+      </div>
+    </div>
+    {% endfor %}
+    {% endif %}
+    {% if stats.by_emotion %}
+    <p class="mono text-[8px] text-slate-600 uppercase tracking-widest mt-3 mb-1">Emotion vs P&L</p>
+    {% for emo,ed in stats.by_emotion.items() %}
+    <div class="flex justify-between items-center bg-[#060b16] border border-slate-800 rounded px-2 py-1.5 mb-1">
+      <span class="mono text-[9px] text-slate-300">🧠 {{ emo }}</span>
+      <div class="flex gap-2 mono text-[8px]">
+        <span class="text-slate-500">{{ ed.count }}T</span>
+        <span class="{{ 'text-emerald-400' if ed.pnl>=0 else 'text-red-400' }}">{{ '+' if ed.pnl>=0 else '' }}{{ ed.pnl }}pts</span>
+      </div>
+    </div>
+    {% endfor %}
+    {% endif %}
+    <p class="mono text-[8px] text-slate-600 uppercase tracking-widest mt-3 mb-1">Auto Insights</p>
+    {% if stats.expectancy < 0 %}
+    <div class="border-l-2 border-red-600 pl-2 mb-1 mono text-[9px] text-slate-300">Negative expectancy — system ka edge nahi. Live mat jao.</div>
+    {% elif stats.expectancy < 3 %}
+    <div class="border-l-2 border-amber-600 pl-2 mb-1 mono text-[9px] text-slate-300">Edge marginal — zyada data lo pehle.</div>
+    {% else %}
+    <div class="border-l-2 border-emerald-600 pl-2 mb-1 mono text-[9px] text-slate-300">System kaam kar raha hai. Consistency maintain karo.</div>
+    {% endif %}
+    {% for emo,ed in stats.by_emotion.items() %}
+    {% if ed.pnl < 0 %}
+    <div class="border-l-2 border-red-800 pl-2 mb-1 mono text-[9px] text-slate-400">"{{ emo }}" emotion mein loss ho raha hai — in states mein rukna seekho.</div>
+    {% endif %}
+    {% endfor %}
+    <button onclick="if(confirm('Clear all?'))fetch('/paper/clear',{method:'POST'}).then(()=>location.reload())"
+      class="w-full mt-3 py-1.5 rounded border border-red-900 bg-red-950/20 mono text-[9px] text-red-500">
+      🗑 Clear All Paper Trades
+    </button>
+    {% else %}
+    <div class="text-center py-6 mono text-[10px] text-slate-600">Complete trades needed for analysis.</div>
+    {% endif %}
+  </div>
+
+  <!-- INTROSPECTION TAB — with 3-COLUMN DQ TERMINAL -->
+  <div id="pt-intro" class="p-3 hidden">
+    <!-- ═══════ 3-COLUMN DECISION QUALITY TERMINAL ═══════ -->
+    <div class="grid grid-cols-3 gap-2 mb-3">
+      <div class="bg-[#060b16] border border-slate-800 rounded-lg p-2 text-center">
+        <p class="mono text-[7px] text-slate-600 uppercase tracking-widest mb-1">Today's DQ</p>
+        <p class="mono text-xl font-black {{ 'text-emerald-400' if latest_dq and latest_dq.dq_score>=70 else 'text-amber-400' if latest_dq and latest_dq.dq_score>=40 else 'text-red-400' }}">
+          {{ latest_dq.dq_score if latest_dq else '—' }}
+        </p>
+        <p class="mono text-[7px] text-slate-500 mt-0.5">/100</p>
+        {% if latest_dq %}
+        <p class="mono text-[6px] text-slate-600 mt-1 leading-tight">{{ latest_dq.breakdown[:60] }}</p>
+        {% endif %}
+      </div>
+      <div class="bg-[#060b16] border border-slate-800 rounded-lg p-2 text-center">
+        <p class="mono text-[7px] text-slate-600 uppercase tracking-widest mb-1">7-Day Avg</p>
+        {% set dq_scores = dq_history | map(attribute='dq_score') | list %}
+        {% set dq_avg = (dq_scores | sum / dq_scores | length) | round(0) if dq_scores else 0 %}
+        <p class="mono text-xl font-black {{ 'text-emerald-400' if dq_avg>=70 else 'text-amber-400' if dq_avg>=40 else 'text-red-400' }}">
+          {{ dq_avg | int if dq_scores else '—' }}
+        </p>
+        <p class="mono text-[7px] text-slate-500 mt-0.5">avg</p>
+        <div class="flex items-end gap-0.5 justify-center h-8 mt-1">
+          {% for d in (dq_history | reverse | list)[-7:] %}
+          {% set h = (d.dq_score / 100 * 28) | round(0) %}
+          <div class="w-2 rounded-t {{ 'bg-emerald-500' if d.dq_score>=70 else 'bg-amber-500' if d.dq_score>=40 else 'bg-red-500' }}"
+               style="height:{{ h }}px" title="{{ d.date }}: {{ d.dq_score }}"></div>
+          {% endfor %}
+          {% if (dq_history | length) < 7 %}
+          {% for _ in range(7 - (dq_history | length)) %}
+          <div class="w-2 rounded-t bg-slate-800" style="height:2px"></div>
+          {% endfor %}
+          {% endif %}
+        </div>
+      </div>
+      <div class="bg-[#060b16] border border-slate-800 rounded-lg p-2 text-center flex flex-col justify-center">
+        <p class="mono text-[7px] text-slate-600 uppercase tracking-widest mb-1">Trend</p>
+        {% if dq_scores | length >= 2 %}
+        {% set trend = dq_scores[0] - dq_scores[1] %}
+        <p class="mono text-lg font-black {{ 'text-emerald-400' if trend>0 else 'text-red-400' if trend<0 else 'text-slate-400' }}">
+          {{ '+' if trend>0 else '' }}{{ trend }}
+        </p>
+        <p class="mono text-[7px] {{ 'text-emerald-500' if trend>0 else 'text-red-500' if trend<0 else 'text-slate-500' }}">
+          {{ 'IMPROVING ↑' if trend>0 else 'DECLINING ↓' if trend<0 else 'FLAT →' }}
+        </p>
+        {% else %}
+        <p class="mono text-lg font-black text-slate-500">—</p>
+        <p class="mono text-[7px] text-slate-600">Need 2+ entries</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- ═══════ INTROSPECTION FORM ═══════ -->
+    <form onsubmit="submitIntro(event)" class="space-y-3">
+      <div class="bg-[#060b16] border border-slate-800 rounded p-2.5">
+        <p class="mono text-[9px] text-slate-400 mb-2">1. Rule follow kiya ya emotion se trade liya? (1=emotion, 5=rules)</p>
+        <div class="flex gap-2" id="iq1">
+          {% for i in range(1,6) %}
+          <div onclick="setScore('iq1',{{ i }})" id="iq1-{{ i }}"
+            class="w-8 h-8 rounded-full border border-slate-700 bg-[#060b16] flex items-center justify-center mono text-[9px] text-slate-500 cursor-pointer hover:border-blue-600">{{ i }}</div>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="bg-[#060b16] border border-slate-800 rounded p-2.5">
+        <p class="mono text-[9px] text-slate-400 mb-2">2. SL ke bina trade liya? &nbsp; 3. Revenge trade liya?</p>
+        <div class="flex gap-4">
+          <div class="flex gap-2 items-center">
+            <span class="mono text-[8px] text-slate-500">SL Skip:</span>
+            <div onclick="setBool2('slSkip','Yes',this)" id="ss-yes" class="emo-btn mono text-[8px] px-2 py-0.5 rounded border border-slate-700 text-slate-500">Yes</div>
+            <div onclick="setBool2('slSkip','No',this)"  id="ss-no"  class="emo-btn on mono text-[8px] px-2 py-0.5 rounded border border-slate-700 text-slate-500">No</div>
+          </div>
+          <div class="flex gap-2 items-center">
+            <span class="mono text-[8px] text-slate-500">Revenge:</span>
+            <div onclick="setBool2('rv','Yes',this)" id="rv-yes" class="emo-btn mono text-[8px] px-2 py-0.5 rounded border border-slate-700 text-slate-500">Yes</div>
+            <div onclick="setBool2('rv','No',this)"  id="rv-no"  class="emo-btn on mono text-[8px] px-2 py-0.5 rounded border border-slate-700 text-slate-500">No</div>
+          </div>
+        </div>
+      </div>
+      <div class="bg-[#060b16] border border-slate-800 rounded p-2.5">
+        <p class="mono text-[9px] text-slate-400 mb-2">4. Aaj ka discipline score (1–5)</p>
+        <div class="flex gap-2" id="iq4">
+          {% for i in range(1,6) %}
+          <div onclick="setScore('iq4',{{ i }})"
+            class="w-8 h-8 rounded-full border border-slate-700 bg-[#060b16] flex items-center justify-center mono text-[9px] text-slate-500 cursor-pointer">{{ i }}</div>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="bg-[#060b16] border border-slate-800 rounded p-2.5">
+        <p class="mono text-[9px] text-slate-400 mb-1">5. Kal ke liye ek pakka rule:</p>
+        <textarea name="tomorrow_rule" rows="2" placeholder="e.g. SL nahi toh trade nahi..."
+          class="w-full bg-transparent border-0 mono text-[10px] text-white outline-none resize-none"></textarea>
+      </div>
+      <input type="hidden" id="iScore1" name="rule_followed" value="3">
+      <input type="hidden" id="iScore4" name="discipline" value="3">
+      <input type="hidden" id="iSlSkip" name="sl_skip" value="No">
+      <input type="hidden" id="iRevenge" name="revenge" value="No">
+      <button type="submit" class="w-full py-2 rounded bg-blue-700 hover:bg-blue-600 mono text-[10px] font-black text-white">
+        💾 SAVE TODAY'S INTROSPECTION
+      </button>
+    </form>
+    <!-- History -->
+    {% if intros %}
+    <p class="mono text-[8px] text-slate-600 uppercase tracking-widest mt-4 mb-2">Recent Entries</p>
+    {% for e in intros %}
+    <div class="bg-[#060b16] border border-slate-800 rounded p-2.5 mb-2">
+      <div class="flex justify-between mono text-[8px] text-slate-500 mb-1">
+        <span>{{ e.date }}</span>
+        <span class="{{ 'text-emerald-400' if e.discipline>=4 else 'text-amber-400' if e.discipline>=3 else 'text-red-400' }}">Discipline: {{ e.discipline }}/5</span>
+      </div>
+      {% if e.sl_skip=='Yes' %}<p class="mono text-[8px] text-red-400">⚠ SL skip kiya</p>{% endif %}
+      {% if e.revenge=='Yes' %}<p class="mono text-[8px] text-red-400">⚠ Revenge trade</p>{% endif %}
+      {% if e.tomorrow_rule %}<p class="mono text-[8px] text-purple-400 mt-1">📌 {{ e.tomorrow_rule }}</p>{% endif %}
+    </div>
+    {% endfor %}
+    {% endif %}
+  </div>
+
+</div><!-- end paper lab -->
+
+</div><!-- max-w -->
+
+<script>
+// ── Tab ──
+function ptTab(name) {
+  ['journal','exit','analysis','intro'].forEach(n => {
+    document.getElementById('pt-'+n).classList.toggle('hidden', n!==name);
+    document.getElementById('ptt-'+n).classList.toggle('on', n===name);
+  });
+}
+
+// ── Emotion ──
+function selEmo(el, val) {
+  document.querySelectorAll('.emo-btn').forEach(b=>b.classList.remove('on'));
+  el.classList.add('on');
+  document.getElementById('emoVal').value = val;
+}
+
+// ── Intro scores ──
+const introScores = {iq1:3, iq4:3};
+function setScore(grp, val) {
+  introScores[grp] = val;
+  for(let i=1;i<=5;i++){
+    const el = document.getElementById(grp+'-'+i);
+    el.classList.toggle('border-blue-500', i<=val);
+    el.classList.toggle('bg-blue-950/40', i<=val);
+    el.classList.toggle('text-blue-400', i<=val);
+    el.classList.toggle('border-slate-700', i>val);
+    el.classList.toggle('text-slate-500', i>val);
+  }
+  document.getElementById(grp==='iq1'?'iScore1':'iScore4').value = val;
+}
+
+const boolState = {slSkip:'No', rv:'No'};
+function setBool2(key, val, el) {
+  boolState[key] = val;
+  const prefix = key==='slSkip'?'ss':'rv';
+  document.getElementById(prefix+'-yes').classList.remove('on');
+  document.getElementById(prefix+'-no').classList.remove('on');
+  el.classList.add('on');
+  document.getElementById(key==='slSkip'?'iSlSkip':'iRevenge').value = val;
+}
+
+// ── Submit exit ──
+function submitExit(e) {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  fetch('/paper/exit', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      trade_id:    parseInt(fd.get('trade_id')),
+      direction:   fd.get('direction'),
+      entry_price: parseFloat(fd.get('entry_price')),
+      exit_price:  parseFloat(fd.get('exit_price')),
+      exit_reason: fd.get('exit_reason'),
+      post_note:   fd.get('post_note'),
+      emotion:     fd.get('emotion'),
+    })
+  }).then(()=>location.reload());
+}
+
+// ── Submit introspection ──
+function submitIntro(e) {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  fetch('/paper/intro', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      rule_followed: parseInt(fd.get('rule_followed')),
+      discipline:    parseInt(fd.get('discipline')),
+      sl_skip:       fd.get('sl_skip'),
+      revenge:       fd.get('revenge'),
+      tomorrow_rule: fd.get('tomorrow_rule'),
+    })
+  }).then(()=>{ alert('Saved!'); location.reload(); });
+}
+</script>
+</body>
+</html>"""
+
+
+# ──────────────────────────────────────────
+# ROUTES
+# ──────────────────────────────────────────
+@app.route("/")
+def index():
+    data = run_pipeline()
+    if "error" in data:
+        return (f"<div style='background:#060b16;color:#f87171;font-family:monospace;"
+                f"padding:40px;min-height:100vh;display:flex;flex-direction:column;"
+                f"justify-content:center;align-items:center;text-align:center'>"
+                f"<h2>🚨 ENGINE HALTED</h2>"
+                f"<p style='color:#94a3b8;margin-top:12px'>{data['error']}</p>"
+                f"<p style='color:#334155;font-size:11px;margin-top:20px'>"
+                f"Check Render Environment Variables</p></div>")
+    closed = db_closed_trades()
+    return render_template_string(TEMPLATE,
+        m=data,
+        open_trade=db_open_trade(),
+        closed_trades=closed,
+        stats=calc_stats(closed),
+        intros=db_get_intros(5),
+        latest_dq=(db_get_dqs(1) or [None])[0],
+        dq_history=db_get_dqs(7))
+
+
+@app.route("/paper/exit", methods=["POST"])
+def paper_exit():
+    d = request.get_json()
+    tid   = d.get("trade_id")
+    ep    = float(d.get("exit_price", 0))
+    dir_  = d.get("direction","LONG")
+    enp   = float(d.get("entry_price", 0))
+    pnl   = round((ep-enp) if dir_=="LONG" else (enp-ep), 2)
+    db_close_trade(tid, ep, d.get("exit_reason",""), d.get("post_note",""), d.get("emotion",""), pnl)
+    if pnl > 0: ENGINE["trades_won"]+=1
+    else:        ENGINE["trades_lost"]+=1
+    ENGINE["trades_total"]+=1
+    ENGINE["session_pnl"] = round(ENGINE["session_pnl"]+pnl, 1)
+    return jsonify({"status":"ok","pnl":pnl})
+
+
+@app.route("/paper/intro", methods=["POST"])
+def paper_intro():
+    d = request.get_json()
+    today = time.strftime("%d-%m-%Y")
+    db_add_intro({**d, "date": today})
+    # Calculate and save Decision Quality
+    dq_score, breakdown = calc_dq_score(
+        d.get("rule_followed", 3),
+        d.get("sl_skip", "No"),
+        d.get("revenge", "No"),
+        d.get("discipline", 3)
+    )
+    db_add_dq({"date": today, "dq_score": dq_score, "breakdown": breakdown})
+    return jsonify({"status":"ok", "dq_score": dq_score, "breakdown": breakdown})
+
+
+@app.route("/paper/clear", methods=["POST"])
+def paper_clear():
+    db_clear_trades()
+    return jsonify({"status":"ok"})
+
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
