@@ -1,10 +1,7 @@
 flask
-smartapi-python
 pyotp
-requests
-supabase
+smartapi-python
 logzero
-urllib3
 websocket-client
+requests
 gunicorn
-yfinance
