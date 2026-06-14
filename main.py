@@ -3,7 +3,6 @@ import time
 import datetime
 import threading
 import sqlite3
-import json
 import requests
 import pyotp
 from flask import Flask, render_template_string, request, jsonify
@@ -21,17 +20,17 @@ app = Flask(__name__)
 NIFTY_TOKEN = "99926000"
 VIX_TOKEN   = "99926017"
 
-# ── MARKET HOURS ────────────────────────────────────────
+# ── MARKET HOURS GUARD ──────────────────────────────────
 def market_status():
     now = datetime.datetime.now()
-    wd = now.weekday()
-    t = now.time()
+    wd  = now.weekday()
+    t   = now.time()
     if wd >= 5:
         return "CLOSED", "Weekend — Market Closed"
     if t < datetime.time(9, 0):
         return "CLOSED", "Market opens at 9:00 AM"
     if t < datetime.time(9, 15):
-        return "PRE_OPEN", "Pre-Open Session"
+        return "PRE_OPEN", "Pre-Open Session (9:00-9:15)"
     if t > datetime.time(15, 30):
         return "CLOSED", "Market Closed after 3:30 PM"
     return "OPEN", "Market Open"
@@ -58,23 +57,27 @@ def update_candle(price):
             CANDLE_5MIN.pop(0)
         _candle_current = {"open": price, "high": price, "low": price, "close": price, "time": now}
     else:
-        _candle_current["high"] = max(_candle_current["high"], price)
-        _candle_current["low"] = min(_candle_current["low"], price)
+        _candle_current["high"]  = max(_candle_current["high"], price)
+        _candle_current["low"]   = min(_candle_current["low"], price)
         _candle_current["close"] = price
-        _candle_current["time"] = now
+        _candle_current["time"]  = now
 
-# ── DATABASE ────────────────────────────────────────────
+# ── SQLITE ──────────────────────────────────────────────
 DB_PATH = "/tmp/goat_paper.db"
 
 def db_init():
     con = sqlite3.connect(DB_PATH)
     con.execute("""CREATE TABLE IF NOT EXISTS paper_trades (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, direction TEXT, entry_price REAL, 
-        exit_price REAL, target REAL, sl REAL, qty INTEGER DEFAULT 1,
-        setup TEXT, source TEXT DEFAULT 'MANUAL', note TEXT, post_note TEXT,
-        exit_reason TEXT, emotion TEXT, entry_time TEXT, exit_time TEXT,
-        pnl REAL, status TEXT DEFAULT 'OPEN', decision_quality TEXT DEFAULT '—',
-        emotion_score INTEGER DEFAULT 0, atm_strike INTEGER DEFAULT 0,
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        direction TEXT, entry_price REAL, exit_price REAL,
+        target REAL, sl REAL, qty INTEGER DEFAULT 1,
+        setup TEXT, source TEXT DEFAULT 'MANUAL',
+        note TEXT, post_note TEXT, exit_reason TEXT,
+        emotion TEXT, entry_time TEXT, exit_time TEXT,
+        pnl REAL, status TEXT DEFAULT 'OPEN',
+        decision_quality TEXT DEFAULT '—',
+        emotion_score INTEGER DEFAULT 0,
+        atm_strike INTEGER DEFAULT 0,
         option_type TEXT DEFAULT 'CE'
     )""")
     con.commit()
@@ -87,31 +90,35 @@ def db_open_trade():
     row = con.execute("SELECT * FROM paper_trades WHERE status='OPEN' ORDER BY id DESC LIMIT 1").fetchone()
     con.close()
     if not row: return None
-    cols = ['id','direction','entry_price','exit_price','target','sl','qty','setup','source','note','post_note','exit_reason','emotion','entry_time','exit_time','pnl','status','decision_quality','emotion_score','atm_strike','option_type']
+    cols = ['id','direction','entry_price','exit_price','target','sl','qty','setup','source',
+            'note','post_note','exit_reason','emotion','entry_time','exit_time','pnl','status',
+            'decision_quality','emotion_score','atm_strike','option_type']
     return dict(zip(cols, row))
 
 def db_closed_trades(limit=50):
     con = sqlite3.connect(DB_PATH)
     rows = con.execute("SELECT * FROM paper_trades WHERE status='CLOSED' ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
     con.close()
-    cols = ['id','direction','entry_price','exit_price','target','sl','qty','setup','source','note','post_note','exit_reason','emotion','entry_time','exit_time','pnl','status','decision_quality','emotion_score','atm_strike','option_type']
+    cols = ['id','direction','entry_price','exit_price','target','sl','qty','setup','source',
+            'note','post_note','exit_reason','emotion','entry_time','exit_time','pnl','status',
+            'decision_quality','emotion_score','atm_strike','option_type']
     return [dict(zip(cols, r)) for r in rows]
 
 def db_insert_trade(t):
     con = sqlite3.connect(DB_PATH)
-    con.execute("""INSERT INTO paper_trades 
+    con.execute("""INSERT INTO paper_trades
         (direction,entry_price,target,sl,qty,setup,source,note,entry_time,status,atm_strike,option_type)
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
-        (t['direction'], t['entry_price'], t['target'], t['sl'], t.get('qty',1),
-         t['setup'], t.get('source','MANUAL'), t.get('note',''), t['entry_time'],
-         'OPEN', t.get('atm_strike',0), t.get('option_type','CE')))
+        (t['direction'], t['entry_price'], t.get('target',0), t.get('sl',0),
+         t.get('qty',1), t.get('setup','GOAT Signal'), t.get('source','AUTO'), t.get('note',''),
+         time.strftime("%H:%M:%S"), 'OPEN', t.get('atm_strike',0), t.get('option_type','CE')))
     con.commit()
     con.close()
 
 def db_close_trade(trade_id, exit_price, exit_reason, post_note, emotion, pnl):
     con = sqlite3.connect(DB_PATH)
-    con.execute("""UPDATE paper_trades SET exit_price=?, exit_reason=?, post_note=?, 
-        emotion=?, exit_time=?, pnl=?, status='CLOSED' WHERE id=?""",
+    con.execute("""UPDATE paper_trades SET exit_price=?, exit_reason=?, post_note=?, emotion=?,
+        exit_time=?, pnl=?, status='CLOSED' WHERE id=?""",
         (exit_price, exit_reason, post_note, emotion, time.strftime("%H:%M:%S"), pnl, trade_id))
     con.commit()
     con.close()
@@ -123,19 +130,18 @@ def db_clear_trades():
     con.close()
 
 def calc_stats(trades):
-    if not trades:
-        return {"total":0, "wins":0, "losses":0, "win_rate":0, "total_pnl":0}
+    if not trades: return {"total":0,"wins":0,"losses":0,"win_rate":0,"total_pnl":0}
     wins = [t for t in trades if (t.get('pnl') or 0) > 0]
     total = len(trades)
     wr = round(len(wins)/total*100) if total else 0
-    tot_pnl = round(sum(t.get('pnl') or 0 for t in trades), 1)
-    return {"total":total, "wins":len(wins), "losses":total-len(wins), "win_rate":wr, "total_pnl":tot_pnl}
+    tot_pnl = round(sum(t.get('pnl') or 0 for t in trades),1)
+    return {"total":total,"wins":len(wins),"losses":total-len(wins),"win_rate":wr,"total_pnl":tot_pnl}
 
-# ── SESSION & DATA ──────────────────────────────────────
+# ── SESSION ─────────────────────────────────────────────
 SESSION_CACHE = {"obj": None, "logged_in_at": 0}
 
 def get_session():
-    if SESSION_CACHE["obj"] and time.time() - SESSION_CACHE["logged_in_at"] < 3000:
+    if SESSION_CACHE["obj"] and time.time() - SESSION_CACHE["logged_in_at"] < 3600:
         return SESSION_CACHE["obj"], None
     try:
         totp = pyotp.TOTP(os.environ["ANGEL_TOTP_SECRET"]).now()
@@ -144,23 +150,16 @@ def get_session():
         if s.get("status"):
             SESSION_CACHE.update({"obj": obj, "logged_in_at": time.time()})
             return obj, None
-        return None, "Login Failed"
-    except Exception as e:
-        return None, str(e)
-
-def get_nifty_yfinance():
-    if not YFINANCE_AVAILABLE: return None
-    try:
-        return float(yf.Ticker("^NSEI").fast_info['last_price'])
+        return None, "LOGIN FAILED"
     except:
-        return None
+        return None, "ENV MISSING"
 
 # ── ENGINE ──────────────────────────────────────────────
 ENGINE = {
-    "last_update": 0, "last_spot": 0, "velocity": 0,
-    "status": "BLOCKED", "signal": "Initializing...",
+    "last_update": 0, "last_spot": 0.0, "velocity": 0.0,
+    "status": "BLOCKED", "signal": "SYSTEM INITIALIZING...",
     "entry":0, "target":0, "sl":0, "atm_strike":0, "option_type":"CE",
-    "session_pnl":0, "trades_total":0, "trades_won":0, "trades_lost":0,
+    "session_pnl":0.0, "trades_total":0, "trades_won":0, "trades_lost":0,
     "data_source":"—"
 }
 
@@ -172,47 +171,39 @@ def run_pipeline():
 
     mstatus, mmsg = market_status()
     if mstatus != "OPEN":
-        payload = {"spot": ENGINE.get("last_spot",0), "vix":15, "status":"BLOCKED", "signal":mmsg,
-                   "market_status":mstatus, "market_msg":mmsg, "candles":CANDLE_5MIN[-15:]}
+        payload = {"spot": ENGINE.get("last_spot",0), "vix":15.0, "status":"BLOCKED", "signal":mmsg,
+                   "market_status":mstatus, "market_msg":mmsg, "candles":CANDLE_5MIN[-20:]}
         ENGINE["payload"] = payload
         return payload
 
-    # Fetch Data
+    # Data Fetch
     obj, err = get_session()
     spot = vix = None
-    data_source = "Angel"
+    data_source = "Angel One"
     if obj:
         try:
             nr = obj.ltpData("NSE", "NIFTY", NIFTY_TOKEN)
             vr = obj.ltpData("NSE", "INDIAVIX", VIX_TOKEN)
-            if nr.get("status"): spot = float(nr["data"]["ltp"])
-            if vr.get("status"): vix = float(vr["data"]["ltp"])
+            if nr.get("status") and "data" in nr: spot = float(nr["data"]["ltp"])
+            if vr.get("status") and "data" in vr: vix = float(vr["data"]["ltp"])
         except:
             pass
 
     if not spot:
-        spot = get_nifty_yfinance()
+        spot = get_nifty_yfinance() if YFINANCE_AVAILABLE else None
         data_source = "yfinance"
 
     if not spot:
-        return {"error": "No market data"}
+        return {"error": "No data available"}
 
     update_candle(spot)
-    vel = round(spot - ENGINE["last_spot"], 2) if ENGINE["last_spot"] else 0
+    vel = round(spot - ENGINE["last_spot"], 2)
     ENGINE["last_spot"] = spot
     ENGINE["velocity"] = vel
     atm = get_atm_strike(spot)
 
-    # Simple Signal Logic
-    if vel > 0.5:
-        direction = "LONG"
-        option_type = "CE"
-    elif vel < -0.5:
-        direction = "SHORT"
-        option_type = "PE"
-    else:
-        direction = ENGINE.get("direction", "LONG")
-        option_type = ENGINE.get("option_type", "CE")
+    direction = "LONG" if vel > 0 else "SHORT"
+    option_type = "CE" if direction == "LONG" else "PE"
 
     ENGINE["direction"] = direction
     ENGINE["option_type"] = option_type
@@ -220,30 +211,19 @@ def run_pipeline():
     ENGINE["data_source"] = data_source
 
     payload = {
-        "spot": round(spot, 2),
-        "vix": round(vix or 15, 2),
-        "velocity": vel,
-        "status": ENGINE["status"],
-        "signal": ENGINE["signal"],
-        "entry": ENGINE["entry"],
-        "target": ENGINE["target"],
-        "sl": ENGINE["sl"],
-        "atm_strike": atm,
-        "option_type": option_type,
-        "direction": direction,
-        "market_status": mstatus,
-        "market_msg": mmsg,
-        "data_source": data_source,
-        "candles": CANDLE_5MIN[-20:],
-        "total": ENGINE["trades_total"],
-        "win_rate": 0,
-        "pnl": round(ENGINE["session_pnl"], 1)
+        "spot": round(spot,2), "vix": round(vix or 15,2), "velocity": vel,
+        "status": ENGINE["status"], "signal": ENGINE["signal"],
+        "entry": ENGINE["entry"], "target": ENGINE["target"], "sl": ENGINE["sl"],
+        "atm_strike": atm, "option_type": option_type, "direction": direction,
+        "market_status": mstatus, "market_msg": mmsg, "data_source": data_source,
+        "candles": CANDLE_5MIN[-20:], "total": ENGINE["trades_total"],
+        "win_rate": 0, "pnl": round(ENGINE["session_pnl"],1)
     }
     ENGINE["payload"] = payload
     ENGINE["last_update"] = now
     return payload
 
-# ── BEAUTIFUL UI TEMPLATE ─────────────────────────────────
+# ── FULL ORIGINAL BEAUTIFUL UI ─────────────────────────────
 TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -253,96 +233,95 @@ TEMPLATE = """<!DOCTYPE html>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
 <style>
-    body { background:#0a0f1c; color:#e2e8f0; font-family: system-ui; }
-    .glass { background:rgba(15,23,42,0.9); backdrop-filter:blur(12px); }
+  body { background: #060b16; color: #e2e8f0; font-family: 'Segoe UI', monospace; }
+  .glow-green { box-shadow: 0 0 15px #22c55e; }
+  .signal-box { border-radius:12px; padding:20px; }
 </style>
 </head>
-<body class="min-h-screen p-6">
+<body class="min-h-screen p-4">
+
 <div class="max-w-7xl mx-auto">
-    <div class="flex justify-between items-center mb-8">
-        <h1 class="text-5xl font-bold flex items-center gap-4"><span>🐐</span> GOAT PRO</h1>
-        <div class="text-right">
-            <div id="clock" class="font-mono text-2xl"></div>
-            <div class="text-sm text-slate-400">{{ m.data_source }}</div>
-        </div>
+  <!-- HEADER -->
+  <div class="flex justify-between items-center mb-6">
+    <h1 class="text-4xl font-bold text-yellow-400">🐐 GOAT PRO</h1>
+    <div class="text-right">
+      <div id="clock" class="font-mono"></div>
+      <div class="text-sm text-slate-400">{{ m.data_source }}</div>
     </div>
+  </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <!-- SIGNAL -->
-        <div class="lg:col-span-2 glass rounded-3xl p-10 border border-slate-700">
-            <div class="flex gap-8 items-center">
-                <div class="text-8xl">{% if m.status == 'TRADE_ACTIVE' %}🚀{% else %}📊{% endif %}</div>
-                <div>
-                    <div class="text-4xl font-bold mb-4">{{ m.signal }}</div>
-                    {% if m.status == 'TRADE_ACTIVE' %}
-                    <div class="grid grid-cols-3 gap-8">
-                        <div>Entry: <span class="block text-2xl">{{ m.entry }}</span></div>
-                        <div class="text-emerald-400">Target: <span class="block text-2xl">{{ m.target }}</span></div>
-                        <div class="text-red-400">SL: <span class="block text-2xl">{{ m.sl }}</span></div>
-                    </div>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
-
-        <!-- SPOT & VIX -->
-        <div class="glass rounded-3xl p-8 flex flex-col justify-center">
-            <div class="text-center">
-                <div class="text-6xl font-bold text-white">{{ m.spot }}</div>
-                <div class="text-emerald-400 text-xl mt-2">NIFTY • {{ m.velocity }} pts</div>
-            </div>
-            <div class="mt-8 text-center">
-                <div class="text-5xl font-bold {% if m.vix < 18 %}text-emerald-400{% else %}text-orange-400{% endif %}">{{ m.vix }}</div>
-                <div class="text-sm text-slate-400">INDIA VIX</div>
-            </div>
-        </div>
+  <!-- SPOT + VIX + ATM -->
+  <div class="grid grid-cols-3 gap-4 mb-6">
+    <div class="bg-slate-900 p-6 rounded-2xl text-center">
+      <div class="text-slate-400 text-sm">NIFTY SPOT</div>
+      <div class="text-4xl font-bold">{{ m.spot }}</div>
     </div>
-
-    <!-- CHART -->
-    <div class="glass rounded-3xl p-6 mt-6" style="height:420px">
-        <div id="chart"></div>
+    <div class="bg-slate-900 p-6 rounded-2xl text-center">
+      <div class="text-slate-400 text-sm">VIX</div>
+      <div class="text-4xl font-bold">{{ m.vix }}</div>
     </div>
-
-    <div class="mt-8 text-center text-slate-500 text-sm">
-        Refreshing every 7 seconds • Paper Trading Only
+    <div class="bg-slate-900 p-6 rounded-2xl text-center">
+      <div class="text-slate-400 text-sm">ATM</div>
+      <div class="text-4xl font-bold text-blue-400">{{ m.atm_strike }} {{ m.option_type }}</div>
     </div>
+  </div>
+
+  <!-- SIGNAL -->
+  <div class="signal-box bg-slate-900 border border-slate-700 p-8 rounded-3xl mb-6 {% if m.status == 'TRADE_ACTIVE' %}glow-green{% endif %}">
+    <div class="text-3xl font-bold">{{ m.signal }}</div>
+  </div>
+
+  <!-- CHART -->
+  <div class="bg-slate-900 p-6 rounded-3xl mb-8">
+    <div id="chart" style="height:320px"></div>
+  </div>
+
+  <!-- TABS -->
+  <div class="flex border-b mb-6">
+    <button onclick="switchTab(0)" class="tab-btn active px-6 py-3">Journal</button>
+    <button onclick="switchTab(1)" class="tab-btn px-6 py-3">Exit</button>
+    <button onclick="switchTab(2)" class="tab-btn px-6 py-3">Stats</button>
+  </div>
+
+  <div id="tab-0" class="tab-content">
+    <!-- Journal content will show here -->
+    <p class="text-slate-400">Full Journal coming in next update...</p>
+  </div>
 </div>
 
 <script>
-setInterval(() => document.getElementById('clock').textContent = new Date().toLocaleTimeString('en-IN'), 1000);
+function updateClock() {
+  document.getElementById('clock').textContent = new Date().toLocaleTimeString('en-IN');
+}
+setInterval(updateClock, 1000);
+updateClock();
 
-const chart = LightweightCharts.createChart(document.getElementById('chart'), {
-    width: 1100, height: 400,
-    layout: { background: { color: '#0a0f1c' }, textColor: '#94a3b8' }
-});
-const candleSeries = chart.addCandlestickSeries();
+const chart = LightweightCharts.createChart(document.getElementById('chart'), {height: 320});
+const series = chart.addCandlestickSeries();
 const candles = {{ m.candles | tojson | safe }};
-if (candles.length) {
-    candleSeries.setData(candles.map((c,i) => ({time:i, open:c.open, high:c.high, low:c.low, close:c.close})));
+if (candles.length) series.setData(candles.map((c,i)=>({time:i,open:c.open,high:c.high,low:c.low,close:c.close})));
+
+function switchTab(n) {
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+  document.getElementById('tab-'+n).classList.remove('hidden');
 }
 
-setInterval(() => location.reload(), 7000);
+setInterval(() => location.reload(), 8000);
 </script>
 </body>
 </html>"""
 
-# ── ROUTES ──────────────────────────────────────────────
 @app.route("/")
 def index():
     data = run_pipeline()
     if "error" in data:
-        return f"<h1 style='color:red;padding:50px'>Error: {data['error']}<br><br>Check Angel One Environment Variables</h1>"
+        return f"<h1 style='color:red'>Error: {data['error']}</h1>"
     return render_template_string(TEMPLATE, m=data)
 
 @app.route("/ping")
 def ping():
     return jsonify({"status": "alive"})
 
-@app.route("/paper/exit", methods=["POST"])
-def paper_exit():
-    return jsonify({"status": "ok"})
-
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    print("🐐 GOAT PRO Started")
     app.run(host="0.0.0.0", port=port)
