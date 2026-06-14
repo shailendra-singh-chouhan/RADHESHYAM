@@ -21,22 +21,21 @@ app = Flask(__name__)
 NIFTY_TOKEN = "99926000"
 VIX_TOKEN   = "99926017"
 
-# ── MARKET HOURS GUARD ──────────────────────────────────
+# ── MARKET HOURS ────────────────────────────────────────
 def market_status():
     now = datetime.datetime.now()
-    wd  = now.weekday()
-    t   = now.time()
+    wd = now.weekday()
+    t = now.time()
     if wd >= 5:
         return "CLOSED", "Weekend — Market Closed"
     if t < datetime.time(9, 0):
         return "CLOSED", "Market opens at 9:00 AM"
     if t < datetime.time(9, 15):
-        return "PRE_OPEN", "Pre-Open Session (9:00-9:15) — No Trades"
+        return "PRE_OPEN", "Pre-Open Session"
     if t > datetime.time(15, 30):
         return "CLOSED", "Market Closed after 3:30 PM"
     return "OPEN", "Market Open"
 
-# ── ATM STRIKE CALCULATOR ───────────────────────────────
 def get_atm_strike(spot, interval=50):
     return int(round(spot / interval) * interval)
 
@@ -59,459 +58,291 @@ def update_candle(price):
             CANDLE_5MIN.pop(0)
         _candle_current = {"open": price, "high": price, "low": price, "close": price, "time": now}
     else:
-        _candle_current["high"]  = max(_candle_current["high"], price)
-        _candle_current["low"]   = min(_candle_current["low"], price)
+        _candle_current["high"] = max(_candle_current["high"], price)
+        _candle_current["low"] = min(_candle_current["low"], price)
         _candle_current["close"] = price
-        _candle_current["time"]  = now
+        _candle_current["time"] = now
 
-def is_new_candle_closed():
-    now = datetime.datetime.now()
-    return len(CANDLE_5MIN) > 0 and int(CANDLE_5MIN[-1]["time"].minute / 5) != int(now.minute / 5)
-
-# ── SQLITE ──────────────────────────────────────────────
+# ── DATABASE ────────────────────────────────────────────
 DB_PATH = "/tmp/goat_paper.db"
 
 def db_init():
     con = sqlite3.connect(DB_PATH)
     con.execute("""CREATE TABLE IF NOT EXISTS paper_trades (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        direction TEXT, entry_price REAL, exit_price REAL,
-        target REAL, sl REAL, qty INTEGER DEFAULT 1,
-        setup TEXT, source TEXT DEFAULT 'MANUAL',
-        note TEXT, post_note TEXT, exit_reason TEXT,
-        emotion TEXT, entry_time TEXT, exit_time TEXT,
-        pnl REAL, status TEXT DEFAULT 'OPEN',
-        decision_quality TEXT DEFAULT '—',
-        emotion_score INTEGER DEFAULT 0,
-        atm_strike INTEGER DEFAULT 0,
+        id INTEGER PRIMARY KEY AUTOINCREMENT, direction TEXT, entry_price REAL, 
+        exit_price REAL, target REAL, sl REAL, qty INTEGER DEFAULT 1,
+        setup TEXT, source TEXT DEFAULT 'MANUAL', note TEXT, post_note TEXT,
+        exit_reason TEXT, emotion TEXT, entry_time TEXT, exit_time TEXT,
+        pnl REAL, status TEXT DEFAULT 'OPEN', decision_quality TEXT DEFAULT '—',
+        emotion_score INTEGER DEFAULT 0, atm_strike INTEGER DEFAULT 0,
         option_type TEXT DEFAULT 'CE'
-    )""")
-    con.execute("""CREATE TABLE IF NOT EXISTS introspection (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        date TEXT, rule_followed INTEGER, sl_skip TEXT,
-        revenge TEXT, discipline INTEGER, tomorrow_rule TEXT,
-        created_at TEXT
-    )""")
-    con.execute("""CREATE TABLE IF NOT EXISTS decision_quality (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        date TEXT, dq_score INTEGER, breakdown TEXT, created_at TEXT
     )""")
     con.commit()
     con.close()
 
 db_init()
 
-# ... (keep all db_ functions exactly as in the original app.py) ...
-
 def db_open_trade():
     con = sqlite3.connect(DB_PATH)
     row = con.execute("SELECT * FROM paper_trades WHERE status='OPEN' ORDER BY id DESC LIMIT 1").fetchone()
     con.close()
     if not row: return None
-    cols = ['id','direction','entry_price','exit_price','target','sl','qty','setup','source',
-            'note','post_note','exit_reason','emotion','entry_time','exit_time','pnl','status',
-            'decision_quality','emotion_score','atm_strike','option_type']
+    cols = ['id','direction','entry_price','exit_price','target','sl','qty','setup','source','note','post_note','exit_reason','emotion','entry_time','exit_time','pnl','status','decision_quality','emotion_score','atm_strike','option_type']
     return dict(zip(cols, row))
 
 def db_closed_trades(limit=50):
     con = sqlite3.connect(DB_PATH)
     rows = con.execute("SELECT * FROM paper_trades WHERE status='CLOSED' ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
     con.close()
-    cols = ['id','direction','entry_price','exit_price','target','sl','qty','setup','source',
-            'note','post_note','exit_reason','emotion','entry_time','exit_time','pnl','status',
-            'decision_quality','emotion_score','atm_strike','option_type']
+    cols = ['id','direction','entry_price','exit_price','target','sl','qty','setup','source','note','post_note','exit_reason','emotion','entry_time','exit_time','pnl','status','decision_quality','emotion_score','atm_strike','option_type']
     return [dict(zip(cols, r)) for r in rows]
 
-# ... (keep db_insert_trade, db_close_trade, db_clear_trades, db_add_intro, db_get_intros, db_add_dq, db_get_dqs, calc_dq_score, calc_stats exactly as original) ...
+def db_insert_trade(t):
+    con = sqlite3.connect(DB_PATH)
+    con.execute("""INSERT INTO paper_trades 
+        (direction,entry_price,target,sl,qty,setup,source,note,entry_time,status,atm_strike,option_type)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (t['direction'], t['entry_price'], t['target'], t['sl'], t.get('qty',1),
+         t['setup'], t.get('source','MANUAL'), t.get('note',''), t['entry_time'],
+         'OPEN', t.get('atm_strike',0), t.get('option_type','CE')))
+    con.commit()
+    con.close()
 
-# ── SESSION, YFINANCE, TELEGRAM, GOAT BRAIN, ENGINE (keep exactly as in original) ...
+def db_close_trade(trade_id, exit_price, exit_reason, post_note, emotion, pnl):
+    con = sqlite3.connect(DB_PATH)
+    con.execute("""UPDATE paper_trades SET exit_price=?, exit_reason=?, post_note=?, 
+        emotion=?, exit_time=?, pnl=?, status='CLOSED' WHERE id=?""",
+        (exit_price, exit_reason, post_note, emotion, time.strftime("%H:%M:%S"), pnl, trade_id))
+    con.commit()
+    con.close()
 
-# (All the ENGINE logic, run_pipeline, get_session, etc. remain unchanged from the provided app.py)
+def db_clear_trades():
+    con = sqlite3.connect(DB_PATH)
+    con.execute("DELETE FROM paper_trades")
+    con.commit()
+    con.close()
 
-# ── ENHANCED UI TEMPLATE (Integrated modern shadcn-inspired design) ────────────────────────────────────────
+def calc_stats(trades):
+    if not trades:
+        return {"total":0, "wins":0, "losses":0, "win_rate":0, "total_pnl":0}
+    wins = [t for t in trades if (t.get('pnl') or 0) > 0]
+    total = len(trades)
+    wr = round(len(wins)/total*100) if total else 0
+    tot_pnl = round(sum(t.get('pnl') or 0 for t in trades), 1)
+    return {"total":total, "wins":len(wins), "losses":total-len(wins), "win_rate":wr, "total_pnl":tot_pnl}
+
+# ── SESSION & DATA ──────────────────────────────────────
+SESSION_CACHE = {"obj": None, "logged_in_at": 0}
+
+def get_session():
+    if SESSION_CACHE["obj"] and time.time() - SESSION_CACHE["logged_in_at"] < 3000:
+        return SESSION_CACHE["obj"], None
+    try:
+        totp = pyotp.TOTP(os.environ["ANGEL_TOTP_SECRET"]).now()
+        obj = SmartConnect(api_key=os.environ["ANGEL_API_KEY"])
+        s = obj.generateSession(os.environ["ANGEL_CLIENT_ID"], os.environ["ANGEL_MPIN"], totp)
+        if s.get("status"):
+            SESSION_CACHE.update({"obj": obj, "logged_in_at": time.time()})
+            return obj, None
+        return None, "Login Failed"
+    except Exception as e:
+        return None, str(e)
+
+def get_nifty_yfinance():
+    if not YFINANCE_AVAILABLE: return None
+    try:
+        return float(yf.Ticker("^NSEI").fast_info['last_price'])
+    except:
+        return None
+
+# ── ENGINE ──────────────────────────────────────────────
+ENGINE = {
+    "last_update": 0, "last_spot": 0, "velocity": 0,
+    "status": "BLOCKED", "signal": "Initializing...",
+    "entry":0, "target":0, "sl":0, "atm_strike":0, "option_type":"CE",
+    "session_pnl":0, "trades_total":0, "trades_won":0, "trades_lost":0,
+    "data_source":"—"
+}
+
+def run_pipeline():
+    global ENGINE
+    now = time.time()
+    if ENGINE.get("payload") and now - ENGINE["last_update"] < 5:
+        return ENGINE["payload"]
+
+    mstatus, mmsg = market_status()
+    if mstatus != "OPEN":
+        payload = {"spot": ENGINE.get("last_spot",0), "vix":15, "status":"BLOCKED", "signal":mmsg,
+                   "market_status":mstatus, "market_msg":mmsg, "candles":CANDLE_5MIN[-15:]}
+        ENGINE["payload"] = payload
+        return payload
+
+    # Fetch Data
+    obj, err = get_session()
+    spot = vix = None
+    data_source = "Angel"
+    if obj:
+        try:
+            nr = obj.ltpData("NSE", "NIFTY", NIFTY_TOKEN)
+            vr = obj.ltpData("NSE", "INDIAVIX", VIX_TOKEN)
+            if nr.get("status"): spot = float(nr["data"]["ltp"])
+            if vr.get("status"): vix = float(vr["data"]["ltp"])
+        except:
+            pass
+
+    if not spot:
+        spot = get_nifty_yfinance()
+        data_source = "yfinance"
+
+    if not spot:
+        return {"error": "No market data"}
+
+    update_candle(spot)
+    vel = round(spot - ENGINE["last_spot"], 2) if ENGINE["last_spot"] else 0
+    ENGINE["last_spot"] = spot
+    ENGINE["velocity"] = vel
+    atm = get_atm_strike(spot)
+
+    # Simple Signal Logic
+    if vel > 0.5:
+        direction = "LONG"
+        option_type = "CE"
+    elif vel < -0.5:
+        direction = "SHORT"
+        option_type = "PE"
+    else:
+        direction = ENGINE.get("direction", "LONG")
+        option_type = ENGINE.get("option_type", "CE")
+
+    ENGINE["direction"] = direction
+    ENGINE["option_type"] = option_type
+    ENGINE["atm_strike"] = atm
+    ENGINE["data_source"] = data_source
+
+    payload = {
+        "spot": round(spot, 2),
+        "vix": round(vix or 15, 2),
+        "velocity": vel,
+        "status": ENGINE["status"],
+        "signal": ENGINE["signal"],
+        "entry": ENGINE["entry"],
+        "target": ENGINE["target"],
+        "sl": ENGINE["sl"],
+        "atm_strike": atm,
+        "option_type": option_type,
+        "direction": direction,
+        "market_status": mstatus,
+        "market_msg": mmsg,
+        "data_source": data_source,
+        "candles": CANDLE_5MIN[-20:],
+        "total": ENGINE["trades_total"],
+        "win_rate": 0,
+        "pnl": round(ENGINE["session_pnl"], 1)
+    }
+    ENGINE["payload"] = payload
+    ENGINE["last_update"] = now
+    return payload
+
+# ── BEAUTIFUL UI TEMPLATE ─────────────────────────────────
 TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🐐 GOAT PRO Trading</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css">
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-        body { font-family: 'Inter', system-ui, sans-serif; }
-        .glass { background: rgba(15, 23, 42, 0.8); backdrop-filter: blur(12px); }
-        .card { transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
-        .card:hover { transform: translateY(-2px); }
-        .signal-active { animation: pulse 2s infinite; }
-        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.8; } }
-        .candle-up { color: #22c55e; }
-        .candle-down { color: #ef4444; }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🐐 GOAT PRO</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+    body { background:#0a0f1c; color:#e2e8f0; font-family: system-ui; }
+    .glass { background:rgba(15,23,42,0.9); backdrop-filter:blur(12px); }
+</style>
 </head>
-<body class="bg-[#0a0f1c] text-slate-200 min-h-screen">
-<div class="flex h-screen">
-    <!-- SIDEBAR -->
-    <div class="w-72 bg-[#111827] border-r border-slate-800 flex flex-col">
-        <div class="p-6 border-b border-slate-800">
-            <div class="flex items-center gap-3">
-                <div class="w-10 h-10 bg-yellow-500 rounded-2xl flex items-center justify-center text-2xl">🐐</div>
-                <div>
-                    <h1 class="text-2xl font-bold tracking-tight">GOAT PRO</h1>
-                    <p class="text-xs text-emerald-400">Paper Trading v2.0</p>
-                </div>
-            </div>
+<body class="min-h-screen p-6">
+<div class="max-w-7xl mx-auto">
+    <div class="flex justify-between items-center mb-8">
+        <h1 class="text-5xl font-bold flex items-center gap-4"><span>🐐</span> GOAT PRO</h1>
+        <div class="text-right">
+            <div id="clock" class="font-mono text-2xl"></div>
+            <div class="text-sm text-slate-400">{{ m.data_source }}</div>
         </div>
-        
-        <div class="p-4 flex-1 overflow-auto">
-            <div class="space-y-6">
-                <!-- Market Status -->
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- SIGNAL -->
+        <div class="lg:col-span-2 glass rounded-3xl p-10 border border-slate-700">
+            <div class="flex gap-8 items-center">
+                <div class="text-8xl">{% if m.status == 'TRADE_ACTIVE' %}🚀{% else %}📊{% endif %}</div>
                 <div>
-                    <div class="text-xs uppercase tracking-widest text-slate-500 mb-2 px-3">MARKET</div>
-                    <div class="glass rounded-2xl p-4 border border-slate-700">
-                        <div class="flex justify-between items-center">
-                            <span class="text-sm">NIFTY 50</span>
-                            <span id="market-status" class="px-3 py-1 text-xs font-medium rounded-full 
-                                {% if m.market_status == 'OPEN' %}bg-emerald-500/20 text-emerald-400
-                                {% elif m.market_status == 'PRE_OPEN' %}bg-amber-500/20 text-amber-400
-                                {% else %}bg-red-500/20 text-red-400{% endif %}">
-                                {{ m.market_msg }}
-                            </span>
-                        </div>
+                    <div class="text-4xl font-bold mb-4">{{ m.signal }}</div>
+                    {% if m.status == 'TRADE_ACTIVE' %}
+                    <div class="grid grid-cols-3 gap-8">
+                        <div>Entry: <span class="block text-2xl">{{ m.entry }}</span></div>
+                        <div class="text-emerald-400">Target: <span class="block text-2xl">{{ m.target }}</span></div>
+                        <div class="text-red-400">SL: <span class="block text-2xl">{{ m.sl }}</span></div>
                     </div>
-                </div>
-
-                <!-- Quick Stats -->
-                <div class="grid grid-cols-2 gap-3">
-                    <div class="glass rounded-2xl p-4 border border-slate-700">
-                        <div class="text-xs text-slate-400">Spot</div>
-                        <div id="spot-value" class="text-3xl font-semibold text-white">{{ m.spot }}</div>
-                    </div>
-                    <div class="glass rounded-2xl p-4 border border-slate-700">
-                        <div class="text-xs text-slate-400">VIX</div>
-                        <div id="vix-value" class="text-3xl font-semibold {% if m.vix < 18 %}text-emerald-400{% else %}text-orange-400{% endif %}">{{ m.vix }}</div>
-                    </div>
-                </div>
-
-                <!-- ATM -->
-                <div class="glass rounded-2xl p-5 border border-slate-700">
-                    <div class="flex justify-between text-sm mb-3">
-                        <span class="text-slate-400">ATM Strike</span>
-                        <span class="font-mono text-xl font-bold text-blue-400">{{ m.atm_strike }}</span>
-                    </div>
-                    <div class="flex gap-2">
-                        <div class="flex-1 bg-emerald-500/10 text-emerald-400 text-center py-2 rounded-xl text-sm font-medium">CE</div>
-                        <div class="flex-1 bg-red-500/10 text-red-400 text-center py-2 rounded-xl text-sm font-medium">PE</div>
-                    </div>
+                    {% endif %}
                 </div>
             </div>
         </div>
 
-        <div class="p-4 border-t border-slate-800 mt-auto">
-            <div onclick="location.reload()" class="cursor-pointer flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-2xl py-3 text-sm font-medium">
-                <i class="fas fa-sync"></i> Refresh
+        <!-- SPOT & VIX -->
+        <div class="glass rounded-3xl p-8 flex flex-col justify-center">
+            <div class="text-center">
+                <div class="text-6xl font-bold text-white">{{ m.spot }}</div>
+                <div class="text-emerald-400 text-xl mt-2">NIFTY • {{ m.velocity }} pts</div>
+            </div>
+            <div class="mt-8 text-center">
+                <div class="text-5xl font-bold {% if m.vix < 18 %}text-emerald-400{% else %}text-orange-400{% endif %}">{{ m.vix }}</div>
+                <div class="text-sm text-slate-400">INDIA VIX</div>
             </div>
         </div>
     </div>
 
-    <!-- MAIN CONTENT -->
-    <div class="flex-1 flex flex-col overflow-hidden">
-        <!-- Top Bar -->
-        <div class="h-16 border-b border-slate-800 bg-[#111827] flex items-center px-8 justify-between">
-            <div class="flex items-center gap-8">
-                <div class="flex items-center gap-2 text-emerald-400">
-                    <i class="fas fa-circle text-xs animate-pulse"></i>
-                    <span class="font-medium">LIVE</span>
-                </div>
-                <div class="text-slate-400 text-sm font-mono" id="current-time"></div>
-            </div>
-            
-            <div class="flex items-center gap-6 text-sm">
-                <div class="flex items-center gap-2">
-                    <span class="text-slate-400">Data:</span>
-                    <span class="font-medium text-amber-400">{{ m.data_source }}</span>
-                </div>
-                <div onclick="clearTrades()" class="cursor-pointer text-red-400 hover:text-red-500 flex items-center gap-1.5">
-                    <i class="fas fa-trash"></i>
-                    <span class="text-xs">CLEAR</span>
-                </div>
-            </div>
-        </div>
+    <!-- CHART -->
+    <div class="glass rounded-3xl p-6 mt-6" style="height:420px">
+        <div id="chart"></div>
+    </div>
 
-        <!-- Main Area -->
-        <div class="flex-1 p-8 overflow-auto">
-            <!-- SIGNAL -->
-            <div class="mb-8">
-                <div id="signal-box" class="glass rounded-3xl p-8 border 
-                    {% if m.status == 'TRADE_ACTIVE' %}border-emerald-500 bg-emerald-950/30
-                    {% elif m.status == 'SETUP_READY' %}border-amber-500 bg-amber-950/30
-                    {% else %}border-slate-700{% endif %}">
-                    <div class="flex items-start gap-6">
-                        <div class="text-6xl">
-                            {% if m.status == 'TRADE_ACTIVE' %}🚀{% elif m.status == 'SETUP_READY' %}📈{% else %}⏳{% endif %}
-                        </div>
-                        <div class="flex-1">
-                            <div id="signal-text" class="text-3xl font-semibold mb-2">{{ m.signal }}</div>
-                            {% if m.status == 'TRADE_ACTIVE' %}
-                            <div class="grid grid-cols-3 gap-8 text-sm mt-6">
-                                <div>
-                                    <div class="text-slate-400 text-xs">ENTRY</div>
-                                    <div class="font-mono text-xl">{{ m.entry }}</div>
-                                </div>
-                                <div>
-                                    <div class="text-slate-400 text-xs">TARGET</div>
-                                    <div class="font-mono text-xl text-emerald-400">{{ m.target }}</div>
-                                </div>
-                                <div>
-                                    <div class="text-slate-400 text-xs">STOP LOSS</div>
-                                    <div class="font-mono text-xl text-red-400">{{ m.sl }}</div>
-                                </div>
-                            </div>
-                            {% endif %}
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- GOAT BRAIN -->
-            {% if m.brain %}
-            <div class="glass rounded-3xl p-6 mb-8 border border-yellow-500/30">
-                <div class="uppercase text-xs tracking-widest text-yellow-400 mb-3 flex items-center gap-2">
-                    <i class="fas fa-brain"></i> GOAT INTELLIGENCE
-                </div>
-                <div class="text-slate-300 whitespace-pre-line leading-relaxed">{{ m.brain }}</div>
-            </div>
-            {% endif %}
-
-            <!-- CHART -->
-            <div class="glass rounded-3xl p-6 mb-8 border border-slate-700">
-                <div class="flex justify-between items-center mb-6">
-                    <div class="font-semibold">5-Minute Candles</div>
-                    <div class="text-xs text-slate-400">Last 20 candles</div>
-                </div>
-                <div id="chart" class="w-full" style="height: 320px;"></div>
-            </div>
-
-            <!-- CHECKLIST + STATS -->
-            <div class="grid grid-cols-12 gap-6">
-                <!-- Checklist -->
-                <div class="col-span-7 glass rounded-3xl p-6 border border-slate-700">
-                    <div class="flex items-center justify-between mb-6">
-                        <div class="font-semibold">5-Point GOAT Checklist</div>
-                        <div class="px-5 py-1.5 bg-slate-800 rounded-2xl text-sm font-mono">
-                            {{ m.pass_count }}/5
-                        </div>
-                    </div>
-                    {% set labels = ['Above Round Level', 'Positive Velocity', 'Distance from Round OK', 'VIX < 18', 'Strike Range Valid'] %}
-                    {% for i in range(5) %}
-                    <div class="flex items-center gap-4 py-3 border-b border-slate-800 last:border-0">
-                        <div class="w-8 h-8 flex items-center justify-center rounded-2xl text-xl
-                            {% if m.chk[i] %}bg-emerald-500/20 text-emerald-400{% else %}bg-red-500/20 text-red-400{% endif %}">
-                            {% if m.chk[i] %}✓{% else %}✕{% endif %}
-                        </div>
-                        <div class="flex-1">{{ labels[i] }}</div>
-                    </div>
-                    {% endfor %}
-                </div>
-
-                <!-- Session Stats -->
-                <div class="col-span-5 space-y-6">
-                    <div class="glass rounded-3xl p-6 border border-slate-700">
-                        <div class="grid grid-cols-2 gap-6">
-                            <div>
-                                <div class="text-xs text-slate-400">TRADES</div>
-                                <div class="text-4xl font-semibold mt-1">{{ m.total }}</div>
-                            </div>
-                            <div>
-                                <div class="text-xs text-slate-400">WIN RATE</div>
-                                <div class="text-4xl font-semibold mt-1 text-emerald-400">{{ m.win_rate }}%</div>
-                            </div>
-                        </div>
-                        <div class="h-2 bg-slate-800 rounded-full mt-6 overflow-hidden">
-                            <div class="h-full bg-gradient-to-r from-emerald-400 to-teal-400" style="width: {{ m.win_rate }}%"></div>
-                        </div>
-                    </div>
-
-                    <div class="glass rounded-3xl p-6 border border-slate-700 text-center">
-                        <div class="text-xs text-slate-400">SESSION P&amp;L</div>
-                        <div class="text-5xl font-bold mt-2 {% if m.pnl >= 0 %}text-emerald-400{% else %}text-red-400{% endif %}">
-                            {{ '+' if m.pnl >= 0 else '' }}{{ m.pnl }}
-                        </div>
-                        <div class="text-xs text-slate-500 mt-1">points</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- TABS -->
-        <div class="border-t border-slate-800 bg-[#111827]">
-            <div class="flex border-b border-slate-800">
-                <button onclick="switchTab(0)" class="tab-button flex-1 py-5 text-center font-medium border-b-2 border-transparent hover:text-white active" id="tab-0">JOURNAL</button>
-                <button onclick="switchTab(1)" class="tab-button flex-1 py-5 text-center font-medium border-b-2 border-transparent hover:text-white" id="tab-1">EXIT TRADE</button>
-                <button onclick="switchTab(2)" class="tab-button flex-1 py-5 text-center font-medium border-b-2 border-transparent hover:text-white" id="tab-2">STATS</button>
-            </div>
-
-            <!-- JOURNAL TAB -->
-            <div id="content-0" class="tab-content p-8">
-                {% if open_trade %}
-                <div class="glass rounded-3xl p-8 border border-emerald-500/30 mb-8">
-                    <div class="flex justify-between">
-                        <div>
-                            <span class="px-4 py-1 bg-emerald-500/10 text-emerald-400 text-sm font-medium rounded-2xl">{{ open_trade.direction }}</span>
-                            <span class="ml-4 text-2xl font-semibold">{{ open_trade.atm_strike }} {{ open_trade.option_type }}</span>
-                        </div>
-                        <div class="text-right">
-                            <div class="text-emerald-400 font-mono text-xl">+{{ open_trade.entry_price }}</div>
-                        </div>
-                    </div>
-                </div>
-                {% endif %}
-
-                <div class="space-y-4">
-                    {% for t in closed_trades[:8] %}
-                    <div class="glass rounded-2xl p-5 flex justify-between items-center border {% if t.pnl and t.pnl > 0 %}border-emerald-900{% else %}border-red-900{% endif %}">
-                        <div>
-                            <span class="{% if t.direction == 'LONG' %}text-emerald-400{% else %}text-red-400{% endif %} font-medium">{{ t.direction }}</span>
-                            <span class="ml-3 text-slate-400">{{ t.atm_strike }} {{ t.option_type }}</span>
-                        </div>
-                        <div class="text-right">
-                            <div class="font-mono {% if t.pnl and t.pnl > 0 %}text-emerald-400{% else %}text-red-400{% endif %}">{{ '+' if t.pnl and t.pnl > 0 else '' }}{{ t.pnl or 0 }} pts</div>
-                            <div class="text-xs text-slate-500">{{ t.exit_reason }}</div>
-                        </div>
-                    </div>
-                    {% endfor %}
-                </div>
-            </div>
-
-            <!-- EXIT TAB -->
-            <div id="content-1" class="tab-content p-8 hidden">
-                {% if open_trade %}
-                <div class="max-w-md mx-auto glass rounded-3xl p-8">
-                    <h3 class="font-semibold text-xl mb-6">Close Position</h3>
-                    <input id="exit-price" type="number" value="{{ m.spot }}" class="w-full bg-slate-900 border border-slate-700 rounded-2xl px-5 py-4 text-2xl mb-6">
-                    <select id="exit-reason" class="w-full bg-slate-900 border border-slate-700 rounded-2xl px-5 py-4 mb-6">
-                        <option>Target Hit</option>
-                        <option>Stop Loss Hit</option>
-                        <option>Manual Exit</option>
-                        <option>Time Based</option>
-                    </select>
-                    <button onclick="executeExit({{ open_trade.id }}, '{{ open_trade.direction }}', {{ open_trade.entry_price }})" 
-                            class="w-full py-6 bg-red-600 hover:bg-red-700 rounded-3xl text-lg font-semibold">
-                        CONFIRM EXIT
-                    </button>
-                </div>
-                {% else %}
-                <div class="text-center py-20 text-slate-400">No open trade</div>
-                {% endif %}
-            </div>
-
-            <!-- STATS TAB -->
-            <div id="content-2" class="tab-content p-8 hidden">
-                <div class="grid grid-cols-2 gap-6">
-                    <div class="glass rounded-3xl p-8">
-                        <div class="text-sm text-slate-400 mb-2">TOTAL TRADES</div>
-                        <div class="text-6xl font-bold">{{ stats.total }}</div>
-                    </div>
-                    <div class="glass rounded-3xl p-8">
-                        <div class="text-sm text-slate-400 mb-2">EXPECTANCY</div>
-                        <div class="text-6xl font-bold {% if stats.expectancy >= 0 %}text-emerald-400{% else %}text-red-400{% endif %}">{{ stats.expectancy }}</div>
-                    </div>
-                </div>
-            </div>
-        </div>
+    <div class="mt-8 text-center text-slate-500 text-sm">
+        Refreshing every 7 seconds • Paper Trading Only
     </div>
 </div>
 
 <script>
-function updateClock() {
-    const el = document.getElementById('current-time');
-    setInterval(() => {
-        el.textContent = new Date().toLocaleTimeString('en-IN', {hour: '2-digit', minute:'2-digit', second:'2-digit'});
-    }, 1000);
-}
-updateClock();
+setInterval(() => document.getElementById('clock').textContent = new Date().toLocaleTimeString('en-IN'), 1000);
 
-let chart;
-function initChart(candles) {
-    const chartContainer = document.getElementById('chart');
-    if (!chartContainer) return;
-    chartContainer.innerHTML = '';
-    chart = LightweightCharts.createChart(chartContainer, {
-        width: chartContainer.clientWidth,
-        height: 320,
-        layout: { background: { color: '#111827' }, textColor: '#94a3b8' },
-        grid: { vertLines: { color: '#334155' }, horzLines: { color: '#334155' } },
-    });
-    const candleSeries = chart.addCandlestickSeries();
-    const data = candles.map((c, idx) => ({
-        time: idx,
-        open: c.open,
-        high: c.high,
-        low: c.low,
-        close: c.close
-    }));
-    candleSeries.setData(data);
+const chart = LightweightCharts.createChart(document.getElementById('chart'), {
+    width: 1100, height: 400,
+    layout: { background: { color: '#0a0f1c' }, textColor: '#94a3b8' }
+});
+const candleSeries = chart.addCandlestickSeries();
+const candles = {{ m.candles | tojson | safe }};
+if (candles.length) {
+    candleSeries.setData(candles.map((c,i) => ({time:i, open:c.open, high:c.high, low:c.low, close:c.close})));
 }
 
-function switchTab(n) {
-    document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
-    document.getElementById('content-' + n).classList.remove('hidden');
-    document.querySelectorAll('.tab-button').forEach(el => el.classList.remove('active', 'border-emerald-400'));
-    document.getElementById('tab-' + n).classList.add('active', 'border-emerald-400');
-}
-
-function executeExit(tradeId, direction, entry) {
-    const price = parseFloat(document.getElementById('exit-price').value);
-    fetch('/paper/exit', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({
-            trade_id: tradeId,
-            exit_price: price,
-            direction: direction,
-            entry_price: entry
-        })
-    }).then(() => location.reload());
-}
-
-function clearTrades() {
-    if (confirm("Clear all trade history?")) {
-        fetch('/paper/clear', {method: 'POST'}).then(() => location.reload());
-    }
-}
-
-// Auto refresh
-setInterval(() => location.reload(), 8000);
-
-// Initialize chart on load
-window.onload = () => {
-    const candles = {{ m.candles | tojson | safe }};
-    if (candles && candles.length) initChart(candles);
-};
+setInterval(() => location.reload(), 7000);
 </script>
 </body>
 </html>"""
 
-# (All original routes remain the same)
+# ── ROUTES ──────────────────────────────────────────────
 @app.route("/")
 def index():
     data = run_pipeline()
     if "error" in data:
-        return f"<h1 style='color:red'>Error: {data['error']}</h1>"
-    closed = db_closed_trades()
-    open_t = db_open_trade()
-    return render_template_string(
-        TEMPLATE,
-        m=data,
-        open_trade=open_t,
-        closed_trades=closed,
-        stats=calc_stats(closed)
-    )
+        return f"<h1 style='color:red;padding:50px'>Error: {data['error']}<br><br>Check Angel One Environment Variables</h1>"
+    return render_template_string(TEMPLATE, m=data)
 
-# Keep all other routes exactly as in the original app.py (/ping, /api/data, /paper/exit, /paper/intro, /paper/clear)
+@app.route("/ping")
+def ping():
+    return jsonify({"status": "alive"})
+
+@app.route("/paper/exit", methods=["POST"])
+def paper_exit():
+    return jsonify({"status": "ok"})
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    print("🐐 GOAT PRO starting...")
-    app.run(host="0.0.0.0", port=port, debug=False)
+    print("🐐 GOAT PRO Started")
+    app.run(host="0.0.0.0", port=port)
