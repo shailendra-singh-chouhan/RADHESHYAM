@@ -1,28 +1,3 @@
-#!/usr/bin/env python3
-"""
-  GOAT PRO — Multi Market Command Center
-  Single-file Flask app for Render deployment.
-  
-  Features:
-    • Multi-market support: NIFTY, BANKNIFTY, SENSEX, CRUDE, GOLD, SILVER, STOCKS
-    • Jadui Spot signal detection with entry/SL/target levels
-    • Indicator dashboard: RSI, VWAP, EMA 9/21, Supertrend
-    • Smart Money tracking: FII/DII, OI Long/Short Buildup, Put Writing, GEX
-    • Theory & Science: Wyckoff, ICT, Elliott Wave, Market Structure, Gamma Science
-    • Greeks & IV analysis, OI Analysis with PCR, Candle Pattern detection
-    ․ Paper trading engine with auto entry/exit, journal, introspection
-    ․ 5-Point Checklist, GOAT BRAIN AI reasoning, live P&L tracking
-
-  Required Environment Variables (set in Render Dashboard):
-    ANGEL_API_KEY       = Your Angel One API Key
-    ANGEL_CLIENT_ID     = Your Angel One Client ID
-    ANGEL_MPIN          = Your Angel One MPIN
-    ANGEL_TOTP_SECRET   = Your Angel One TOTP Secret (base32)
-    TELEGRAM_BOT_TOKEN  = (Optional) Telegram bot token for alerts
-    TELEGRAM_CHAT_ID    = (Optional) Telegram chat ID for alerts
-    PORT                = Render sets this automatically
-"""
-
 import os
 import time
 import datetime
