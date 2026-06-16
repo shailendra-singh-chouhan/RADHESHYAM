@@ -18,6 +18,12 @@ import time
 import datetime
 import threading
 import sqlite3
+try:
+    import psycopg2
+    import psycopg2.extras
+    POSTGRES_AVAILABLE = True
+except ImportError:
+    POSTGRES_AVAILABLE = False
 import json
 import requests
 import pyotp
@@ -68,9 +74,22 @@ OPTION_CACHE = {
     "ttl": 10,
 }
 
-# Database path — survives Render restarts
+# ── Database: PostgreSQL (preferred) → SQLite fallback ──
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
 DB_PATH = "/opt/render/project/src/trades.db"
-os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+USE_POSTGRES = bool(DATABASE_URL and POSTGRES_AVAILABLE)
+
+if not USE_POSTGRES:
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+
+def get_db_conn():
+    """Return DB connection — PostgreSQL if available, else SQLite"""
+    if USE_POSTGRES:
+        conn = psycopg2.connect(DATABASE_URL, sslmode='require')
+        return conn, "postgres"
+    else:
+        conn = sqlite3.connect(DB_PATH)
+        return conn, "sqlite"
 
 # Candle tracking
 CANDLE_5MIN = []
@@ -163,147 +182,164 @@ def update_candle(price):
 # ═════════════════════════════════════════════════════════
 
 def db_init():
-    """Initialize all database tables"""
-    con = sqlite3.connect(DB_PATH)
+    """Initialize all database tables — PostgreSQL or SQLite"""
+    conn, db_type = get_db_conn()
+    cur = conn.cursor()
 
-    # Paper trades table
-    con.execute("""CREATE TABLE IF NOT EXISTS paper_trades (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+    if db_type == "postgres":
+        serial = "SERIAL PRIMARY KEY"
+        int_default = "INTEGER DEFAULT 1"
+    else:
+        serial = "INTEGER PRIMARY KEY AUTOINCREMENT"
+        int_default = "INTEGER DEFAULT 1"
+
+    cur.execute(f"""CREATE TABLE IF NOT EXISTS paper_trades (
+        id {serial},
         direction TEXT, entry_price REAL, exit_price REAL,
-        target REAL, sl REAL, qty INTEGER DEFAULT 1,
+        target REAL, sl REAL, qty {int_default},
         setup TEXT, source TEXT DEFAULT 'MANUAL',
         note TEXT, post_note TEXT, exit_reason TEXT,
         emotion TEXT, entry_time TEXT, exit_time TEXT,
         pnl REAL, status TEXT DEFAULT 'OPEN',
-        decision_quality TEXT DEFAULT '\u2014',
+        decision_quality TEXT DEFAULT '-',
         emotion_score INTEGER DEFAULT 0,
         atm_strike INTEGER DEFAULT 0,
-        option_type TEXT DEFAULT 'CE'
+        option_type TEXT DEFAULT 'CE',
+        pnl_rs REAL DEFAULT 0
     )""")
 
-    # Introspection table
-    con.execute("""CREATE TABLE IF NOT EXISTS introspection (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+    cur.execute(f"""CREATE TABLE IF NOT EXISTS introspection (
+        id {serial},
         date TEXT, rule_followed INTEGER, sl_skip TEXT,
         revenge TEXT, discipline INTEGER, tomorrow_rule TEXT, created_at TEXT
     )""")
 
-    # Decision quality table
-    con.execute("""CREATE TABLE IF NOT EXISTS decision_quality (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+    cur.execute(f"""CREATE TABLE IF NOT EXISTS decision_quality (
+        id {serial},
         date TEXT, dq_score INTEGER, breakdown TEXT, created_at TEXT
     )""")
 
-    con.commit()
-    con.close()
+    conn.commit()
+    cur.close()
+    conn.close()
 
 
 def db_open_trade():
-    con = sqlite3.connect(DB_PATH)
-    row = con.execute(
-        "SELECT * FROM paper_trades WHERE status='OPEN' ORDER BY id DESC LIMIT 1"
-    ).fetchone()
-    con.close()
+    conn, _ = get_db_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM paper_trades WHERE status='OPEN' ORDER BY id DESC LIMIT 1")
+    row = cur.fetchone()
+    cur.close(); conn.close()
     if not row:
         return None
     cols = [
         'id', 'direction', 'entry_price', 'exit_price', 'target', 'sl', 'qty', 'setup',
         'source', 'note', 'post_note', 'exit_reason', 'emotion', 'entry_time',
         'exit_time', 'pnl', 'status', 'decision_quality', 'emotion_score',
-        'atm_strike', 'option_type'
+        'atm_strike', 'option_type', 'pnl_rs'
     ]
     return dict(zip(cols, row))
 
 
 def db_closed_trades(limit=50):
-    con = sqlite3.connect(DB_PATH)
-    rows = con.execute(
-        "SELECT * FROM paper_trades WHERE status='CLOSED' ORDER BY id DESC LIMIT ?",
-        (limit,)
-    ).fetchall()
-    con.close()
+    conn, _ = get_db_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM paper_trades WHERE status='CLOSED' ORDER BY id DESC LIMIT %s" if USE_POSTGRES else
+                "SELECT * FROM paper_trades WHERE status='CLOSED' ORDER BY id DESC LIMIT ?", (limit,))
+    rows = cur.fetchall()
+    cur.close(); conn.close()
     cols = [
         'id', 'direction', 'entry_price', 'exit_price', 'target', 'sl', 'qty', 'setup',
         'source', 'note', 'post_note', 'exit_reason', 'emotion', 'entry_time',
         'exit_time', 'pnl', 'status', 'decision_quality', 'emotion_score',
-        'atm_strike', 'option_type'
+        'atm_strike', 'option_type', 'pnl_rs'
     ]
     return [dict(zip(cols, r)) for r in rows]
 
 
 def db_insert_trade(t):
-    con = sqlite3.connect(DB_PATH)
-    con.execute("""INSERT INTO paper_trades
+    conn, db_type = get_db_conn()
+    cur = conn.cursor()
+    ph = "%s" if db_type == "postgres" else "?"
+    sql = f"""INSERT INTO paper_trades
         (direction, entry_price, target, sl, qty, setup, source, note, entry_time, status,
-         decision_quality, emotion_score, atm_strike, option_type)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (t['direction'], t['entry_price'], t['target'], t['sl'], t.get('qty', 1),
-         t['setup'], t.get('source', 'MANUAL'), t.get('note', ''),
-         t['entry_time'], 'OPEN', t.get('decision_quality', '\u2014'),
-         t.get('emotion_score', 0), t.get('atm_strike', 0),
-         t.get('option_type', 'CE')))
-    con.commit()
-    con.close()
+         decision_quality, emotion_score, atm_strike, option_type, pnl_rs)
+        VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph})"""
+    cur.execute(sql, (
+        t['direction'], t['entry_price'], t['target'], t['sl'], t.get('qty', 65),
+        t['setup'], t.get('source', 'MANUAL'), t.get('note', ''),
+        t['entry_time'], 'OPEN', t.get('decision_quality', '-'),
+        t.get('emotion_score', 0), t.get('atm_strike', 0),
+        t.get('option_type', 'CE'), t.get('pnl_rs', 0)
+    ))
+    conn.commit()
+    cur.close(); conn.close()
 
 
 def db_close_trade(trade_id, exit_price, exit_reason, post_note, emotion, pnl,
-                   decision_quality='\u2014', emotion_score=0):
-    con = sqlite3.connect(DB_PATH)
-    con.execute("""UPDATE paper_trades SET exit_price=?, exit_reason=?, post_note=?,
-        emotion=?, exit_time=?, pnl=?, status='CLOSED', decision_quality=?,
-        emotion_score=? WHERE id=?""",
-        (exit_price, exit_reason, post_note, emotion,
-         time.strftime("%H:%M:%S"), pnl, decision_quality, emotion_score, trade_id))
-    con.commit()
-    con.close()
+                   decision_quality='-', emotion_score=0, pnl_rs=0):
+    conn, db_type = get_db_conn()
+    cur = conn.cursor()
+    ph = "%s" if db_type == "postgres" else "?"
+    sql = f"""UPDATE paper_trades SET exit_price={ph}, exit_reason={ph}, post_note={ph},
+        emotion={ph}, exit_time={ph}, pnl={ph}, pnl_rs={ph}, status='CLOSED',
+        decision_quality={ph}, emotion_score={ph} WHERE id={ph}"""
+    cur.execute(sql, (
+        exit_price, exit_reason, post_note, emotion,
+        time.strftime("%H:%M:%S"), pnl, pnl_rs, decision_quality, emotion_score, trade_id
+    ))
+    conn.commit()
+    cur.close(); conn.close()
 
 
 def db_clear_trades():
-    con = sqlite3.connect(DB_PATH)
-    con.execute("DELETE FROM paper_trades")
-    con.commit()
-    con.close()
+    conn, _ = get_db_conn()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM paper_trades")
+    conn.commit()
+    cur.close(); conn.close()
 
 
 def db_add_intro(data):
-    con = sqlite3.connect(DB_PATH)
-    con.execute("""INSERT INTO introspection
-        (date, rule_followed, sl_skip, revenge, discipline, tomorrow_rule, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (data['date'], data['rule_followed'], data['sl_skip'], data['revenge'],
-         data['discipline'], data['tomorrow_rule'],
-         time.strftime("%Y-%m-%d %H:%M:%S")))
-    con.commit()
-    con.close()
+    conn, db_type = get_db_conn()
+    cur = conn.cursor()
+    ph = "%s" if db_type == "postgres" else "?"
+    sql = f"INSERT INTO introspection (date, rule_followed, sl_skip, revenge, discipline, tomorrow_rule, created_at) VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph})"
+    cur.execute(sql, (data['date'], data['rule_followed'], data['sl_skip'], data['revenge'],
+        data['discipline'], data['tomorrow_rule'], time.strftime("%Y-%m-%d %H:%M:%S")))
+    conn.commit()
+    cur.close(); conn.close()
 
 
 def db_get_intros(limit=10):
-    con = sqlite3.connect(DB_PATH)
-    rows = con.execute(
-        "SELECT * FROM introspection ORDER BY id DESC LIMIT ?", (limit,)
-    ).fetchall()
-    con.close()
+    conn, db_type = get_db_conn()
+    cur = conn.cursor()
+    ph = "%s" if db_type == "postgres" else "?"
+    cur.execute(f"SELECT * FROM introspection ORDER BY id DESC LIMIT {ph}", (limit,))
+    rows = cur.fetchall()
+    cur.close(); conn.close()
     cols = ['id', 'date', 'rule_followed', 'sl_skip', 'revenge',
             'discipline', 'tomorrow_rule', 'created_at']
     return [dict(zip(cols, r)) for r in rows]
 
 
 def db_add_dq(data):
-    con = sqlite3.connect(DB_PATH)
-    con.execute(
-        "INSERT INTO decision_quality (date, dq_score, breakdown, created_at) VALUES (?, ?, ?, ?)",
-        (data['date'], data['dq_score'], data['breakdown'],
-         time.strftime("%Y-%m-%d %H:%M:%S")))
-    con.commit()
-    con.close()
+    conn, db_type = get_db_conn()
+    cur = conn.cursor()
+    ph = "%s" if db_type == "postgres" else "?"
+    cur.execute(f"INSERT INTO decision_quality (date, dq_score, breakdown, created_at) VALUES ({ph},{ph},{ph},{ph})",
+        (data['date'], data['dq_score'], data['breakdown'], time.strftime("%Y-%m-%d %H:%M:%S")))
+    conn.commit()
+    cur.close(); conn.close()
 
 
 def db_get_dqs(limit=7):
-    con = sqlite3.connect(DB_PATH)
-    rows = con.execute(
-        "SELECT * FROM decision_quality ORDER BY id DESC LIMIT ?", (limit,)
-    ).fetchall()
-    con.close()
+    conn, db_type = get_db_conn()
+    cur = conn.cursor()
+    ph = "%s" if db_type == "postgres" else "?"
+    cur.execute(f"SELECT * FROM decision_quality ORDER BY id DESC LIMIT {ph}", (limit,))
+    rows = cur.fetchall()
+    cur.close(); conn.close()
     cols = ['id', 'date', 'dq_score', 'breakdown', 'created_at']
     return [dict(zip(cols, r)) for r in rows]
 
@@ -665,6 +701,7 @@ def run_pipeline():
     active_index = ENGINE.get("active_index", "NIFTY")
     lot_size = LOT_SIZES.get(active_index, 65)
     ENGINE["lot_size"] = lot_size
+    ENGINE["active_index"] = active_index
 
     # ── Fetch CE/PE Live Premium ──
     try:
@@ -726,7 +763,7 @@ def run_pipeline():
             if hit_tgt:
                 pnl_pts = round(abs(ENGINE["target"] - open_t['entry_price']), 1)
                 pnl_rs = round(pnl_pts * lot_size, 0)
-                db_close_trade(open_t['id'], spot, 'Target Hit', 'Auto-closed', 'Calm', pnl_pts)
+                db_close_trade(open_t['id'], spot, 'Target Hit', 'Auto-closed', 'Calm', pnl_pts, pnl_rs=pnl_rs)
                 ENGINE["trades_won"] += 1
                 ENGINE["trades_total"] += 1
                 ENGINE["session_pnl"] += pnl_pts
@@ -738,7 +775,7 @@ def run_pipeline():
             elif hit_sl:
                 pnl_pts = round(abs(open_t['entry_price'] - ENGINE["sl"]), 1)
                 pnl_rs = round(pnl_pts * lot_size, 0)
-                db_close_trade(open_t['id'], spot, 'Stoploss Hit', 'Auto-closed', 'Calm', -pnl_pts)
+                db_close_trade(open_t['id'], spot, 'Stoploss Hit', 'Auto-closed', 'Calm', -pnl_pts, pnl_rs=-pnl_rs)
                 ENGINE["trades_lost"] += 1
                 ENGINE["trades_total"] += 1
                 ENGINE["session_pnl"] -= pnl_pts
@@ -1013,7 +1050,12 @@ tailwind.config = {
     </div>
     <div class="flex items-center gap-3 px-4 whitespace-nowrap" style="border-right:1px solid rgba(255,255,255,0.05);">
       <span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;">SESSION P&L</span>
-      <span class="font-mono-data text-xs font-bold" id="ticker-pnl">\u2014</span>
+      <span class="font-mono-data text-xs font-bold" id="ticker-pnl">—</span>
+      <span class="font-mono-data text-xs font-bold" id="session-pnl-rs" style="font-size:10px;"></span>
+    </div>
+    <div class="flex items-center gap-3 px-4 whitespace-nowrap" style="border-right:1px solid rgba(255,255,255,0.05);">
+      <span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;">LIVE P&L</span>
+      <span class="font-mono-data text-xs font-bold" id="live-pnl-rs" style="font-size:10px;">—</span>
     </div>
     <div class="flex items-center gap-3 px-4 whitespace-nowrap" style="border-right:1px solid rgba(255,255,255,0.05);">
       <span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;">WIN RATE</span>
@@ -1489,16 +1531,58 @@ function updateUI(d) {
     vixBadge.innerHTML = `<span style="font-size:10px;padding:2px 8px;border-radius:4px;background:${safe ? 'rgba(0,255,65,0.1)' : 'rgba(255,59,59,0.1)'};color:${safe ? '#00FF41' : '#FF3B3B'};border:1px solid ${safe ? 'rgba(0,255,65,0.2)' : 'rgba(255,59,59,0.2)'}">${safe ? 'Safe' : 'Danger'}</span>`;
   }
 
-  // CE/PE labels
-  setText('ce-label', (d.atm_strike || '\u2014') + ' CE');
-  setText('pe-label', (d.atm_strike || '\u2014') + ' PE');
+  // CE/PE labels + live premium prices
+  setText('ce-label', (d.atm_strike || '—') + ' CE');
+  setText('pe-label', (d.atm_strike || '—') + ' PE');
+
+  // Live CE/PE premium display
+  const cePriceEl = document.getElementById('ce-price');
+  const pePriceEl = document.getElementById('pe-price');
+  if (cePriceEl) {
+    if (d.ce_premium && d.ce_premium > 0) {
+      cePriceEl.textContent = '₹' + d.ce_premium.toFixed(1);
+      cePriceEl.style.color = '#00FF41';
+    } else {
+      cePriceEl.textContent = '₹—';
+    }
+  }
+  if (pePriceEl) {
+    if (d.pe_premium && d.pe_premium > 0) {
+      pePriceEl.textContent = '₹' + d.pe_premium.toFixed(1);
+      pePriceEl.style.color = '#FF3B3B';
+    } else {
+      pePriceEl.textContent = '₹—';
+    }
+  }
+
+  // Live P&L in rupees (if trade active)
+  const livePnlEl = document.getElementById('live-pnl-rs');
+  if (livePnlEl && d.status === 'TRADE_ACTIVE') {
+    const rs = d.live_pnl_rs || 0;
+    livePnlEl.textContent = (rs >= 0 ? '+₹' : '-₹') + Math.abs(rs).toLocaleString('en-IN');
+    livePnlEl.style.color = rs >= 0 ? '#00FF41' : '#FF3B3B';
+  } else if (livePnlEl) {
+    livePnlEl.textContent = '';
+  }
+
+  // Session P&L in rupees
+  const sessionRsEl = document.getElementById('session-pnl-rs');
+  if (sessionRsEl && d.session_pnl_rs !== undefined) {
+    const srs = d.session_pnl_rs || 0;
+    sessionRsEl.textContent = (srs >= 0 ? '+₹' : '-₹') + Math.abs(srs).toLocaleString('en-IN');
+    sessionRsEl.style.color = srs >= 0 ? '#00FF41' : '#FF3B3B';
+  }
+
+  // Lot size display
+  const lotEl = document.getElementById('lot-size-display');
+  if (lotEl) lotEl.textContent = (d.lot_size || 65) + ' qty (1 lot)';
 
   // Active direction highlight
   const activeDir = d.direction || 'LONG';
   const ceEl = document.getElementById('ce-dir');
   const peEl = document.getElementById('pe-dir');
-  if (ceEl) ceEl.textContent = activeDir === 'LONG' ? '\u2191 ACTIVE \u2014 BUY CE' : '\u2191 Inactive';
-  if (peEl) peEl.textContent = activeDir === 'SHORT' ? '\u2193 ACTIVE \u2014 BUY PE' : '\u2193 Inactive';
+  if (ceEl) ceEl.textContent = activeDir === 'LONG' ? '↑ ACTIVE — BUY CE' : '↑ Inactive';
+  if (peEl) peEl.textContent = activeDir === 'SHORT' ? '↓ ACTIVE — BUY PE' : '↓ Inactive';
 
   // Signal Box
   updateSignalBox(d);
