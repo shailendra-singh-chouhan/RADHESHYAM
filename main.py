@@ -51,6 +51,23 @@ TOKENS = {
     "VIX":      {"token": "99926017", "exchange": "NSE"},
 }
 
+# ── Lot Sizes (NSE revised Jan 2026) ──
+LOT_SIZES = {
+    "NIFTY":     65,
+    "BANKNIFTY": 30,
+    "FINNIFTY":  60,
+}
+
+# ── Option Premium Cache ──
+OPTION_CACHE = {
+    "ce_ltp": 0.0,
+    "pe_ltp": 0.0,
+    "ce_token": "",
+    "pe_token": "",
+    "last_fetch": 0,
+    "ttl": 10,
+}
+
 # Database path — survives Render restarts
 DB_PATH = "/opt/render/project/src/trades.db"
 os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
@@ -366,6 +383,68 @@ def get_session():
         return None, str(e)
 
 
+def get_both_premiums(index, atm_strike, expiry_str):
+    """
+    Fetch CE and PE live premium from Angel One NFO.
+    expiry_str format: '18JUN2025' (Angel One symbol format)
+    Returns (ce_ltp, pe_ltp) as floats.
+    """
+    try:
+        now = time.time()
+        if now - OPTION_CACHE["last_fetch"] < OPTION_CACHE["ttl"]:
+            return OPTION_CACHE["ce_ltp"], OPTION_CACHE["pe_ltp"]
+
+        obj, err = get_session()
+        if err or not obj:
+            return 0.0, 0.0
+
+        ce_symbol = f"{index}{expiry_str}{atm_strike}CE"
+        pe_symbol = f"{index}{expiry_str}{atm_strike}PE"
+        ce_ltp, pe_ltp = 0.0, 0.0
+
+        try:
+            r = obj.searchScrip("NFO", ce_symbol)
+            if r and r.get("data"):
+                tok = r["data"][0]["symboltoken"]
+                lr = obj.ltpData("NFO", ce_symbol, tok)
+                ce_ltp = float(lr["data"]["ltp"]) if lr and lr.get("data") else 0.0
+        except Exception:
+            pass
+
+        try:
+            r = obj.searchScrip("NFO", pe_symbol)
+            if r and r.get("data"):
+                tok = r["data"][0]["symboltoken"]
+                lr = obj.ltpData("NFO", pe_symbol, tok)
+                pe_ltp = float(lr["data"]["ltp"]) if lr and lr.get("data") else 0.0
+        except Exception:
+            pass
+
+        OPTION_CACHE.update({
+            "ce_ltp": ce_ltp,
+            "pe_ltp": pe_ltp,
+            "last_fetch": now
+        })
+        return ce_ltp, pe_ltp
+    except Exception:
+        return 0.0, 0.0
+
+
+def get_expiry_str_for_angel(weeks_ahead=0):
+    """
+    Returns expiry string in Angel One format: e.g. '18JUN2025'
+    Nifty weekly expiry = Thursday
+    """
+    today = datetime.date.today()
+    days_until_thursday = (3 - today.weekday()) % 7
+    if days_until_thursday == 0 and datetime.datetime.now().time() > datetime.time(15, 30):
+        days_until_thursday = 7
+    expiry_date = today + datetime.timedelta(days=days_until_thursday + (weeks_ahead * 7))
+    return expiry_date.strftime("%d%b%Y").upper()
+
+
+
+
 def get_nifty_yfinance():
     """Fallback: fetch NIFTY spot from yfinance"""
     if not YFINANCE_AVAILABLE:
@@ -482,6 +561,13 @@ ENGINE = {
     "last_signal_sent": "",
     "data_source": "\u2014",
     "last_candle_signal": 0,
+    # Option premium tracking
+    "ce_premium": 0.0,
+    "pe_premium": 0.0,
+    "option_entry_premium": 0.0,
+    "lot_size": 65,
+    "active_index": "NIFTY",
+    "session_pnl_rs": 0.0,
 }
 
 
@@ -575,6 +661,21 @@ def run_pipeline():
     atm = get_atm_strike(spot, interval=50)
     ENGINE["atm_strike"] = atm
 
+    # ── Lot Size (current index) ──
+    active_index = ENGINE.get("active_index", "NIFTY")
+    lot_size = LOT_SIZES.get(active_index, 65)
+    ENGINE["lot_size"] = lot_size
+
+    # ── Fetch CE/PE Live Premium ──
+    try:
+        expiry_str = get_expiry_str_for_angel(0)
+        ce_ltp, pe_ltp = get_both_premiums(active_index, atm, expiry_str)
+        ENGINE["ce_premium"] = ce_ltp
+        ENGINE["pe_premium"] = pe_ltp
+    except Exception:
+        ce_ltp = ENGINE.get("ce_premium", 0.0)
+        pe_ltp = ENGINE.get("pe_premium", 0.0)
+
     # ── VIX-based SL and Target ──
     vix_mult = vix / 15.0
     sl_pts = round(40 * vix_mult, 1)
@@ -623,24 +724,28 @@ def run_pipeline():
                 hit_sl = spot >= ENGINE["sl"]
 
             if hit_tgt:
-                pnl = round(abs(ENGINE["target"] - open_t['entry_price']), 1)
-                db_close_trade(open_t['id'], spot, 'Target Hit', 'Auto-closed', 'Calm', pnl)
+                pnl_pts = round(abs(ENGINE["target"] - open_t['entry_price']), 1)
+                pnl_rs = round(pnl_pts * lot_size, 0)
+                db_close_trade(open_t['id'], spot, 'Target Hit', 'Auto-closed', 'Calm', pnl_pts)
                 ENGINE["trades_won"] += 1
                 ENGINE["trades_total"] += 1
-                ENGINE["session_pnl"] += pnl
+                ENGINE["session_pnl"] += pnl_pts
+                ENGINE["session_pnl_rs"] += pnl_rs
                 ENGINE["status"] = "BLOCKED"
-                ENGINE["signal"] = f"TARGET HIT +{pnl} pts"
-                tg(f"TARGET HIT +{pnl} pts at {spot}")
+                ENGINE["signal"] = f"TARGET HIT +{pnl_pts} pts | +₹{int(pnl_rs):,}"
+                tg(f"TARGET HIT +{pnl_pts} pts | +₹{int(pnl_rs)} ({lot_size} qty) at {spot}")
 
             elif hit_sl:
-                pnl = round(abs(open_t['entry_price'] - ENGINE["sl"]), 1)
-                db_close_trade(open_t['id'], spot, 'Stoploss Hit', 'Auto-closed', 'Calm', -pnl)
+                pnl_pts = round(abs(open_t['entry_price'] - ENGINE["sl"]), 1)
+                pnl_rs = round(pnl_pts * lot_size, 0)
+                db_close_trade(open_t['id'], spot, 'Stoploss Hit', 'Auto-closed', 'Calm', -pnl_pts)
                 ENGINE["trades_lost"] += 1
                 ENGINE["trades_total"] += 1
-                ENGINE["session_pnl"] -= pnl
+                ENGINE["session_pnl"] -= pnl_pts
+                ENGINE["session_pnl_rs"] -= pnl_rs
                 ENGINE["status"] = "BLOCKED"
-                ENGINE["signal"] = f"SL HIT -{pnl} pts"
-                tg(f"SL HIT -{pnl} pts at {spot}")
+                ENGINE["signal"] = f"SL HIT -{pnl_pts} pts | -₹{int(pnl_rs):,}"
+                tg(f"SL HIT -{pnl_pts} pts | -₹{int(pnl_rs)} ({lot_size} qty) at {spot}")
 
     # ── Entry signal generation ──
     elif ENGINE["status"] in ("BLOCKED", "SETUP_READY"):
@@ -685,20 +790,24 @@ def run_pipeline():
                     reasons = goat_brain_reasons(direction, spot, vix, vel, chk, atm, option_type)
                     ENGINE["brain_reasons"] = reasons
 
+                    # Record option premium at entry
+                    entry_premium = ENGINE["ce_premium"] if option_type == "CE" else ENGINE["pe_premium"]
+                    ENGINE["option_entry_premium"] = entry_premium
+
                     db_insert_trade({
                         "direction": direction,
                         "entry_price": spot,
                         "target": ENGINE["target"],
                         "sl": ENGINE["sl"],
-                        "qty": 1,
+                        "qty": lot_size,
                         "setup": "GOAT Signal",
                         "source": "AUTO",
-                        "note": "\n".join(reasons),
+                        "note": "\n".join(reasons) + f"\nPremium Entry: ₹{entry_premium}",
                         "entry_time": time.strftime("%H:%M:%S"),
                         "atm_strike": atm,
                         "option_type": option_type
                     })
-                    tg(f"AUTO {direction}\n{spot} | {atm} {option_type}\nTGT:{ENGINE['target']} SL:{ENGINE['sl']}")
+                    tg(f"AUTO {direction}\n{spot} | {atm} {option_type}\nPremium: ₹{entry_premium}\nTGT:{ENGINE['target']} SL:{ENGINE['sl']}\nLot: {lot_size} qty")
 
     # Stats
     total = ENGINE["trades_total"]
@@ -730,6 +839,19 @@ def run_pipeline():
         "expiry": expiry_label,
         "candles": CANDLE_5MIN[-50:],
         "current_candle": _candle_current,
+        # ── Option Premium (live) ──
+        "ce_premium": round(ENGINE.get("ce_premium", 0.0), 2),
+        "pe_premium": round(ENGINE.get("pe_premium", 0.0), 2),
+        "option_entry_premium": round(ENGINE.get("option_entry_premium", 0.0), 2),
+        "lot_size": lot_size,
+        "active_index": active_index,
+        # ── Real ₹ P&L ──
+        "session_pnl_rs": round(ENGINE.get("session_pnl_rs", 0.0), 0),
+        "live_pnl_rs": round(
+            (ENGINE.get("ce_premium", 0.0) - ENGINE.get("option_entry_premium", 0.0)) * lot_size
+            if ENGINE["status"] == "TRADE_ACTIVE" and ENGINE.get("option_entry_premium", 0.0) > 0
+            else 0.0, 0
+        ),
     }
 
     ENGINE.update({"last_update": now, "payload": payload})
