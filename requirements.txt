@@ -5,3 +5,5 @@ logzero
 websocket-client
 requests
 gunicorn
+psycopg2-binary
+yfinance
