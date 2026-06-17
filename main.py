@@ -436,7 +436,10 @@ def get_session():
 def get_both_premiums(index, atm_strike, expiry_str):
     """
     Fetch CE and PE live premium from Angel One NFO.
-    expiry_str format: '18JUN2025' (Angel One symbol format)
+    Angel One symbol formats tried:
+    1. NIFTY18JUN24 (2-digit year) e.g. NIFTY18JUN2424100CE
+    2. NIFTY2461824100CE (short format)
+    3. Search by partial name
     Returns (ce_ltp, pe_ltp) as floats.
     """
     try:
@@ -448,27 +451,51 @@ def get_both_premiums(index, atm_strike, expiry_str):
         if err or not obj:
             return 0.0, 0.0
 
-        ce_symbol = f"{index}{expiry_str}{atm_strike}CE"
-        pe_symbol = f"{index}{expiry_str}{atm_strike}PE"
         ce_ltp, pe_ltp = 0.0, 0.0
 
-        try:
-            r = obj.searchScrip("NFO", ce_symbol)
-            if r and r.get("data"):
-                tok = r["data"][0]["symboltoken"]
-                lr = obj.ltpData("NFO", ce_symbol, tok)
-                ce_ltp = float(lr["data"]["ltp"]) if lr and lr.get("data") else 0.0
-        except Exception:
-            pass
+        # Angel One uses 2-digit year format: NIFTY18JUN2424100CE
+        yr2 = expiry_str[-2:]  # last 2 digits of year
+        expiry_short = expiry_str[:-4] + yr2  # e.g. 18JUN24
+        
+        # Try multiple symbol formats
+        ce_formats = [
+            f"{index}{expiry_str}{atm_strike}CE",       # NIFTY18JUN202624100CE
+            f"{index}{expiry_short}{atm_strike}CE",     # NIFTY18JUN2424100CE
+            f"NIFTY{expiry_short}{atm_strike}CE",       # Always NIFTY prefix
+        ]
+        pe_formats = [
+            f"{index}{expiry_str}{atm_strike}PE",
+            f"{index}{expiry_short}{atm_strike}PE",
+            f"NIFTY{expiry_short}{atm_strike}PE",
+        ]
 
-        try:
-            r = obj.searchScrip("NFO", pe_symbol)
-            if r and r.get("data"):
-                tok = r["data"][0]["symboltoken"]
-                lr = obj.ltpData("NFO", pe_symbol, tok)
-                pe_ltp = float(lr["data"]["ltp"]) if lr and lr.get("data") else 0.0
-        except Exception:
-            pass
+        # Fetch CE
+        for sym in ce_formats:
+            try:
+                r = obj.searchScrip("NFO", sym)
+                if r and r.get("data") and len(r["data"]) > 0:
+                    tok = r["data"][0]["symboltoken"]
+                    actual_sym = r["data"][0].get("tradingsymbol", sym)
+                    lr = obj.ltpData("NFO", actual_sym, tok)
+                    if lr and lr.get("data"):
+                        ce_ltp = float(lr["data"]["ltp"])
+                        break
+            except Exception:
+                continue
+
+        # Fetch PE
+        for sym in pe_formats:
+            try:
+                r = obj.searchScrip("NFO", sym)
+                if r and r.get("data") and len(r["data"]) > 0:
+                    tok = r["data"][0]["symboltoken"]
+                    actual_sym = r["data"][0].get("tradingsymbol", sym)
+                    lr = obj.ltpData("NFO", actual_sym, tok)
+                    if lr and lr.get("data"):
+                        pe_ltp = float(lr["data"]["ltp"])
+                        break
+            except Exception:
+                continue
 
         OPTION_CACHE.update({
             "ce_ltp": ce_ltp,
