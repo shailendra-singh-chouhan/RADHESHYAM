@@ -868,7 +868,7 @@ def run_pipeline():
     ENGINE["strategy_mode"] = strategy
 
     # ── Opening gap analysis ──
-    if not ENGINE.get("opening_done") and is_market_open:
+    if not ENGINE.get("opening_done") and mstatus == "OPEN":
         try:
             import yfinance as yf
             ticker = yf.Ticker("^NSEI")
