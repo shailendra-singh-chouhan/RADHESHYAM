@@ -433,15 +433,13 @@ def get_session():
         return None, str(e)
 
 
-def get_both_premiums(index, atm_strike, expiry_str):
+def get_both_premiums(index, atm_strike, expiry_date):
     """
     Fetch CE and PE live premium from Angel One NFO.
-    Angel One symbol formats tried:
-    1. NIFTY18JUN24 (2-digit year) e.g. NIFTY18JUN2424100CE
-    2. NIFTY2461824100CE (short format)
-    3. Search by partial name
+    Tries multiple symbol formats automatically.
     Returns (ce_ltp, pe_ltp) as floats.
     """
+    expiry_str = expiry_date  # keep for compatibility
     try:
         now = time.time()
         if now - OPTION_CACHE["last_fetch"] < OPTION_CACHE["ttl"]:
@@ -453,21 +451,8 @@ def get_both_premiums(index, atm_strike, expiry_str):
 
         ce_ltp, pe_ltp = 0.0, 0.0
 
-        # Angel One uses 2-digit year format: NIFTY18JUN2424100CE
-        yr2 = expiry_str[-2:]  # last 2 digits of year
-        expiry_short = expiry_str[:-4] + yr2  # e.g. 18JUN24
-        
-        # Try multiple symbol formats
-        ce_formats = [
-            f"{index}{expiry_str}{atm_strike}CE",       # NIFTY18JUN202624100CE
-            f"{index}{expiry_short}{atm_strike}CE",     # NIFTY18JUN2424100CE
-            f"NIFTY{expiry_short}{atm_strike}CE",       # Always NIFTY prefix
-        ]
-        pe_formats = [
-            f"{index}{expiry_str}{atm_strike}PE",
-            f"{index}{expiry_short}{atm_strike}PE",
-            f"NIFTY{expiry_short}{atm_strike}PE",
-        ]
+        # Get all possible symbol formats
+        ce_formats, pe_formats = get_angel_option_symbols(index, atm_strike, expiry_str)
 
         # Fetch CE
         for sym in ce_formats:
@@ -509,15 +494,40 @@ def get_both_premiums(index, atm_strike, expiry_str):
 
 def get_expiry_str_for_angel(weeks_ahead=0):
     """
-    Returns expiry string in Angel One format: e.g. '18JUN2025'
-    Nifty weekly expiry = Thursday
+    Returns expiry date object for Nifty weekly (Thursday)
     """
     today = datetime.date.today()
     days_until_thursday = (3 - today.weekday()) % 7
     if days_until_thursday == 0 and datetime.datetime.now().time() > datetime.time(15, 30):
         days_until_thursday = 7
     expiry_date = today + datetime.timedelta(days=days_until_thursday + (weeks_ahead * 7))
-    return expiry_date.strftime("%d%b%Y").upper()
+    return expiry_date
+
+def get_angel_option_symbols(index, strike, expiry_date):
+    """
+    Generate all possible Angel One NFO symbol formats for options.
+    Angel One weekly format: NIFTY2461824100CE (YY+Month+DD)
+    """
+    yy = str(expiry_date.year)[2:]  # 26
+    dd = f"{expiry_date.day:02d}"   # 18
+    mm = f"{expiry_date.month}"     # 6
+    mm2 = f"{expiry_date.month:02d}" # 06
+    months = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC']
+    mon = months[expiry_date.month - 1]  # JUN
+    
+    formats = [
+        # Angel One weekly short format (most common)
+        f"{index}{yy}{mm}{dd}{strike}",      # NIFTY26618 24100
+        f"{index}{yy}{mm2}{dd}{strike}",     # NIFTY2606 1824100
+        f"{index}{yy}{mon}{dd}{strike}",     # NIFTY26JUN1824100
+        # Full date formats
+        f"{index}{dd}{mon}{expiry_date.year}{strike}",  # NIFTY18JUN202624100
+        f"{index}{dd}{mon}{yy}{strike}",     # NIFTY18JUN2624100
+    ]
+    
+    ce_symbols = [f + "CE" for f in formats]
+    pe_symbols = [f + "PE" for f in formats]
+    return ce_symbols, pe_symbols
 
 
 
@@ -920,8 +930,8 @@ def run_pipeline():
 
     # ── Fetch CE/PE Live Premium ──
     try:
-        expiry_str = get_expiry_str_for_angel(0)
-        ce_ltp, pe_ltp = get_both_premiums(active_index, atm, expiry_str)
+        expiry_date = get_expiry_str_for_angel(0)
+        ce_ltp, pe_ltp = get_both_premiums(active_index, atm, expiry_date)
         ENGINE["ce_premium"] = ce_ltp
         ENGINE["pe_premium"] = pe_ltp
     except Exception:
