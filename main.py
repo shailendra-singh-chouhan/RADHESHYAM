@@ -871,7 +871,7 @@ def run_pipeline():
     # ── BankNifty mini fetch ──
     try:
         bn_spot = get_banknifty_spot()
-        if bn_spot:
+        if bn_spot and bn_spot > 0:
             ENGINE["bn_spot"] = bn_spot
             bn_history = ENGINE.get("_bn_history", [])
             bn_history.append(bn_spot)
@@ -881,6 +881,38 @@ def run_pipeline():
             ENGINE["bn_ema9"] = calc_ema(bn_history, 9)
             ENGINE["bn_atm"] = get_atm_strike(bn_spot, 100)
             ENGINE["bn_condition"] = detect_market_condition(bn_history, vix, bn_spot - (bn_history[-2] if len(bn_history)>1 else bn_spot))
+    except Exception:
+        pass
+
+    # ── FinNifty mini fetch ──
+    try:
+        obj_fn, _ = get_session()
+        if obj_fn:
+            fn_resp = obj_fn.ltpData("NSE", "Nifty Fin Service", TOKENS["FINNIFTY"]["token"])
+            if fn_resp and fn_resp.get("data"):
+                fn_spot = float(fn_resp["data"]["ltp"])
+                ENGINE["fn_spot"] = fn_spot
+                fn_history = ENGINE.get("_fn_history", [])
+                fn_history.append(fn_spot)
+                if len(fn_history) > 30: fn_history.pop(0)
+                ENGINE["_fn_history"] = fn_history
+                ENGINE["fn_rsi"] = calc_rsi(fn_history)
+                ENGINE["fn_atm"] = get_atm_strike(fn_spot, 50)
+                ENGINE["fn_condition"] = detect_market_condition(fn_history, vix, fn_spot - (fn_history[-2] if len(fn_history)>1 else fn_spot))
+    except Exception:
+        pass
+
+    # ── Sensex mini fetch ──
+    try:
+        sx_spot = get_sensex_spot()
+        if sx_spot and sx_spot > 0:
+            ENGINE["sx_spot"] = sx_spot
+            sx_history = ENGINE.get("_sx_history", [])
+            sx_history.append(sx_spot)
+            if len(sx_history) > 30: sx_history.pop(0)
+            ENGINE["_sx_history"] = sx_history
+            ENGINE["sx_rsi"] = calc_rsi(sx_history)
+            ENGINE["sx_condition"] = detect_market_condition(sx_history, vix, sx_spot - (sx_history[-2] if len(sx_history)>1 else sx_spot))
     except Exception:
         pass
 
@@ -928,12 +960,15 @@ def run_pipeline():
     ENGINE["lot_size"] = lot_size
     ENGINE["active_index"] = active_index
 
-    # ── Fetch CE/PE Live Premium ──
+    # ── Fetch CE/PE Live Premium (only during market hours) ──
     try:
-        expiry_date = get_expiry_str_for_angel(0)
-        ce_ltp, pe_ltp = get_both_premiums(active_index, atm, expiry_date)
-        ENGINE["ce_premium"] = ce_ltp
-        ENGINE["pe_premium"] = pe_ltp
+        if mstatus == "OPEN":
+            expiry_date = get_expiry_str_for_angel(0)
+            ce_ltp, pe_ltp = get_both_premiums(active_index, atm, expiry_date)
+            ENGINE["ce_premium"] = ce_ltp
+            ENGINE["pe_premium"] = pe_ltp
+        ce_ltp = ENGINE.get("ce_premium", 0.0)
+        pe_ltp = ENGINE.get("pe_premium", 0.0)
     except Exception:
         ce_ltp = ENGINE.get("ce_premium", 0.0)
         pe_ltp = ENGINE.get("pe_premium", 0.0)
@@ -1114,6 +1149,15 @@ def run_pipeline():
         "bn_ema9": round(ENGINE.get("bn_ema9", 0.0), 2),
         "bn_atm": ENGINE.get("bn_atm", 0),
         "bn_condition": ENGINE.get("bn_condition", "UNKNOWN"),
+        # ── FinNifty mini data ──
+        "fn_spot": round(ENGINE.get("fn_spot", 0.0), 2),
+        "fn_rsi": round(ENGINE.get("fn_rsi", 50.0), 1),
+        "fn_atm": ENGINE.get("fn_atm", 0),
+        "fn_condition": ENGINE.get("fn_condition", "UNKNOWN"),
+        # ── Sensex mini data ──
+        "sx_spot": round(ENGINE.get("sx_spot", 0.0), 2),
+        "sx_rsi": round(ENGINE.get("sx_rsi", 50.0), 1),
+        "sx_condition": ENGINE.get("sx_condition", "UNKNOWN"),
         # ── Technical indicators ──
         "ema9": round(ENGINE.get("ema9", 0.0), 2),
         "ema21": round(ENGINE.get("ema21", 0.0), 2),
@@ -1523,7 +1567,7 @@ body::before{content:'';position:fixed;inset:0;
   <!-- FINNIFTY MINI -->
   <div class="mini">
     <div class="mini-hdr">
-      <div class="mini-name">📊 FINNIFTY</div>
+      <div class="mini-name">&#128202; FINNIFTY</div>
       <div class="mini-px" id="fn-px">--</div>
     </div>
     <div class="mini-body">
@@ -1804,22 +1848,59 @@ function updateDashboard(d){
   setColor('stat-wr',wr>=60?'var(--green)':wr>=40?'var(--gold)':'var(--red)');
 
   // BankNifty mini
-  if(d.bn_spot){
-    const bnSpot=d.bn_spot;
-    setText('bn-px','₹'+fmtNum(bnSpot));
+  // BankNifty mini
+  if(d.bn_spot&&d.bn_spot>0){
+    setText('bn-px','₹'+fmtNum(d.bn_spot));
     setText('bn-rsi',d.bn_rsi||'--');
-    setText('bn-ema',d.bn_ema9||'--');
+    setText('bn-ema',d.bn_ema9?fmtNum(d.bn_ema9):'--');
     setText('bn-atm',d.bn_atm||'--');
     const bnTrend=d.bn_condition||'--';
-    setText('bn-tr',bnTrend);
+    setText('bn-tr',bnTrend.replace('_',' '));
+    setColor('bn-tr',bnTrend==='TRENDING_UP'?'var(--green)':bnTrend==='TRENDING_DOWN'?'var(--red)':'var(--gold)');
     const bnJadui=document.getElementById('bn-jadui');
     if(bnJadui){
       if(bnTrend==='TRENDING_UP'){bnJadui.textContent='🟢 BULLISH — CE Buy setup';bnJadui.style.background='var(--green2)';bnJadui.style.color='var(--green)';}
       else if(bnTrend==='TRENDING_DOWN'){bnJadui.textContent='🔴 BEARISH — PE Buy setup';bnJadui.style.background='var(--red2)';bnJadui.style.color='var(--red)';}
-      else{bnJadui.textContent='⏳ SIDEWAYS — No clear setup';bnJadui.style.background='var(--gold2)';bnJadui.style.color='var(--gold)';}
+      else{bnJadui.textContent='⏳ SIDEWAYS — Range mode';bnJadui.style.background='var(--gold2)';bnJadui.style.color='var(--gold)';}
     }
     const bnChg=document.getElementById('bn-chg');
-    if(bnChg&&d.bn_spot) bnChg.textContent=fmtNum(d.bn_spot);
+    if(bnChg) bnChg.textContent=fmtNum(d.bn_spot);
+  }
+
+  // FinNifty mini
+  if(d.fn_spot&&d.fn_spot>0){
+    setText('fn-px','₹'+fmtNum(d.fn_spot));
+    setText('fn-rsi',d.fn_rsi||'--');
+    setText('fn-atm',d.fn_atm||'--');
+    const fnTrend=d.fn_condition||'--';
+    setText('fn-tr',fnTrend.replace('_',' '));
+    setColor('fn-tr',fnTrend==='TRENDING_UP'?'var(--green)':fnTrend==='TRENDING_DOWN'?'var(--red)':'var(--gold)');
+    const fnJadui=document.getElementById('fn-jadui');
+    if(fnJadui){
+      if(fnTrend==='TRENDING_UP'){fnJadui.textContent='🟢 BULLISH — CE Buy setup';fnJadui.style.background='var(--green2)';fnJadui.style.color='var(--green)';}
+      else if(fnTrend==='TRENDING_DOWN'){fnJadui.textContent='🔴 BEARISH — PE Buy setup';fnJadui.style.background='var(--red2)';fnJadui.style.color='var(--red)';}
+      else{fnJadui.textContent='⏳ SIDEWAYS — No clear setup';fnJadui.style.background='var(--gold2)';fnJadui.style.color='var(--gold)';}
+    }
+    const fnChg=document.getElementById('fn-chg');
+    if(fnChg) fnChg.textContent=fmtNum(d.fn_spot);
+  }
+
+  // Sensex mini
+  if(d.sx_spot&&d.sx_spot>0){
+    setText('sx-px','₹'+fmtNum(d.sx_spot));
+    setText('sx-rsi',d.sx_rsi||'--');
+    const sxTrend=d.sx_condition||'--';
+    setText('sx-tr',sxTrend.replace('_',' '));
+    setColor('sx-tr',sxTrend==='TRENDING_UP'?'var(--green)':sxTrend==='TRENDING_DOWN'?'var(--red)':'var(--gold)');
+    setText('sx-vix',d.vix||'--');
+    const sxJadui=document.getElementById('sx-jadui');
+    if(sxJadui){
+      if(sxTrend==='TRENDING_UP'){sxJadui.textContent='🟢 BULLISH — Nifty support karta hai';sxJadui.style.background='var(--green2)';sxJadui.style.color='var(--green)';}
+      else if(sxTrend==='TRENDING_DOWN'){sxJadui.textContent='🔴 BEARISH — Caution raho';sxJadui.style.background='var(--red2)';sxJadui.style.color='var(--red)';}
+      else{sxJadui.textContent='⏳ NEUTRAL — No strong bias';sxJadui.style.background='var(--gold2)';sxJadui.style.color='var(--gold)';}
+    }
+    const sxChg=document.getElementById('sx-chg');
+    if(sxChg) sxChg.textContent=fmtNum(d.sx_spot);
   }
 
   // Opening analysis
