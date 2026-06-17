@@ -438,7 +438,9 @@ def get_both_premiums(index, atm_strike, expiry_date):
     Fetch CE and PE live premium from Angel One NFO.
     Tries multiple symbol formats automatically.
     Returns (ce_ltp, pe_ltp) as floats.
+    DISABLED until market open + correct format confirmed.
     """
+    return 0.0, 0.0
     expiry_str = expiry_date  # keep for compatibility
     try:
         now = time.time()
