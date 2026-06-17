@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 #!/usr/bin/env python3
 """
   GOAT PRO — Virtual Paper Trading System
@@ -1115,7 +1116,7 @@ TEMPLATE = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>⚡ GOAT PRO — Multi Market Command Center</title>
+<title>&#9889; GOAT PRO — Multi Market Command Center</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=JetBrains+Mono:wght@300;400;700&family=Rajdhani:wght@400;600;700&display=swap');
 :root{
@@ -1276,7 +1277,7 @@ body::before{content:'';position:fixed;inset:0;
 <!-- TOPBAR -->
 <div class="topbar">
   <div>
-    <h1>⚡ GOAT PRO</h1>
+    <h1>&#9889; GOAT PRO</h1>
     <small>MULTI MARKET COMMAND CENTER</small>
   </div>
   <div class="tb-right">
@@ -1314,24 +1315,24 @@ body::before{content:'';position:fixed;inset:0;
 
 <!-- LEGAL BANNER -->
 <div class="legal-banner">
-  <div class="legal-badge">⚖️ DISCLAIMER</div>
+  <div class="legal-badge">&#9878; DISCLAIMER</div>
   <span>Yeh tool sirf <strong>Personal Educational Use</strong> ke liye hai. SEBI registered financial advice nahi hai. Trading mein substantial risk hota hai. Paper Trading Only.</span>
 </div>
 
 <!-- SESSION STRIPS -->
 <div class="sess-strip">
-  <div class="sess" id="s1"><div class="sess-name">PRE-OPEN</div><div class="sess-time">9:00–9:15</div><div class="sess-heat">🌅</div></div>
-  <div class="sess" id="s2"><div class="sess-name">MORNING</div><div class="sess-time">9:15–11:00</div><div class="sess-heat">🔥</div></div>
-  <div class="sess" id="s3"><div class="sess-name">MIDDAY</div><div class="sess-time">11:00–2:00</div><div class="sess-heat">⚡</div></div>
-  <div class="sess" id="s4"><div class="sess-name">POWER HOUR</div><div class="sess-time">2:00–3:30</div><div class="sess-heat">🚀</div></div>
+  <div class="sess" id="s1"><div class="sess-name">PRE-OPEN</div><div class="sess-time">9:00–9:15</div><div class="sess-heat">&#127749;</div></div>
+  <div class="sess" id="s2"><div class="sess-name">MORNING</div><div class="sess-time">9:15–11:00</div><div class="sess-heat">&#128293;</div></div>
+  <div class="sess" id="s3"><div class="sess-name">MIDDAY</div><div class="sess-time">11:00–2:00</div><div class="sess-heat">&#9889;</div></div>
+  <div class="sess" id="s4"><div class="sess-name">POWER HOUR</div><div class="sess-time">2:00–3:30</div><div class="sess-heat">&#128640;</div></div>
 </div>
 
 <!-- MARKET TABS -->
 <div class="market-tabs">
-  <div class="mktab on" onclick="switchMarket(this,'nifty')">🔵 NIFTY<div class="chg" id="nf-chg">--</div></div>
-  <div class="mktab" onclick="switchMarket(this,'banknifty')">🏦 BANKNIFTY<div class="chg" id="bn-chg">--</div></div>
-  <div class="mktab" onclick="switchMarket(this,'finnifty')">📊 FINNIFTY<div class="chg" id="fn-chg">--</div></div>
-  <div class="mktab" onclick="switchMarket(this,'sensex')">📈 SENSEX<div class="chg" id="sx-chg">--</div></div>
+  <div class="mktab on" onclick="switchMarket(this,'nifty')">&#128309; NIFTY<div class="chg" id="nf-chg">--</div></div>
+  <div class="mktab" onclick="switchMarket(this,'banknifty')">&#127974; BANKNIFTY<div class="chg" id="bn-chg">--</div></div>
+  <div class="mktab" onclick="switchMarket(this,'finnifty')">&#128202; FINNIFTY<div class="chg" id="fn-chg">--</div></div>
+  <div class="mktab" onclick="switchMarket(this,'sensex')">&#128200; SENSEX<div class="chg" id="sx-chg">--</div></div>
 </div>
 
 <!-- MAIN LAYOUT -->
@@ -1341,7 +1342,7 @@ body::before{content:'';position:fixed;inset:0;
   <!-- HERO PRICE CARD -->
   <div class="hero" id="hero-card">
     <div style="flex:1">
-      <div style="font-size:10px;color:rgba(255,255,255,0.6);letter-spacing:2px;margin-bottom:4px;" id="hero-label">🔵 NIFTY 50 · INDEX</div>
+      <div style="font-size:10px;color:rgba(255,255,255,0.6);letter-spacing:2px;margin-bottom:4px;" id="hero-label">&#128309; NIFTY 50 · INDEX</div>
       <div class="hero-price" id="hero-price">--</div>
       <div class="hero-meta">
         <div class="hm"><div class="hm-v" id="h-open">--</div><div class="hm-l">OPEN</div></div>
@@ -1361,11 +1362,11 @@ body::before{content:'';position:fixed;inset:0;
   <!-- SIGNAL + OPTIONS -->
   <div class="card">
     <div class="chdr">
-      <div class="ctitle">🎯 GOAT SIGNAL</div>
+      <div class="ctitle">&#127919; GOAT SIGNAL</div>
       <div style="font-size:11px;color:var(--dim)" id="signal-source">Angel One</div>
     </div>
     <div id="signal-display">
-      <div class="signal-box signal-neu">⏳ Loading market data...</div>
+      <div class="signal-box signal-neu">&#9203; Loading market data...</div>
     </div>
 
     <!-- CE/PE Option Prices -->
@@ -1373,13 +1374,13 @@ body::before{content:'';position:fixed;inset:0;
       <div class="opt-box" style="background:var(--green2);border-color:rgba(10,158,92,0.3);">
         <div class="opt-lbl" id="ce-label">-- CE</div>
         <div class="opt-price" style="color:var(--green)" id="ce-price">₹--</div>
-        <div class="opt-type" style="color:var(--green)">📈 CALL</div>
+        <div class="opt-type" style="color:var(--green)">&#128200; CALL</div>
         <div id="ce-dir" style="font-size:10px;color:var(--green);margin-top:4px;">--</div>
       </div>
       <div class="opt-box" style="background:var(--red2);border-color:rgba(224,45,60,0.3);">
         <div class="opt-lbl" id="pe-label">-- PE</div>
         <div class="opt-price" style="color:var(--red)" id="pe-price">₹--</div>
-        <div class="opt-type" style="color:var(--red)">📉 PUT</div>
+        <div class="opt-type" style="color:var(--red)">&#128201; PUT</div>
         <div id="pe-dir" style="font-size:10px;color:var(--red);margin-top:4px;">--</div>
       </div>
     </div>
@@ -1387,11 +1388,11 @@ body::before{content:'';position:fixed;inset:0;
     <!-- Risk per trade -->
     <div class="risk-box">
       <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
-        <span style="color:var(--dim)">⚠️ Max Risk (1 lot)</span>
+        <span style="color:var(--dim)">&#9888; Max Risk (1 lot)</span>
         <span id="risk-amt" style="font-family:'JetBrains Mono',monospace;font-weight:700;color:var(--red)">₹--</span>
       </div>
       <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
-        <span style="color:var(--dim)">🎯 Max Reward (1 lot)</span>
+        <span style="color:var(--dim)">&#127919; Max Reward (1 lot)</span>
         <span id="reward-amt" style="font-family:'JetBrains Mono',monospace;font-weight:700;color:var(--green)">₹--</span>
       </div>
       <div style="display:flex;justify-content:space-between;">
@@ -1404,7 +1405,7 @@ body::before{content:'';position:fixed;inset:0;
   <!-- 5-POINT CHECKLIST -->
   <div class="card">
     <div class="chdr">
-      <div class="ctitle">✅ SIGNAL CHECKLIST</div>
+      <div class="ctitle">&#9989; SIGNAL CHECKLIST</div>
       <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;" id="chk-score">0/5</div>
     </div>
     <div id="chk-list">
@@ -1421,7 +1422,7 @@ body::before{content:'';position:fixed;inset:0;
   <!-- ACTIVE TRADE -->
   <div class="card" id="trade-section">
     <div class="chdr">
-      <div class="ctitle">📊 ACTIVE TRADE</div>
+      <div class="ctitle">&#128202; ACTIVE TRADE</div>
       <div id="live-pnl-badge" style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;color:var(--green)">--</div>
     </div>
     <div id="trade-display">
@@ -1431,7 +1432,7 @@ body::before{content:'';position:fixed;inset:0;
 
   <!-- GOAT BRAIN -->
   <div class="card">
-    <div class="chdr"><div class="ctitle">🧠 GOAT BRAIN — KYUN LIYA?</div></div>
+    <div class="chdr"><div class="ctitle">&#129504; GOAT BRAIN — KYUN LIYA?</div></div>
     <div class="brain-box" id="brain-list">
       <div style="color:var(--dim);font-size:12px;">Waiting for signal...</div>
     </div>
@@ -1439,7 +1440,7 @@ body::before{content:'';position:fixed;inset:0;
 
   <!-- SESSION STATS -->
   <div class="card">
-    <div class="chdr"><div class="ctitle">📈 SESSION PERFORMANCE</div></div>
+    <div class="chdr"><div class="ctitle">&#128200; SESSION PERFORMANCE</div></div>
     <div class="stat-grid">
       <div class="stat-box">
         <div class="stat-val" id="stat-trades">0</div>
@@ -1468,49 +1469,49 @@ body::before{content:'';position:fixed;inset:0;
   <!-- BANKNIFTY MINI -->
   <div class="mini">
     <div class="mini-hdr">
-      <div class="mini-name">🏦 BANKNIFTY</div>
+      <div class="mini-name">&#127974; BANKNIFTY</div>
       <div class="mini-px" id="bn-px">--</div>
     </div>
     <div class="mini-body">
-      <div class="ms"><div class="ms-l">📊 RSI</div><div class="ms-v" id="bn-rsi">--</div></div>
-      <div class="ms"><div class="ms-l">📈 EMA9</div><div class="ms-v" id="bn-ema">--</div></div>
-      <div class="ms"><div class="ms-l">🎯 ATM</div><div class="ms-v" id="bn-atm">--</div></div>
+      <div class="ms"><div class="ms-l">&#128202; RSI</div><div class="ms-v" id="bn-rsi">--</div></div>
+      <div class="ms"><div class="ms-l">&#128200; EMA9</div><div class="ms-v" id="bn-ema">--</div></div>
+      <div class="ms"><div class="ms-l">&#127919; ATM</div><div class="ms-v" id="bn-atm">--</div></div>
       <div class="ms"><div class="ms-l">🌊 TREND</div><div class="ms-v" id="bn-tr">--</div></div>
     </div>
-    <div class="mini-jadui" id="bn-jadui" style="background:var(--blue2);color:var(--blue);border-color:rgba(26,86,219,0.3)">⏳ Loading...</div>
+    <div class="mini-jadui" id="bn-jadui" style="background:var(--blue2);color:var(--blue);border-color:rgba(26,86,219,0.3)">&#9203; Loading...</div>
   </div>
 
   <!-- FINNIFTY MINI -->
   <div class="mini">
     <div class="mini-hdr">
-      <div class="mini-name">📊 FINNIFTY</div>
+      <div class="mini-name">&#128202; FINNIFTY</div>
       <div class="mini-px" id="fn-px">--</div>
     </div>
     <div class="mini-body">
-      <div class="ms"><div class="ms-l">📊 RSI</div><div class="ms-v" id="fn-rsi">--</div></div>
-      <div class="ms"><div class="ms-l">🎯 ATM</div><div class="ms-v" id="fn-atm">--</div></div>
+      <div class="ms"><div class="ms-l">&#128202; RSI</div><div class="ms-v" id="fn-rsi">--</div></div>
+      <div class="ms"><div class="ms-l">&#127919; ATM</div><div class="ms-v" id="fn-atm">--</div></div>
       <div class="ms"><div class="ms-l">🌊 TREND</div><div class="ms-v" id="fn-tr">--</div></div>
     </div>
-    <div class="mini-jadui" id="fn-jadui" style="background:var(--blue2);color:var(--blue);border-color:rgba(26,86,219,0.3)">⏳ Loading...</div>
+    <div class="mini-jadui" id="fn-jadui" style="background:var(--blue2);color:var(--blue);border-color:rgba(26,86,219,0.3)">&#9203; Loading...</div>
   </div>
 
   <!-- SENSEX MINI -->
   <div class="mini">
     <div class="mini-hdr">
-      <div class="mini-name">📈 SENSEX</div>
+      <div class="mini-name">&#128200; SENSEX</div>
       <div class="mini-px" id="sx-px">--</div>
     </div>
     <div class="mini-body">
-      <div class="ms"><div class="ms-l">📊 RSI</div><div class="ms-v" id="sx-rsi">--</div></div>
+      <div class="ms"><div class="ms-l">&#128202; RSI</div><div class="ms-v" id="sx-rsi">--</div></div>
       <div class="ms"><div class="ms-l">🌊 TREND</div><div class="ms-v" id="sx-tr">--</div></div>
       <div class="ms"><div class="ms-l">📏 VIX</div><div class="ms-v" id="sx-vix">--</div></div>
     </div>
-    <div class="mini-jadui" id="sx-jadui" style="background:var(--blue2);color:var(--blue);border-color:rgba(26,86,219,0.3)">⏳ Loading...</div>
+    <div class="mini-jadui" id="sx-jadui" style="background:var(--blue2);color:var(--blue);border-color:rgba(26,86,219,0.3)">&#9203; Loading...</div>
   </div>
 
   <!-- LIVE ALERTS -->
   <div class="card">
-    <div class="chdr"><div class="ctitle">🔔 LIVE ALERTS</div></div>
+    <div class="chdr"><div class="ctitle">&#128276; LIVE ALERTS</div></div>
     <div id="alert-list" style="max-height:200px;overflow-y:auto;">
       <div style="padding:16px;text-align:center;color:var(--dim);font-size:11px;">Waiting for signals...</div>
     </div>
@@ -1518,7 +1519,7 @@ body::before{content:'';position:fixed;inset:0;
 
   <!-- PAPER TRADE JOURNAL -->
   <div class="card">
-    <div class="chdr"><div class="ctitle">📓 TRADE JOURNAL</div></div>
+    <div class="chdr"><div class="ctitle">&#128211; TRADE JOURNAL</div></div>
     <div id="journal-list" style="max-height:250px;overflow-y:auto;padding:8px;">
       <div style="padding:8px;text-align:center;color:var(--dim);font-size:11px;">No trades yet today</div>
     </div>
@@ -1526,7 +1527,7 @@ body::before{content:'';position:fixed;inset:0;
 
   <!-- OPENING ANALYSIS -->
   <div class="card">
-    <div class="chdr"><div class="ctitle">🌅 OPENING ANALYSIS</div></div>
+    <div class="chdr"><div class="ctitle">&#127749; OPENING ANALYSIS</div></div>
     <div style="padding:12px;font-size:12px;">
       <div class="ms"><div class="ms-l">Gap</div><div class="ms-v" id="open-gap">--</div></div>
       <div class="ms"><div class="ms-l">Prev Close</div><div class="ms-v" id="prev-close">--</div></div>
@@ -1538,7 +1539,7 @@ body::before{content:'';position:fixed;inset:0;
   <!-- MARKET CLOSED STATE -->
   <div id="market-closed-card" class="card" style="display:none;">
     <div class="market-closed">
-      <div class="mc-icon">🌙</div>
+      <div class="mc-icon">&#127769;</div>
       <div class="mc-title">MARKET CLOSED</div>
       <div class="mc-sub">Market opens at 9:15 AM IST<br>Monday to Friday</div>
     </div>
@@ -1549,9 +1550,9 @@ body::before{content:'';position:fixed;inset:0;
 
 <!-- FOOTER -->
 <div class="footer" style="margin-top:12px;">
-  <div class="footer-badge">⚖️ LEGAL</div>
+  <div class="footer-badge">&#9878; LEGAL</div>
   <div class="footer-text">
-    ⚠️ GOAT PRO sirf <strong>Personal Educational Paper Trading</strong> ke liye hai.
+    &#9888; GOAT PRO sirf <strong>Personal Educational Paper Trading</strong> ke liye hai.
     SEBI registered financial advice nahi hai. Real money invest mat karo is tool ke basis pe.
     Trading mein substantial risk hota hai. Paper Trading Only.
   </div>
@@ -1595,8 +1596,8 @@ function switchMarket(el,key){
   el.classList.add('on');
   currentMarket=key;
   // Update hero label
-  const labels={nifty:'🔵 NIFTY 50 · INDEX',banknifty:'🏦 BANKNIFTY · INDEX',
-    finnifty:'📊 FINNIFTY · INDEX',sensex:'📈 SENSEX · BSE INDEX'};
+  const labels={nifty:'&#128309; NIFTY 50 · INDEX',banknifty:'&#127974; BANKNIFTY · INDEX',
+    finnifty:'&#128202; FINNIFTY · INDEX',sensex:'&#128200; SENSEX · BSE INDEX'};
   setText('hero-label',labels[key]||labels.nifty);
 }
 
@@ -1774,9 +1775,9 @@ function updateDashboard(d){
     setText('bn-tr',bnTrend);
     const bnJadui=document.getElementById('bn-jadui');
     if(bnJadui){
-      if(bnTrend==='TRENDING_UP'){bnJadui.textContent='🟢 BULLISH — CE Buy setup';bnJadui.style.background='var(--green2)';bnJadui.style.color='var(--green)';}
-      else if(bnTrend==='TRENDING_DOWN'){bnJadui.textContent='🔴 BEARISH — PE Buy setup';bnJadui.style.background='var(--red2)';bnJadui.style.color='var(--red)';}
-      else{bnJadui.textContent='⏳ SIDEWAYS — No clear setup';bnJadui.style.background='var(--gold2)';bnJadui.style.color='var(--gold)';}
+      if(bnTrend==='TRENDING_UP'){bnJadui.textContent='&#128994; BULLISH — CE Buy setup';bnJadui.style.background='var(--green2)';bnJadui.style.color='var(--green)';}
+      else if(bnTrend==='TRENDING_DOWN'){bnJadui.textContent='&#128308; BEARISH — PE Buy setup';bnJadui.style.background='var(--red2)';bnJadui.style.color='var(--red)';}
+      else{bnJadui.textContent='&#9203; SIDEWAYS — No clear setup';bnJadui.style.background='var(--gold2)';bnJadui.style.color='var(--gold)';}
     }
     const bnChg=document.getElementById('bn-chg');
     if(bnChg&&d.bn_spot) bnChg.textContent=fmtNum(d.bn_spot);
@@ -1787,7 +1788,7 @@ function updateDashboard(d){
     setText('open-gap',(d.opening_gap>=0?'+':'')+d.opening_gap+' pts');
     setColor('open-gap',d.opening_gap>0?'var(--green)':d.opening_gap<0?'var(--red)':'var(--dim)');
     setText('prev-close',d.prev_close?fmtNum(d.prev_close):'--');
-    const bias=d.opening_gap>50?'🟢 BULLISH GAP':d.opening_gap<-50?'🔴 BEARISH GAP':'⏳ FLAT OPEN';
+    const bias=d.opening_gap>50?'&#128994; BULLISH GAP':d.opening_gap<-50?'&#128308; BEARISH GAP':'&#9203; FLAT OPEN';
     setText('open-bias',bias);
   }
 
@@ -1838,7 +1839,7 @@ function addAlert(msg, isBull){
   const item=document.createElement('div');
   item.className='alert-item';
   const cls=isBull?'bull':'bear';
-  const badge=isBull?'🟢 BUY SIGNAL':'🔴 SELL SIGNAL';
+  const badge=isBull?'&#128994; BUY SIGNAL':'&#128308; SELL SIGNAL';
   item.innerHTML=`
     <div class="alert-time">${t}</div>
     <div class="alert-badge ${cls}">${badge}</div>
@@ -1865,7 +1866,9 @@ setInterval(fetchTrades, 15000);
 @app.route("/")
 def index():
     """Serve the main dashboard UI"""
-    return render_template_string(TEMPLATE)
+    from flask import Response
+    html = TEMPLATE.encode('utf-8', errors='replace').decode('utf-8')
+    return Response(html, mimetype='text/html; charset=utf-8')
 
 
 @app.route("/api/data")
