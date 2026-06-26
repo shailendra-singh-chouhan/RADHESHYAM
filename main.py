@@ -1,3 +1,22 @@
+# -*- coding: utf-8 -*-
+#!/usr/bin/env python3
+"""
+  GOAT PRO — Virtual Paper Trading System
+  Single-file Flask app for Render deployment.
+"""
+
+import os
+import datetime
+from flask import Flask, jsonify
+
+app = Flask(__name__)
+
+# ====================== HEALTH CHECK ======================
+@app.route('/health')
+def health():
+    return {"status": "healthy", "time": datetime.datetime.now().isoformat()}, 200
+
+# ====================== MAIN PAGE ======================
 TEMPLATE = """<!DOCTYPE html>
 <html lang="hi">
 <head>
@@ -7,7 +26,7 @@ TEMPLATE = """<!DOCTYPE html>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
-    body { background: #0f172a; color: #e2e8f0; font-family: system-ui; }
+    body { background: #0f172a; color: #e2e8f0; font-family: system-ui, sans-serif; }
     .card { background: #1e2937; border-radius: 12px; }
   </style>
 </head>
@@ -29,7 +48,6 @@ TEMPLATE = """<!DOCTYPE html>
       <div class="card p-4"><div>Win Rate</div><div class="text-3xl font-bold" id="winrate">0%</div></div>
     </div>
 
-    <!-- Chart -->
     <div class="card p-6 mb-6">
       <h2 class="text-xl mb-4">NIFTY Live Chart</h2>
       <canvas id="priceChart" height="110"></canvas>
@@ -38,13 +56,13 @@ TEMPLATE = """<!DOCTYPE html>
     <div class="grid md:grid-cols-3 gap-6">
       <div class="card p-6">
         <h3 class="text-lg mb-4">GOAT Signal</h3>
-        <div id="signal" class="text-4xl font-bold text-green-400 mb-4">LONG</div>
+        <div id="signal" class="text-4xl font-bold text-green-400 mb-4">WAITING</div>
         <button onclick="simulateTrade()" class="w-full bg-green-600 hover:bg-green-700 py-4 rounded-xl font-bold text-lg">EXECUTE PAPER TRADE</button>
       </div>
 
       <div class="card p-6">
         <h3 class="text-lg mb-4">Active Trade</h3>
-        <div id="active-trade">No active trade</div>
+        <div id="active-trade" class="text-sm">No active trade</div>
       </div>
 
       <div class="card p-6">
@@ -80,7 +98,7 @@ TEMPLATE = """<!DOCTYPE html>
         const res = await fetch('/api/data');
         const d = await res.json();
         updateUI(d);
-      } catch(e) {}
+      } catch(e) { console.log(e); }
     }
 
     function updateUI(d) {
@@ -90,13 +108,11 @@ TEMPLATE = """<!DOCTYPE html>
       document.getElementById('vix').textContent = d.vix || '--';
       document.getElementById('pnl').textContent = '₹' + (d.session_pnl_rs || 0);
       document.getElementById('winrate').textContent = (d.win_rate || 0) + '%';
-
       document.getElementById('signal').textContent = d.signal || 'WAITING';
-      document.getElementById('signal').style.color = d.direction === 'LONG' ? '#4ade80' : '#f87171';
     }
 
     function simulateTrade() {
-      alert("✅ Paper Trade Executed! (Simulation)");
+      alert("✅ Paper Trade Executed Successfully!");
     }
 
     updateClock();
@@ -106,3 +122,29 @@ TEMPLATE = """<!DOCTYPE html>
   </script>
 </body>
 </html>"""
+
+@app.route("/")
+def index():
+    return TEMPLATE
+
+@app.route("/api/data")
+def api_data():
+    # Placeholder data (tumhara pura logic yahan daal sakte ho)
+    return jsonify({
+        "spot": 24150.75,
+        "bn_spot": 51280,
+        "vix": 14.8,
+        "session_pnl_rs": 1245,
+        "win_rate": 68,
+        "signal": "LONG",
+        "market_status": "OPEN",
+        "direction": "LONG"
+    })
+
+@app.route("/api/trades")
+def api_trades():
+    return jsonify({"open": None, "closed": [], "stats": {"win_rate": 68}})
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
