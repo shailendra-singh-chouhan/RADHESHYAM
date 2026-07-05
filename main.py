@@ -330,11 +330,18 @@ def api_trades():
         "stats": get_institutional_stats()
     })
 
-# ====================== RUN ======================
+# ====================== APP STARTUP ======================
+# IMPORTANT: This runs at module-import time, so it works both with
+# `python main.py` (local) AND with gunicorn (Render's production server).
+# The old `if __name__ == "__main__":` block never fires under gunicorn,
+# which is why Angel One login was silently never attempted before.
+
+angel_login()
+_poller_thread = threading.Thread(target=price_poller, daemon=True)
+_poller_thread.start()
+
+# ====================== RUN (local testing only) ======================
 
 if __name__ == "__main__":
-    angel_login()
-    poller_thread = threading.Thread(target=price_poller, daemon=True)
-    poller_thread.start()
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
