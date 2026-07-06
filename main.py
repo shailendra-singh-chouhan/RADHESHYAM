@@ -573,70 +573,12 @@ async def get_market_data_endpoint(symbol: str) -> dict:
     return {"symbol": sym, "ltp": ltp, "todays_candles": candles or []}
 
 
-# ====================== DB INTERACTION ENDPOINTS (from current code, fixed) ======================
-
-@app.post("/open_trade")
-async def open_trade_endpoint(trade_info: dict, db: Session = Depends(get_db)) -> dict:
-    """Open a paper trade with custom direction/entry/target/sl (advanced)."""
-    if db is None:
-        raise HTTPException(status_code=500, detail="Database is not connected.")
-    try:
-        new_trade = Trade(
-            direction=trade_info.get("direction", "LONG"),
-            entry=trade_info.get("entry"),
-            target=trade_info.get("target"),
-            sl=trade_info.get("sl"),
-            opened_at=datetime.datetime.utcnow(),
-            status="ACTIVE",
-            trade_date=_today_ist_str(),
-        )
-        db.add(new_trade)
-        db.commit()
-        db.refresh(new_trade)
-        logger.info(f"Opened custom trade #{new_trade.id}")
-        return {"message": "Paper trade opened successfully", "trade_id": new_trade.id}
-    except Exception as e:
-        db.rollback()
-        logger.error(f"Error opening paper trade: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to open trade: {e}")
-
-
-@app.post("/close_trade/{trade_id}")
-async def close_trade_endpoint(trade_id: int, exit_price_info: dict,
-                               db: Session = Depends(get_db)) -> dict:
-    """Close a specific trade by ID."""
-    if db is None:
-        raise HTTPException(status_code=500, detail="Database is not connected.")
-    exit_price = exit_price_info.get("exit_price")
-    if exit_price is None:
-        raise HTTPException(status_code=400, detail="Missing 'exit_price' in request body.")
-    try:
-        trade = db.query(Trade).filter(Trade.id == trade_id).first()
-        if not trade:
-            raise HTTPException(status_code=404, detail=f"Trade with ID {trade_id} not found.")
-        if trade.status == "CLOSED":
-            raise HTTPException(status_code=400, detail=f"Trade {trade_id} is already closed.")
-        trade.exit_price = exit_price
-        trade.closed_at = datetime.datetime.utcnow()
-        trade.status = "CLOSED"
-        pnl = None
-        if trade.direction == "LONG":
-            pnl = exit_price - trade.entry
-        elif trade.direction == "SHORT":
-            pnl = trade.entry - exit_price
-        trade.pnl = pnl
-        db.commit()
-        db.refresh(trade)
-        logger.info(f"Closed trade {trade_id}. PNL: {pnl}")
-        return {"message": f"Trade {trade_id} closed successfully", "pnl": pnl}
-    except HTTPException:
-        db.rollback()
-        raise
-    except Exception as e:
-        db.rollback()
-        logger.error(f"Unexpected error closing trade {trade_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to close trade {trade_id}: {e}")
-
+# ====================== NOTE ======================
+# The old /open_trade and /close_trade/{id} endpoints were removed here.
+# They let anyone open/close a trade with arbitrary values, bypassing
+# check_risk_limits() and the market-hours guard entirely - a real security
+# gap. The dashboard only ever used /api/execute_trade and /api/close_trade,
+# which DO enforce those checks, so nothing on the UI depended on them.
 
 @app.get("/institutional_stats")
 async def get_stats_endpoint(db: Session = Depends(get_db)) -> dict:
