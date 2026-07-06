@@ -269,79 +269,9 @@ def indicator_poller() -> None:
                     indicator_data["ema9"] = calculate_ema(closes, 9)
                     indicator_data["ema21"] = calculate_ema(closes, 21)
                     indicator_data["vwap_approx"] = calculate_vwap_approx(candles)
-                    signal_data.update(compute_real_signal(candles))
         except Exception as e:
             logger.error(f"indicator_poller error: {e}")
         time.sleep(300)
-
-
-# ====================== REAL STRATEGY ENGINE (ORB + VWAP + EMA + RSI checklist) ======================
-# Design from May 2026 planning: Opening Range Breakout (9:15-9:30) as the
-# primary setup, confirmed by a relaxed checklist (3-of-4 agreement, not all 4)
-# to avoid analysis paralysis. This replaces nothing on the demo "Jadui Spot"
-# card - that stays a clearly-labelled illustration. This is a NEW, real signal.
-
-signal_data = {
-    "signal": "WAIT", "confidence": 0, "checklist": {},
-    "orb_high": None, "orb_low": None, "note": "Waiting for data"
-}
-
-def compute_orb_range(candles: list) -> tuple[Optional[float], Optional[float]]:
-    """Opening Range = high/low of candles between 9:15 and 9:30 AM."""
-    orb_candles = [c for c in candles if "09:15" <= c["time"][11:16] <= "09:30"]
-    if not orb_candles:
-        return None, None
-    return max(c["high"] for c in orb_candles), min(c["low"] for c in orb_candles)
-
-def compute_real_signal(candles: list) -> dict:
-    """
-    Relaxed checklist strategy: needs at least 3-of-4 checks to agree
-    before giving a LONG/SHORT signal, otherwise WAIT (avoids overtrading).
-    """
-    if not candles or len(candles) < 16:
-        return {"signal": "WAIT", "confidence": 0, "checklist": {},
-                "orb_high": None, "orb_low": None, "note": "Not enough candles yet"}
-
-    closes = [c["close"] for c in candles]
-    current_price = closes[-1]
-    orb_high, orb_low = compute_orb_range(candles)
-    ema9 = calculate_ema(closes, 9)
-    ema21 = calculate_ema(closes, 21)
-    rsi = calculate_rsi(closes)
-    vwap = calculate_vwap_approx(candles)
-
-    if orb_high is None or ema9 is None or ema21 is None or rsi is None or vwap is None:
-        return {"signal": "WAIT", "confidence": 0, "checklist": {},
-                "orb_high": orb_high, "orb_low": orb_low, "note": "Waiting for opening range (9:15-9:30)"}
-
-    checklist_long = {
-        "orb_breakout": current_price > orb_high,
-        "above_vwap": current_price > vwap,
-        "ema_bullish": ema9 > ema21,
-        "rsi_not_overbought": rsi < 70,
-    }
-    checklist_short = {
-        "orb_breakdown": current_price < orb_low,
-        "below_vwap": current_price < vwap,
-        "ema_bearish": ema9 < ema21,
-        "rsi_not_oversold": rsi > 30,
-    }
-    long_score = sum(checklist_long.values())
-    short_score = sum(checklist_short.values())
-
-    if long_score >= 3 and long_score > short_score:
-        return {"signal": "LONG", "confidence": long_score, "checklist": checklist_long,
-                "orb_high": orb_high, "orb_low": orb_low,
-                "note": f"{long_score}/4 checks agree — ORB breakout + trend confirmed"}
-    elif short_score >= 3 and short_score > long_score:
-        return {"signal": "SHORT", "confidence": short_score, "checklist": checklist_short,
-                "orb_high": orb_high, "orb_low": orb_low,
-                "note": f"{short_score}/4 checks agree — ORB breakdown + trend confirmed"}
-    else:
-        return {"signal": "WAIT", "confidence": max(long_score, short_score),
-                "checklist": checklist_long if long_score >= short_score else checklist_short,
-                "orb_high": orb_high, "orb_low": orb_low,
-                "note": "Checklist not aligned (need 3-of-4) — no clear setup"}
 
 
 # ====================== TRADE LOGIC (PostgreSQL-backed) ======================
@@ -508,25 +438,30 @@ def load_dashboard_html() -> str:
 
 # ====================== ROUTES ======================
 
-@app.get("/", response_class=HTMLResponse)
+@app.api_route("/", methods=["GET", "HEAD"], response_class=HTMLResponse)
 async def read_root() -> HTMLResponse:
-    """The main dashboard UI (47 KB HTML/CSS/JS)."""
+    """The main dashboard UI (47 KB HTML/CSS/JS).
+
+    Supports both GET (browser) and HEAD (UptimeRobot / Render health probes).
+    Without HEAD support, probes get a 405 Method Not Allowed warning.
+    """
     return HTMLResponse(content=load_dashboard_html())
 
 
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
 async def health() -> dict:
+    """Health check endpoint — also responds to HEAD for uptime monitors."""
     return {
         "status": "healthy",
         "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "service": "GOAT PRO Institutional",
-        "version": "3.0",
+        "version": "3.1",  # bumped for the HEAD-method fix
         "angel_session": smart_api is not None,
         "db_connected": db_engine is not None,
     }
 
 
-@app.get("/ping")
+@app.api_route("/ping", methods=["GET", "HEAD"])
 async def ping() -> dict:
     return {"status": "alive"}
 
@@ -582,7 +517,6 @@ async def api_data(db: Session = Depends(get_db)) -> JSONResponse:
             "live_pnl": live_pnl,
         } if current_active else None,
         "indicators": indicator_data,
-        "real_signal": signal_data,
         "last_update": latest_prices["last_update"],
     })
 
@@ -644,12 +578,70 @@ async def get_market_data_endpoint(symbol: str) -> dict:
     return {"symbol": sym, "ltp": ltp, "todays_candles": candles or []}
 
 
-# ====================== NOTE ======================
-# The old /open_trade and /close_trade/{id} endpoints were removed here.
-# They let anyone open/close a trade with arbitrary values, bypassing
-# check_risk_limits() and the market-hours guard entirely - a real security
-# gap. The dashboard only ever used /api/execute_trade and /api/close_trade,
-# which DO enforce those checks, so nothing on the UI depended on them.
+# ====================== DB INTERACTION ENDPOINTS (from current code, fixed) ======================
+
+@app.post("/open_trade")
+async def open_trade_endpoint(trade_info: dict, db: Session = Depends(get_db)) -> dict:
+    """Open a paper trade with custom direction/entry/target/sl (advanced)."""
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database is not connected.")
+    try:
+        new_trade = Trade(
+            direction=trade_info.get("direction", "LONG"),
+            entry=trade_info.get("entry"),
+            target=trade_info.get("target"),
+            sl=trade_info.get("sl"),
+            opened_at=datetime.datetime.utcnow(),
+            status="ACTIVE",
+            trade_date=_today_ist_str(),
+        )
+        db.add(new_trade)
+        db.commit()
+        db.refresh(new_trade)
+        logger.info(f"Opened custom trade #{new_trade.id}")
+        return {"message": "Paper trade opened successfully", "trade_id": new_trade.id}
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error opening paper trade: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to open trade: {e}")
+
+
+@app.post("/close_trade/{trade_id}")
+async def close_trade_endpoint(trade_id: int, exit_price_info: dict,
+                               db: Session = Depends(get_db)) -> dict:
+    """Close a specific trade by ID."""
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database is not connected.")
+    exit_price = exit_price_info.get("exit_price")
+    if exit_price is None:
+        raise HTTPException(status_code=400, detail="Missing 'exit_price' in request body.")
+    try:
+        trade = db.query(Trade).filter(Trade.id == trade_id).first()
+        if not trade:
+            raise HTTPException(status_code=404, detail=f"Trade with ID {trade_id} not found.")
+        if trade.status == "CLOSED":
+            raise HTTPException(status_code=400, detail=f"Trade {trade_id} is already closed.")
+        trade.exit_price = exit_price
+        trade.closed_at = datetime.datetime.utcnow()
+        trade.status = "CLOSED"
+        pnl = None
+        if trade.direction == "LONG":
+            pnl = exit_price - trade.entry
+        elif trade.direction == "SHORT":
+            pnl = trade.entry - exit_price
+        trade.pnl = pnl
+        db.commit()
+        db.refresh(trade)
+        logger.info(f"Closed trade {trade_id}. PNL: {pnl}")
+        return {"message": f"Trade {trade_id} closed successfully", "pnl": pnl}
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Unexpected error closing trade {trade_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to close trade {trade_id}: {e}")
+
 
 @app.get("/institutional_stats")
 async def get_stats_endpoint(db: Session = Depends(get_db)) -> dict:
