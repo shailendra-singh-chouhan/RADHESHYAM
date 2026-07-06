@@ -341,13 +341,30 @@ body::before{content:'';position:fixed;inset:0;
       🔨 <strong>Hammer Candle</strong> at VWAP Support + 📊 RSI 38 (Oversold Bounce) + 📈 OI Long Buildup detected.<br>
       🧠 <strong>Smart Money</strong> accumulation zone — Institutions buying dikh raha hai.<br>
       🎯 <strong>Confluence Score: 8/10</strong> — High probability reversal. Chhota SL, bada target!
-      <br><span style="font-size:11px;color:var(--dim)">(Yeh illustrative demo hai — asli strategy engine agla step hai)</span>
+      <br><span style="font-size:11px;color:var(--dim)">(Yeh illustrative demo hai — neeche wala GOAT Signal card asli hai)</span>
     </div>
     <div class="j-levels">
       <div class="jlev e">🟢 ENTRY: 24,380</div>
       <div class="jlev s">🔴 SL: 24,350 (30 pts)</div>
       <div class="jlev t">🎯 TGT1: 24,440 · TGT2: 24,490</div>
       <div class="jlev r">⚖️ R:R = 1:2 ✅</div>
+    </div>
+  </div>
+
+  <div class="card" id="real-signal-card" style="border-color:var(--border)">
+    <div class="chdr">
+      <div class="ctitle">🎯 GOAT SIGNAL <span style="font-size:9px;background:var(--green);color:#fff;border-radius:3px;padding:1px 6px">REAL — ORB+VWAP+EMA+RSI</span></div>
+    </div>
+    <div style="padding:14px 16px">
+      <div id="rs-signal" style="font-size:22px;font-weight:700;font-family:'Bebas Neue',sans-serif;letter-spacing:2px;color:var(--dim)">WAIT</div>
+      <div id="rs-note" style="font-size:12px;color:var(--dim);margin-top:4px">Loading...</div>
+      <div style="display:flex;gap:14px;margin-top:10px;flex-wrap:wrap;font-family:'JetBrains Mono',monospace;font-size:11px">
+        <div>ORB High: <strong id="rs-orb-high">--</strong></div>
+        <div>ORB Low: <strong id="rs-orb-low">--</strong></div>
+        <div>Confidence: <strong id="rs-confidence">--</strong>/4</div>
+      </div>
+      <div id="rs-checklist" style="margin-top:10px;font-size:11px;display:flex;flex-direction:column;gap:4px"></div>
+      <div style="font-size:10px;color:var(--dim);margin-top:10px">Strategy: Opening Range Breakout (9:15-9:30) + VWAP + EMA9/21 trend + RSI filter. 3-of-4 checks required. Yeh koi buy/sell recommendation nahi hai, sirf illustrative signal hai — apni trading decision khud lo.</div>
     </div>
   </div>
 
@@ -772,6 +789,28 @@ async function fetchRealData(){
         }
       } else {
         document.getElementById('vwap-val').textContent='Waiting...';
+      }
+    }
+
+    // Real GOAT Signal (ORB+VWAP+EMA+RSI strategy)
+    if(d.real_signal){
+      const rs=d.real_signal;
+      const sigEl=document.getElementById('rs-signal');
+      sigEl.textContent = rs.signal==='LONG' ? '🟢 LONG' : rs.signal==='SHORT' ? '🔴 SHORT' : '⏳ WAIT';
+      sigEl.style.color = rs.signal==='LONG' ? 'var(--green)' : rs.signal==='SHORT' ? 'var(--red)' : 'var(--dim)';
+      document.getElementById('rs-note').textContent = rs.note || '';
+      document.getElementById('rs-orb-high').textContent = rs.orb_high!==null && rs.orb_high!==undefined ? rs.orb_high : '--';
+      document.getElementById('rs-orb-low').textContent = rs.orb_low!==null && rs.orb_low!==undefined ? rs.orb_low : '--';
+      document.getElementById('rs-confidence').textContent = rs.confidence!==undefined ? rs.confidence : '--';
+      const listEl=document.getElementById('rs-checklist');
+      listEl.innerHTML='';
+      if(rs.checklist){
+        Object.entries(rs.checklist).forEach(([key,val])=>{
+          const row=document.createElement('div');
+          row.style.cssText='display:flex;justify-content:space-between;padding:3px 8px;border-radius:4px;background:'+(val?'var(--green2)':'var(--red2)');
+          row.innerHTML=`<span>${key.replace(/_/g,' ')}</span><span style="color:${val?'var(--green)':'var(--red)'}">${val?'✅':'❌'}</span>`;
+          listEl.appendChild(row);
+        });
       }
     }
 
