@@ -205,6 +205,101 @@ def get_institutional_stats():
         "total_trades": len(pnls)
     }
 
+# ====================== REAL TECHNICAL INDICATORS (RSI, EMA, VWAP-approx) ======================
+# NOTE: True volume-weighted VWAP isn't possible for an index (no real traded
+# volume exists for NIFTY the index itself, only for its stocks/futures).
+# So VWAP here is an approximation using typical price (H+L+C)/3, clearly
+# labelled "approx" on the dashboard - not silently presented as real VWAP.
+
+candle_lock = threading.Lock()
+candle_store = []  # list of dicts: {time, open, high, low, close}
+indicator_data = {"rsi": None, "ema9": None, "ema21": None, "vwap_approx": None}
+
+def fetch_todays_candles():
+    """Fetches today's 1-minute candles for NIFTY from Angel One."""
+    global smart_api
+    if smart_api is None:
+        return None
+    try:
+        now = get_ist_now()
+        from_dt = now.replace(hour=9, minute=15, second=0, microsecond=0)
+        params = {
+            "exchange": "NSE",
+            "symboltoken": NIFTY_TOKEN,
+            "interval": "ONE_MINUTE",
+            "fromdate": from_dt.strftime("%Y-%m-%d %H:%M"),
+            "todate": now.strftime("%Y-%m-%d %H:%M")
+        }
+        resp = smart_api.getCandleData(params)
+        if resp and resp.get("status") and resp.get("data"):
+            candles = []
+            for row in resp["data"]:
+                # row format: [timestamp, open, high, low, close, volume]
+                candles.append({
+                    "time": row[0], "open": row[1], "high": row[2],
+                    "low": row[3], "close": row[4]
+                })
+            return candles
+        return None
+    except Exception as e:
+        logger.error(f"fetch_todays_candles error: {e}")
+        return None
+
+def calculate_rsi(closes, period=14):
+    """Wilder's RSI calculation."""
+    if len(closes) < period + 1:
+        return None
+    gains, losses = [], []
+    for i in range(1, len(closes)):
+        change = closes[i] - closes[i-1]
+        gains.append(max(change, 0))
+        losses.append(max(-change, 0))
+    avg_gain = sum(gains[:period]) / period
+    avg_loss = sum(losses[:period]) / period
+    for i in range(period, len(gains)):
+        avg_gain = (avg_gain * (period - 1) + gains[i]) / period
+        avg_loss = (avg_loss * (period - 1) + losses[i]) / period
+    if avg_loss == 0:
+        return 100.0
+    rs = avg_gain / avg_loss
+    return round(100 - (100 / (1 + rs)), 1)
+
+def calculate_ema(closes, period):
+    """Standard EMA, seeded with SMA of the first `period` values."""
+    if len(closes) < period:
+        return None
+    multiplier = 2 / (period + 1)
+    ema = sum(closes[:period]) / period
+    for price in closes[period:]:
+        ema = (price - ema) * multiplier + ema
+    return round(ema, 2)
+
+def calculate_vwap_approx(candles):
+    """Approximate VWAP using typical price average (no real volume data for index)."""
+    if not candles:
+        return None
+    typical_prices = [(c["high"] + c["low"] + c["close"]) / 3 for c in candles]
+    return round(sum(typical_prices) / len(typical_prices), 2)
+
+def indicator_poller():
+    """Runs in background, refreshes RSI/EMA/VWAP-approx every 60 seconds during market hours."""
+    while True:
+        try:
+            if get_market_status() == "OPEN":
+                candles = fetch_todays_candles()
+                if candles and len(candles) >= 15:
+                    with candle_lock:
+                        candle_store.clear()
+                        candle_store.extend(candles)
+                    closes = [c["close"] for c in candles]
+                    indicator_data["rsi"] = calculate_rsi(closes)
+                    indicator_data["ema9"] = calculate_ema(closes, 9)
+                    indicator_data["ema21"] = calculate_ema(closes, 21)
+                    indicator_data["vwap_approx"] = calculate_vwap_approx(candles)
+        except Exception as e:
+            logger.error(f"indicator_poller error: {e}")
+        time.sleep(60)
+
 # ====================== BACKGROUND PRICE POLLING ======================
 
 latest_prices = {"nifty": None, "vix": None, "day_open": None, "day_open_date": None, "last_update": None}
@@ -633,37 +728,37 @@ body::before{content:'';position:fixed;inset:0;
 
   <div class="card">
     <div class="chdr">
-      <div class="ctitle">🎛️ INDICATOR DASHBOARD <span class="demo-tag">Demo</span></div>
-      <div style="font-size:10px;color:var(--dim);font-family:'JetBrains Mono',monospace" id="ind-tf-label">1M</div>
+      <div class="ctitle">🎛️ INDICATOR DASHBOARD <span style="font-size:9px;background:var(--green);color:#fff;border-radius:3px;padding:1px 6px">RSI/EMA LIVE</span></div>
+      <div style="font-size:10px;color:var(--dim);font-family:'JetBrains Mono',monospace" id="ind-tf-label">1M CANDLES</div>
     </div>
     <div class="ind-row">
       <div class="iname">📊 RSI(14)</div>
       <div class="ibar"><div class="ibfill" id="rsi-bar" style="background:var(--green);width:38%"></div></div>
-      <div class="ival" id="rsi-val" style="color:var(--green)">38.4</div>
-      <div class="isig bull" id="rsi-sig">🟢 OVERSOLD</div>
+      <div class="ival" id="rsi-val" style="color:var(--green)">--</div>
+      <div class="isig bull" id="rsi-sig">--</div>
     </div>
     <div class="ind-row">
-      <div class="iname">📏 VWAP</div>
+      <div class="iname">📏 VWAP (approx)</div>
       <div class="ibar"><div class="ibfill" id="vwap-bar" style="background:var(--blue);width:55%"></div></div>
-      <div class="ival" id="vwap-val" style="color:var(--blue)">24,362</div>
-      <div class="isig bull" id="vwap-sig">🔵 ABOVE</div>
+      <div class="ival" id="vwap-val" style="color:var(--blue)">--</div>
+      <div class="isig bull" id="vwap-sig">--</div>
     </div>
     <div class="ind-row">
       <div class="iname">📉 EMA 9</div>
       <div class="ibar"><div class="ibfill" id="ema9-bar" style="background:var(--green);width:65%"></div></div>
-      <div class="ival" id="ema9-val" style="color:var(--green)">24,371</div>
-      <div class="isig bull" id="ema9-sig">📈 BULL</div>
+      <div class="ival" id="ema9-val" style="color:var(--green)">--</div>
+      <div class="isig bull" id="ema9-sig">--</div>
     </div>
     <div class="ind-row">
       <div class="iname">📉 EMA 21</div>
       <div class="ibar"><div class="ibfill" id="ema21-bar" style="background:var(--green);width:58%"></div></div>
-      <div class="ival" id="ema21-val" style="color:var(--green)">24,344</div>
-      <div class="isig bull" id="ema21-sig">📈 BULL</div>
+      <div class="ival" id="ema21-val" style="color:var(--green)">--</div>
+      <div class="isig bull" id="ema21-sig">--</div>
     </div>
     <div class="ind-row">
-      <div class="iname">🌊 SUPERTREND</div>
+      <div class="iname">🌊 SUPERTREND 🎲</div>
       <div class="ibar"><div class="ibfill" id="st-bar" style="background:var(--green);width:75%"></div></div>
-      <div class="ival" id="st-val" style="color:var(--green)">24,290</div>
+      <div class="ival" id="st-val" style="color:var(--green)">--</div>
       <div class="isig bull" id="st-sig">✅ BUY</div>
     </div>
   </div>
@@ -963,6 +1058,46 @@ async function fetchRealData(){
       }
     }
 
+    // Real technical indicators (RSI, EMA9, EMA21, VWAP-approx)
+    if(d.indicators){
+      const ind=d.indicators;
+      if(ind.rsi!==null && ind.rsi!==undefined){
+        const rc = ind.rsi<30?'var(--green)':ind.rsi>70?'var(--red)':'var(--blue)';
+        const rs = ind.rsi<30?'🟢 OVERSOLD':ind.rsi>70?'🔴 OVERBOUGHT':'⚡ NEUTRAL';
+        document.getElementById('rsi-val').textContent=ind.rsi;
+        document.getElementById('rsi-val').style.color=rc;
+        document.getElementById('rsi-bar').style.cssText=`background:${rc};width:${ind.rsi}%`;
+        document.getElementById('rsi-sig').textContent=rs;
+        document.getElementById('rsi-sig').className='isig '+(ind.rsi<30?'bull':ind.rsi>70?'bear':'neu');
+      } else {
+        document.getElementById('rsi-val').textContent='Waiting...';
+        document.getElementById('rsi-sig').textContent='--';
+      }
+      if(ind.ema9!==null && ind.ema9!==undefined && ind.ema21!==null){
+        const bullish = ind.ema9 >= ind.ema21;
+        const ec = bullish?'var(--green)':'var(--red)';
+        document.getElementById('ema9-val').textContent=ind.ema9; document.getElementById('ema9-val').style.color=ec;
+        document.getElementById('ema21-val').textContent=ind.ema21; document.getElementById('ema21-val').style.color=ec;
+        document.getElementById('ema9-sig').textContent=bullish?'📈 BULL':'📉 BEAR';
+        document.getElementById('ema9-sig').className='isig '+(bullish?'bull':'bear');
+        document.getElementById('ema21-sig').textContent=bullish?'📈 BULL':'📉 BEAR';
+        document.getElementById('ema21-sig').className='isig '+(bullish?'bull':'bear');
+      } else {
+        document.getElementById('ema9-val').textContent='Waiting...';
+        document.getElementById('ema21-val').textContent='Waiting...';
+      }
+      if(ind.vwap_approx!==null && ind.vwap_approx!==undefined){
+        document.getElementById('vwap-val').textContent=ind.vwap_approx;
+        if(d.spot){
+          const above = d.spot >= ind.vwap_approx;
+          document.getElementById('vwap-sig').textContent = above?'🔵 ABOVE':'🔴 BELOW';
+          document.getElementById('vwap-sig').className='isig '+(above?'bull':'bear');
+        }
+      } else {
+        document.getElementById('vwap-val').textContent='Waiting...';
+      }
+    }
+
     // Real paper trade panel
     const statusEl=document.getElementById('trade-status');
     const box=document.getElementById('active-trade-box');
@@ -1051,12 +1186,8 @@ const SETUPS=[
 let si=0;
 function updateIndicators(){
   const s=SETUPS[si]; si=(si+1)%SETUPS.length;
-  document.getElementById('rsi-bar').style.cssText=`background:${s.rc};width:${s.rsi}%`;
-  document.getElementById('rsi-val').style.color=s.rc; document.getElementById('rsi-val').textContent=s.rsi;
-  document.getElementById('rsi-sig').textContent=s.rs;
-  document.getElementById('vwap-val').textContent=s.vwap;
-  document.getElementById('ema9-val').textContent=s.ema9; document.getElementById('ema9-val').style.color=s.ec;
-  document.getElementById('ema21-val').textContent=s.ema21; document.getElementById('ema21-val').style.color=s.ec;
+  // NOTE: RSI, VWAP, EMA9, EMA21 are now real (updated separately via fetchRealData).
+  // Only Supertrend remains demo/illustrative here.
   document.getElementById('st-val').textContent=s.st; document.getElementById('st-val').style.color=s.sc;
   addAlert();
 }
@@ -1152,6 +1283,7 @@ def api_data():
             "sl": current_active["sl"],
             "live_pnl": live_pnl
         } if current_active else None,
+        "indicators": indicator_data,
         "last_update": latest_prices["last_update"]
     })
 
@@ -1184,6 +1316,8 @@ def api_close_trade():
 angel_login()
 _poller_thread = threading.Thread(target=price_poller, daemon=True)
 _poller_thread.start()
+_indicator_thread = threading.Thread(target=indicator_poller, daemon=True)
+_indicator_thread.start()
 
 # ====================== RUN (local testing only) ======================
 
