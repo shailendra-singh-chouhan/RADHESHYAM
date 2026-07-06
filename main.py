@@ -269,9 +269,79 @@ def indicator_poller() -> None:
                     indicator_data["ema9"] = calculate_ema(closes, 9)
                     indicator_data["ema21"] = calculate_ema(closes, 21)
                     indicator_data["vwap_approx"] = calculate_vwap_approx(candles)
+                    signal_data.update(compute_real_signal(candles))
         except Exception as e:
             logger.error(f"indicator_poller error: {e}")
         time.sleep(300)
+
+
+# ====================== REAL STRATEGY ENGINE (ORB + VWAP + EMA + RSI checklist) ======================
+# Design from May 2026 planning: Opening Range Breakout (9:15-9:30) as the
+# primary setup, confirmed by a relaxed checklist (3-of-4 agreement, not all 4)
+# to avoid analysis paralysis. This replaces nothing on the demo "Jadui Spot"
+# card - that stays a clearly-labelled illustration. This is a NEW, real signal.
+
+signal_data = {
+    "signal": "WAIT", "confidence": 0, "checklist": {},
+    "orb_high": None, "orb_low": None, "note": "Waiting for data"
+}
+
+def compute_orb_range(candles: list) -> tuple[Optional[float], Optional[float]]:
+    """Opening Range = high/low of candles between 9:15 and 9:30 AM."""
+    orb_candles = [c for c in candles if "09:15" <= c["time"][11:16] <= "09:30"]
+    if not orb_candles:
+        return None, None
+    return max(c["high"] for c in orb_candles), min(c["low"] for c in orb_candles)
+
+def compute_real_signal(candles: list) -> dict:
+    """
+    Relaxed checklist strategy: needs at least 3-of-4 checks to agree
+    before giving a LONG/SHORT signal, otherwise WAIT (avoids overtrading).
+    """
+    if not candles or len(candles) < 16:
+        return {"signal": "WAIT", "confidence": 0, "checklist": {},
+                "orb_high": None, "orb_low": None, "note": "Not enough candles yet"}
+
+    closes = [c["close"] for c in candles]
+    current_price = closes[-1]
+    orb_high, orb_low = compute_orb_range(candles)
+    ema9 = calculate_ema(closes, 9)
+    ema21 = calculate_ema(closes, 21)
+    rsi = calculate_rsi(closes)
+    vwap = calculate_vwap_approx(candles)
+
+    if orb_high is None or ema9 is None or ema21 is None or rsi is None or vwap is None:
+        return {"signal": "WAIT", "confidence": 0, "checklist": {},
+                "orb_high": orb_high, "orb_low": orb_low, "note": "Waiting for opening range (9:15-9:30)"}
+
+    checklist_long = {
+        "orb_breakout": current_price > orb_high,
+        "above_vwap": current_price > vwap,
+        "ema_bullish": ema9 > ema21,
+        "rsi_not_overbought": rsi < 70,
+    }
+    checklist_short = {
+        "orb_breakdown": current_price < orb_low,
+        "below_vwap": current_price < vwap,
+        "ema_bearish": ema9 < ema21,
+        "rsi_not_oversold": rsi > 30,
+    }
+    long_score = sum(checklist_long.values())
+    short_score = sum(checklist_short.values())
+
+    if long_score >= 3 and long_score > short_score:
+        return {"signal": "LONG", "confidence": long_score, "checklist": checklist_long,
+                "orb_high": orb_high, "orb_low": orb_low,
+                "note": f"{long_score}/4 checks agree — ORB breakout + trend confirmed"}
+    elif short_score >= 3 and short_score > long_score:
+        return {"signal": "SHORT", "confidence": short_score, "checklist": checklist_short,
+                "orb_high": orb_high, "orb_low": orb_low,
+                "note": f"{short_score}/4 checks agree — ORB breakdown + trend confirmed"}
+    else:
+        return {"signal": "WAIT", "confidence": max(long_score, short_score),
+                "checklist": checklist_long if long_score >= short_score else checklist_short,
+                "orb_high": orb_high, "orb_low": orb_low,
+                "note": "Checklist not aligned (need 3-of-4) — no clear setup"}
 
 
 # ====================== TRADE LOGIC (PostgreSQL-backed) ======================
@@ -512,6 +582,7 @@ async def api_data(db: Session = Depends(get_db)) -> JSONResponse:
             "live_pnl": live_pnl,
         } if current_active else None,
         "indicators": indicator_data,
+        "real_signal": signal_data,
         "last_update": latest_prices["last_update"],
     })
 
