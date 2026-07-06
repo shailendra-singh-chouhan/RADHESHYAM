@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: RADHESHYAM
+    runtime: python
+    region: virginia
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "uvicorn main:app --host 0.0.0.0 --port $PORT"
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: ANGEL_API_KEY
+        sync: false
+      - key: ANGEL_CLIENT_ID
+        sync: false
+      - key: ANGEL_MPIN
+        sync: false
+      - key: ANGEL_TOTP_SECRET
+        sync: false
+      - fromDatabase:
+          name: GOAT_PRO
+          property: connectionString
+        key: DATABASE_URL
+
+databases:
+  - name: GOAT_PRO
+    databaseName: goat_pro
+    user: goat_pro_user
+    plan: free
+    region: virginia
+    postgresMajorVersion: 18
