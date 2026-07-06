@@ -715,7 +715,7 @@ body::before{content:'';position:fixed;inset:0;
 
   <div class="card">
     <div class="chdr">
-      <div class="ctitle">📈 LIVE CANDLE CHART <span class="demo-tag">Demo</span></div>
+      <div class="ctitle">📈 CANDLE CHART <span id="chart-tag" style="font-size:9px;background:var(--green);color:#fff;border-radius:3px;padding:1px 6px">NIFTY LIVE</span></div>
       <div class="tf-row">
         <div class="tft on" onclick="setTf(this,'1m')">1M</div>
         <div class="tft" onclick="setTf(this,'5m')">5M</div>
@@ -1013,6 +1013,26 @@ function setTf(el,tf){
   drawChart(); updateIndicators();
 }
 
+// ── REAL CANDLES (NIFTY only) ───────────────────────────────
+async function fetchRealCandles(){
+  if(currentMarket!=='nifty') return;
+  try{
+    const res=await fetch('/api/candles');
+    const d=await res.json();
+    if(d.candles && d.candles.length>0){
+      candles = d.candles.map(c=>({o:c.open,h:c.high,l:c.low,c:c.close}));
+      document.getElementById('chart-tag').textContent='NIFTY LIVE';
+      document.getElementById('chart-tag').style.background='var(--green)';
+      drawChart();
+    } else {
+      document.getElementById('chart-tag').textContent='Waiting for candles...';
+      document.getElementById('chart-tag').style.background='var(--gold)';
+    }
+  } catch(e){ console.error(e); }
+}
+fetchRealCandles();
+setInterval(fetchRealCandles, 60000);
+
 // ── REAL DATA (NIFTY + VIX + Stats) ─────────────────────────
 async function fetchRealData(){
   try{
@@ -1222,6 +1242,7 @@ function switchMarket(el,key){
   if(key==='nifty'){
     document.getElementById('hero-label').innerHTML='🔵 NIFTY 50 · INDEX <span class="live-tag" style="background:rgba(255,255,255,0.2);color:#fff;border-color:transparent">LIVE</span>';
     fetchRealData();
+    fetchRealCandles();
   } else {
     const m=markets[key];
     document.getElementById('hero-label').textContent=m.label;
@@ -1229,9 +1250,12 @@ function switchMarket(el,key){
     document.getElementById('hero-chg').textContent='Demo data — illustrative only';
     document.getElementById('h-vix').textContent='--';
     document.getElementById('h-open').textContent=m.open.toLocaleString('en-IN');
+    document.getElementById('chart-tag').textContent='Demo';
+    document.getElementById('chart-tag').style.background='var(--gold)';
+    candles=genCandles(60, (markets[key]?markets[key].price:24300)*0.995);
+    drawChart();
   }
-  candles=genCandles(60, (markets[key]?markets[key].price:24300)*0.995);
-  drawChart(); updateIndicators();
+  updateIndicators();
 }
 
 function refreshAll(){
@@ -1306,6 +1330,13 @@ def api_execute_trade():
 def api_close_trade():
     success, message = close_paper_trade()
     return jsonify({"success": success, "message": message})
+
+@app.route("/api/candles")
+def api_candles():
+    """Returns today's real 1-minute NIFTY candles for the chart."""
+    with candle_lock:
+        candles = list(candle_store)
+    return jsonify({"candles": candles})
 
 # ====================== APP STARTUP ======================
 # IMPORTANT: This runs at module-import time, so it works both with
