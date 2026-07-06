@@ -1,7 +1,7 @@
 import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from typing import Optional, tuple
+from typing import Optional
 from logzero import logger
 
 import config
