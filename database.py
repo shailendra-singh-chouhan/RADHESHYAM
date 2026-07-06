@@ -1,70 +1,67 @@
-# database.py
+"""
+database.py
+===========
+SQLAlchemy engine + session factory for GOAT PRO PostgreSQL.
+"""
 
 import os
 import logging
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from models import Base  # Import Base from the models file
+from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.engine import Engine
+from typing import Generator, Optional
 
-# Logger setup
+from models import Base
+
 logger = logging.getLogger(__name__)
 
-# Get the DATABASE_URL from environment variables.
-# Render automatically injects this for your PostgreSQL service.
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
-if not DATABASE_URL:
-    logger.error("DATABASE_URL environment variable not set or is empty. Cannot connect to the database.")
-    db_engine = None
-    SessionLocal = None
-else:
+if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+if DATABASE_URL and DATABASE_URL.startswith("postgresql://") and "+" not in DATABASE_URL.split(":", 1)[1]:
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
+
+db_engine: Optional[Engine] = None
+SessionLocal = None
+
+if DATABASE_URL:
     try:
-        logger.info("Attempting to connect to the database using DATABASE_URL.")
-        # Create the database engine.
-        # 'pool_pre_ping=True' helps manage connections more effectively.
         db_engine = create_engine(
             DATABASE_URL,
             pool_pre_ping=True,
-            # Add connect_args for SSL if needed, though Render often handles this.
-            # Example: connect_args={"sslmode": "require"}
+            pool_recycle=280,
+            pool_size=5,
+            max_overflow=5,
+            echo=False,
         )
-        # Create a configured Session class
         SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=db_engine)
-        logger.info("Database engine and session maker created successfully.")
+        logger.info("Database engine created successfully.")
     except Exception as e:
-        logger.error(f"Error creating database engine or session: {e}")
+        logger.error(f"Failed to create database engine: {e}")
         db_engine = None
-        SessionLocal = None
+else:
+    logger.warning("DATABASE_URL not set. Trades will NOT be persisted.")
 
-def get_db():
-    """
-    Dependency function to provide a database session to API endpoints (e.g., in FastAPI).
-    This yields a session and ensures it's closed afterwards.
-    """
+
+def init_db(engine: Optional[Engine] = None) -> None:
+    target = engine or db_engine
+    if target is None:
+        logger.warning("init_db skipped — no engine.")
+        return
+    try:
+        Base.metadata.create_all(bind=target)
+        logger.info("Database tables verified / created.")
+    except Exception as e:
+        logger.error(f"init_db error: {e}")
+
+
+def get_db() -> Generator[Session, None, None]:
     if SessionLocal is None:
-        logger.error("SessionLocal is not initialized. Cannot provide database session.")
-        # Yield None or raise an HTTPException depending on your framework
         yield None
-        return # Exit the generator cleanly
-
+        return
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
-        logger.debug("Database session closed.")
-
-def init_db(engine):
-    """
-    Initializes the database by creating all tables defined in models.
-    This should be called once when the application starts up.
-    """
-    if engine:
-        try:
-            # Base.metadata.create_all will create tables if they don't exist
-            Base.metadata.create_all(bind=engine)
-            logger.info("Database tables created or verified successfully.")
-        except Exception as e:
-            logger.error(f"Error creating/verifying database tables: {e}")
-    else:
-        logger.warning("Database engine is not available, skipping table initialization.")
