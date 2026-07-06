@@ -63,7 +63,9 @@ def get_ltp(exchange, symbol, token):
             resp = smart_api.ltpData(exchange, symbol, token)
         if resp and resp.get("status"):
             return resp["data"]["ltp"]
-        return None
+        else:
+            logger.error(f"get_ltp non-success response for {symbol}: {resp}")
+            return None
     except Exception as e:
         logger.error(f"get_ltp error for {symbol}: {e}")
         return None
@@ -298,7 +300,7 @@ def indicator_poller():
                     indicator_data["vwap_approx"] = calculate_vwap_approx(candles)
         except Exception as e:
             logger.error(f"indicator_poller error: {e}")
-        time.sleep(60)
+        time.sleep(300)
 
 # ====================== BACKGROUND PRICE POLLING ======================
 
@@ -323,7 +325,7 @@ def price_poller():
                 latest_prices["last_update"] = get_ist_now().isoformat()
         except Exception as e:
             logger.error(f"price_poller error: {e}")
-        time.sleep(5)
+        time.sleep(15)
 
 # ====================== ROUTES ======================
 
