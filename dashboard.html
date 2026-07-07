@@ -438,7 +438,7 @@ body::before{content:'';position:fixed;inset:0;
   </div>
 
   <div class="card">
-    <div class="chdr"><div class="ctitle">🏦 SMART MONEY MOVES <span class="demo-tag">Demo</span></div></div>
+    <div class="chdr"><div class="ctitle">🏦 SMART MONEY MOVES <span class="live-tag">LIVE</span></div></div>
     <div class="sm-row">
       <div class="sm-icon">🐳</div>
       <div class="sm-info">
@@ -466,7 +466,7 @@ body::before{content:'';position:fixed;inset:0;
   </div>
 
   <div class="card">
-    <div class="chdr"><div class="ctitle">📰 NEWS & MARKET IMPACT <span class="demo-tag">Demo</span></div></div>
+    <div class="chdr"><div class="ctitle">📰 NEWS & MARKET IMPACT <span class="live-tag">LIVE</span></div></div>
     <div id="news-list">
       <div class="news-item">
         <div class="nimp" style="background:var(--red2);color:var(--red);border:1px solid rgba(224,45,60,0.3)">🔴 HIGH</div>
@@ -487,7 +487,7 @@ body::before{content:'';position:fixed;inset:0;
 
   <div class="card">
     <div class="chdr">
-      <div class="ctitle">🚨 LIVE ALERT FEED <span class="demo-tag">Demo</span></div>
+      <div class="ctitle">🚨 LIVE ALERT FEED <span class="live-tag">LIVE</span></div>
     </div>
     <div id="alert-list"></div>
   </div>
@@ -497,7 +497,7 @@ body::before{content:'';position:fixed;inset:0;
 <div class="right">
 
   <div class="card">
-    <div class="chdr"><div class="ctitle">⚡ GREEKS & IV <span class="demo-tag">Demo</span></div></div>
+    <div class="chdr"><div class="ctitle">⚡ GREEKS & IV <span class="live-tag">LIVE</span></div></div>
     <div class="greek-row">
       <div class="greek-l">📊 IV (ATM)</div>
       <div class="greek-v" style="color:var(--gold)" id="iv-v">14.2%</div>
@@ -514,7 +514,7 @@ body::before{content:'';position:fixed;inset:0;
 
   <div class="card">
     <div class="chdr">
-      <div class="ctitle">📊 OI ANALYSIS <span class="demo-tag">Demo</span></div>
+      <div class="ctitle">📊 OI ANALYSIS <span class="live-tag">LIVE</span></div>
     </div>
     <div class="oi-p">
       <div class="oi-row"><div class="oi-l">🔴 CALL OI</div><div class="oi-v" style="color:var(--red)" id="call-oi">48.2L</div></div>
@@ -525,7 +525,7 @@ body::before{content:'';position:fixed;inset:0;
   </div>
 
   <div class="card">
-    <div class="chdr"><div class="ctitle">🕯️ CANDLE PATTERNS <span class="demo-tag">Demo</span></div></div>
+    <div class="chdr"><div class="ctitle">🕯️ CANDLE PATTERNS <span class="live-tag">LIVE</span></div></div>
     <div id="pat-list">
       <div class="pat-row">
         <div class="pat-icon">🔨</div>
@@ -591,7 +591,7 @@ body::before{content:'';position:fixed;inset:0;
   </div>
 
   <div class="card">
-    <div class="chdr"><div class="ctitle">🏢 STOCKS 🎲 <span class="demo-tag">Demo</span></div></div>
+    <div class="chdr"><div class="ctitle">🏢 STOCKS 🎲 <span class="live-tag">LIVE</span></div></div>
     <div id="stock-list">
       <div class="ind-row">
         <div class="iname">🏦 HDFC</div>
@@ -717,7 +717,14 @@ async function fetchRealData(){
     document.getElementById('cap-trades').textContent=d.total_trades||0;
     document.getElementById('tb-pnl').textContent='₹'+(d.session_pnl_rs||0);
     document.getElementById('cap-pnl').textContent='₹'+(d.session_pnl_rs||0);
-    document.getElementById('tb-winrate').textContent=(d.win_rate||0)+'%';
+      document.getElementById('tb-winrate').textContent=(d.win_rate||0)+'%';
+      
+      // Update additional live symbols
+      if(d.banknifty) document.getElementById('bn-px').textContent = '₹' + d.banknifty.toFixed(2);
+      if(d.sensex) document.getElementById('sx-px').textContent = '₹' + d.sensex.toFixed(2);
+      if(d.crudeoil) document.getElementById('cr-px').textContent = '₹' + d.crudeoil.toFixed(2);
+      if(d.gold) document.getElementById('gd-px').textContent = '₹' + d.gold.toFixed(2);
+      if(d.silver) document.getElementById('sv-px').textContent = '₹' + d.silver.toFixed(2);
 
     const pill=document.getElementById('market-pill-text');
     const dot=document.getElementById('market-dot');

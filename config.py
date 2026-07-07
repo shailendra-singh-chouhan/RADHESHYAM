@@ -17,6 +17,11 @@ ANGEL_TOTP_SECRET = os.getenv("ANGEL_TOTP_SECRET", "")
 NIFTY_SYMBOL     = "NIFTY"
 BANKNIFTY_SYMBOL = "BANKNIFTY"
 VIX_SYMBOL       = "INDIA VIX"      # try NSE first, fallback NFO
+FINNIFTY_SYMBOL  = "FINNIFTY"
+SENSEX_SYMBOL    = "SENSEX"
+CRUDEOIL_SYMBOL  = "CRUDEOIL"
+GOLD_SYMBOL      = "GOLD"
+SILVER_SYMBOL    = "SILVER"
 
 # ────────────────────────────────────────────
 # Shared state (populated at runtime)
@@ -25,6 +30,11 @@ latest_prices: dict = {
     "nifty": None,
     "banknifty": None,
     "vix": None,
+    "finnifty": None,
+    "sensex": None,
+    "crudeoil": None,
+    "gold": None,
+    "silver": None,
     "day_open": None,
     "day_open_date": "",
     "last_update": "",

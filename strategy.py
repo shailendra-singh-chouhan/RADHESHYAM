@@ -72,6 +72,11 @@ def price_poller() -> None:
                 # Dynamic token resolution - no hardcoded tokens needed
                 nifty = angel_client.get_ltp("NSE", config.NIFTY_SYMBOL)
                 banknifty = angel_client.get_ltp("NSE", config.BANKNIFTY_SYMBOL)
+                finnifty = angel_client.get_ltp("NSE", config.FINNIFTY_SYMBOL)
+                sensex = angel_client.get_ltp("BSE", config.SENSEX_SYMBOL)
+                crude = angel_client.get_ltp("MCX", config.CRUDEOIL_SYMBOL)
+                gold = angel_client.get_ltp("MCX", config.GOLD_SYMBOL)
+                silver = angel_client.get_ltp("MCX", config.SILVER_SYMBOL)
 
                 # Try NSE first for VIX, fallback to NFO
                 vix = angel_client.get_ltp("NSE", config.VIX_SYMBOL)
@@ -86,11 +91,13 @@ def price_poller() -> None:
                         config.latest_prices["day_open"] = nifty
                         config.latest_prices["day_open_date"] = today
 
-                if banknifty is not None:
-                    config.latest_prices["banknifty"] = banknifty
-
-                if vix is not None:
-                    config.latest_prices["vix"] = vix
+                if banknifty is not None: config.latest_prices["banknifty"] = banknifty
+                if finnifty is not None: config.latest_prices["finnifty"] = finnifty
+                if sensex is not None: config.latest_prices["sensex"] = sensex
+                if crude is not None: config.latest_prices["crudeoil"] = crude
+                if gold is not None: config.latest_prices["gold"] = gold
+                if silver is not None: config.latest_prices["silver"] = silver
+                if vix is not None: config.latest_prices["vix"] = vix
 
                 config.latest_prices["last_update"] = config.get_ist_now().isoformat()
         except Exception as e:

@@ -76,6 +76,11 @@ async def api_data(db: Session = Depends(get_db)) -> JSONResponse:
     return JSONResponse({
         "spot": config.latest_prices["nifty"],
         "banknifty": config.latest_prices.get("banknifty"),
+        "finnifty": config.latest_prices.get("finnifty"),
+        "sensex": config.latest_prices.get("sensex"),
+        "crudeoil": config.latest_prices.get("crudeoil"),
+        "gold": config.latest_prices.get("gold"),
+        "silver": config.latest_prices.get("silver"),
         "vix": config.latest_prices["vix"],
         "day_open": config.latest_prices["day_open"],
         "market_status": market_status,
