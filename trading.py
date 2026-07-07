@@ -228,6 +228,15 @@ def check_market_open_gap(db: Session, current_spot_price: float) -> tuple[bool,
 def process_auto_signal(db: Session) -> dict:
     """CORE PRO LOGIC: हर पोल पर चलेगा और ऑटो ट्रेड करेगा"""
     try:
+        # ⚠️ SAFETY KILL-SWITCH: Auto-trading is OFF by default. The options
+        # symbol format used below (get_options_contract) has the same
+        # missing-expiry issue that failed before (June 2026), and the user
+        # had explicitly decided to just OBSERVE signals for a few days
+        # before acting on them. Set config.AUTO_TRADE_ENABLED = True only
+        # after real option premiums are verified working.
+        if not getattr(config, "AUTO_TRADE_ENABLED", False):
+            return {"action": "disabled", "reason": "Auto-trade is off (safety default) — set config.AUTO_TRADE_ENABLED=True to turn on"}
+
         if not db: return {"action": "skipped", "reason": "No DB"}
         
         # ⚠️ CRITICAL: पहले Risk चेक करो
