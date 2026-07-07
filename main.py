@@ -8,7 +8,6 @@ from logzero import logger
 import config
 import angel_client
 import strategy
-import stocks
 
 # ============================================
 # Lifespan - Startup & Shutdown
@@ -27,8 +26,7 @@ async def lifespan(app: FastAPI):
     
     # Start background threads
     strategy.start_background_threads()
-    stocks.start_background_threads()
-    logger.info("All background services (Strategy & Stocks) started successfully.")
+    logger.info("All background services started successfully.")
     
     yield
     
