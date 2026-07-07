@@ -27,7 +27,7 @@ async def read_root() -> HTMLResponse:
     """The main dashboard UI."""
     return HTMLResponse(content=load_dashboard_html())
 
-@router.get("/health")
+@router.api_route("/health", methods=["GET", "HEAD"])
 async def health() -> dict:
     return {
         "status": "healthy",
@@ -85,7 +85,7 @@ async def api_data(db: Session = Depends(get_db)) -> JSONResponse:
                 if latest_prices.get("nifty") is not None:
                     live_pnl = round(latest_prices["nifty"] - active_row.entry, 2)
             
-            # Today\'s closed trades PnL
+            # Today's closed trades PnL
             today_closed = db.query(Trade).filter(
                 Trade.status == "CLOSED", Trade.trade_date == today,
             ).all()
