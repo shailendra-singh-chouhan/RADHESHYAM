@@ -90,6 +90,9 @@ async def api_data(db: Session = Depends(get_db)) -> JSONResponse:
         "win_rate": stats["win_rate"],
         "total_trades": stats["total_trades"],
         "institutional_stats": stats,
+        "oi_data": config.oi_data,
+        "greeks": config.greeks_data,
+        "alerts": config.market_alerts,
         "active_trade": {
             "direction": current_active["direction"],
             "entry": current_active["entry"],

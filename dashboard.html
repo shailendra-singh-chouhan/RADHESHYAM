@@ -726,6 +726,35 @@ async function fetchRealData(){
       if(d.gold) document.getElementById('gd-px').textContent = '₹' + d.gold.toFixed(2);
       if(d.silver) document.getElementById('sv-px').textContent = '₹' + d.silver.toFixed(2);
 
+      // Update Greeks & OI
+      if(d.greeks){
+        if(d.greeks.iv) document.getElementById('iv-v').textContent = d.greeks.iv + '%';
+        if(d.greeks.theta) document.getElementById('tht-v').textContent = '-₹' + Math.abs(d.greeks.theta);
+        if(d.greeks.gamma) document.getElementById('gam-v').textContent = d.greeks.gamma;
+      }
+      if(d.oi_data){
+        document.getElementById('call-oi').textContent = (d.oi_data.call_oi/100000).toFixed(1) + 'L';
+        document.getElementById('put-oi').textContent = (d.oi_data.put_oi/100000).toFixed(1) + 'L';
+        const total = d.oi_data.call_oi + d.oi_data.put_oi;
+        document.getElementById('call-bar').style.width = (d.oi_data.call_oi/total*100) + '%';
+        document.getElementById('put-bar').style.width = (d.oi_data.put_oi/total*100) + '%';
+      }
+
+      // Update Alert Feed
+      if(d.alerts && d.alerts.length > 0){
+        const alertList = document.getElementById('alert-list');
+        alertList.innerHTML = '';
+        d.alerts.forEach(a => {
+          const div = document.createElement('div');
+          div.className = 'alert-item';
+          div.innerHTML = `<div class="alert-time">${a.time}</div>
+                           <div class="alert-badge" style="background:var(--blue2);color:var(--blue)">${a.badge}</div>
+                           <div class="alert-msg">${a.msg}</div>
+                           <div class="alert-px">${a.px ? a.px.toFixed(2) : '--'}</div>`;
+          alertList.appendChild(div);
+        });
+      }
+
     const pill=document.getElementById('market-pill-text');
     const dot=document.getElementById('market-dot');
     pill.textContent=d.market_status;

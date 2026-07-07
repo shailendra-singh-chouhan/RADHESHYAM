@@ -40,6 +40,24 @@ latest_prices: dict = {
     "last_update": "",
 }
 
+oi_data: dict = {
+    "call_oi": 0,
+    "put_oi": 0,
+    "pcr": 0.0,
+    "max_pain": None,
+}
+
+greeks_data: dict = {
+    "iv": None,
+    "delta": None,
+    "theta": None,
+    "gamma": None,
+    "vega": None,
+}
+
+news_feed: list = []
+market_alerts: list = []
+
 candle_store: list = []
 
 indicator_data: dict = {

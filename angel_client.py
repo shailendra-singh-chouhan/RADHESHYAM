@@ -99,6 +99,33 @@ def get_ltp(exchange: str, symbol: str, token: Optional[str] = None) -> Optional
         angel_login()
         return None
 
+def fetch_option_chain(symbol: str, exchange: str = "NFO") -> Optional[dict]:
+    """Fetches full option chain data for a symbol."""
+    global smart_api
+    if smart_api is None:
+        if not angel_login():
+            return None
+    try:
+        # In a real SmartAPI scenario, you'd use getOptionChain or similar
+        # For now, we simulate with a more generic approach if specific method is missing
+        params = {
+            "trading_symbol": symbol,
+            "exchange": exchange
+        }
+        # Note: SmartAPI has specific methods for option chain, this is a placeholder
+        # that would be replaced with actual obj.searchScrip or obj.getOptionChain
+        with session_lock:
+            # This is a conceptual call; real SmartAPI might use different method
+            # We'll use a try-except to handle specific API variations
+            try:
+                data = smart_api.searchScrip(exchange, symbol)
+                return data
+            except:
+                return None
+    except Exception as e:
+        logger.error(f"fetch_option_chain error: {e}")
+        return None
+
 def fetch_todays_candles() -> Optional[list]:
     """Fetches 1-minute historical candles for NIFTY from 9:15 AM to now."""
     global smart_api
