@@ -1,18 +1,35 @@
 import os
 import datetime
 
+# ============================================
+# Angel One API Credentials
+# ============================================
 ANGEL_API_KEY = os.environ.get("ANGEL_API_KEY")
 ANGEL_CLIENT_ID = os.environ.get("ANGEL_CLIENT_ID")
 ANGEL_MPIN = os.environ.get("ANGEL_MPIN")
 ANGEL_TOTP_SECRET = os.environ.get("ANGEL_TOTP_SECRET")
 
-NIFTY_TOKEN = "99926000"
-NIFTY_SYMBOL = "Nifty 50"
-BANKNIFTY_TOKEN = "99926009"
-BANKNIFTY_SYMBOL = "Nifty Bank"
-VIX_TOKEN = "99926017"
-VIX_SYMBOL = "India VIX"
+# ============================================
+# NSE Indices Tokens (Official - Angel One API)
+# ============================================
+NIFTY_TOKEN = "26000"
+NIFTY_SYMBOL = "NIFTY 50"
 
+BANKNIFTY_TOKEN = "26009"
+BANKNIFTY_SYMBOL = "NIFTY BANK"
+
+VIX_TOKEN = "26017"
+VIX_SYMBOL = "INDIA VIX"
+
+# ============================================
+# Exchange & API Settings
+# ============================================
+EXCHANGE_NSE = "NSE"
+BASE_URL = "https://apiconnect.angelbroking.com"
+
+# ============================================
+# Timezone & Market Hours
+# ============================================
 IST_OFFSET = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
 
 def get_ist_now() -> datetime.datetime:
@@ -29,7 +46,9 @@ def get_market_status() -> str:
         return "OPEN"
     return "CLOSED"
 
-# लाइव प्राइसेस डिक्शनरी में BankNifty जोड़ा गया
+# ============================================
+# Live Prices Dictionary
+# ============================================
 latest_prices: dict = {
     "nifty": None,
     "banknifty": None,
@@ -39,9 +58,17 @@ latest_prices: dict = {
     "last_update": None,
 }
 
+# ============================================
+# Candle & Indicator Data Stores
+# ============================================
 candle_store: list = []
 indicator_data: dict = {"rsi": None, "ema9": None, "ema21": None, "vwap_approx": None}
+
 signal_data = {
-    "signal": "WAIT", "confidence": 0, "checklist": {},
-    "orb_high": None, "orb_low": None, "note": "Waiting for data"
+    "signal": "WAIT",
+    "confidence": 0,
+    "checklist": {},
+    "orb_high": None,
+    "orb_low": None,
+    "note": "Waiting for data"
 }
