@@ -22,6 +22,8 @@ SENSEX_SYMBOL    = "SENSEX"
 CRUDEOIL_SYMBOL  = "CRUDEOIL"
 GOLD_SYMBOL      = "GOLD"
 SILVER_SYMBOL    = "SILVER"
+USDINR_SYMBOL    = "USDINR"
+MIDCAP_SYMBOL    = "MIDCPNIFTY"
 # Global Indices
 KOSPI_SYMBOL     = "^KS11"
 DJI_SYMBOL       = "^DJI"
@@ -40,6 +42,8 @@ latest_prices: dict = {
     "crudeoil": None,
     "gold": None,
     "silver": None,
+    "usdinr": None,
+    "midcap": None,
     "kospi": None,
     "dji": None,
     "nasdaq": None,
@@ -107,8 +111,8 @@ def get_market_status() -> str:
     if time(9, 0) <= t < time(9, 15):
         return "PRE_OPEN"
     
-    # Market hours: 9:15 - 15:30
-    if time(9, 15) <= t <= time(15, 30):
+    # Market hours (Equity + Commodity): 9:15 - 23:55
+    if time(9, 15) <= t <= time(23, 55):
         return "OPEN"
     
     return "CLOSED"

@@ -46,6 +46,8 @@ def compute_real_signal(candles: list) -> dict:
         "below_vwap": current_price < vwap,
         "ema_bearish": ema9 < ema21,
         "rsi_not_oversold": rsi > 30,
+        "macd_bearish": config.indicator_data.get("macd", {}).get("macd", 0) < config.indicator_data.get("macd", {}).get("signal", 0),
+        "supertrend_sell": config.indicator_data.get("supertrend", {}).get("trend") == "SELL",
     }
     long_score = sum(checklist_long.values())
     short_score = sum(checklist_short.values())
@@ -53,11 +55,11 @@ def compute_real_signal(candles: list) -> dict:
     if long_score >= 3 and long_score > short_score:
         return {"signal": "LONG", "confidence": long_score, "checklist": checklist_long,
                 "orb_high": orb_high, "orb_low": orb_low,
-                "note": f"{long_score}/4 checks agree — ORB breakout + trend confirmed"}
+                "note": f"{long_score}/{len(checklist_long)} checks agree — ORB breakout + trend confirmed"}
     elif short_score >= 3 and short_score > long_score:
         return {"signal": "SHORT", "confidence": short_score, "checklist": checklist_short,
                 "orb_high": orb_high, "orb_low": orb_low,
-                "note": f"{short_score}/4 checks agree — ORB breakdown + trend confirmed"}
+                "note": f"{short_score}/{len(checklist_short)} checks agree — ORB breakdown + trend confirmed"}
     else:
         return {"signal": "WAIT", "confidence": max(long_score, short_score),
                 "checklist": checklist_long if long_score >= short_score else checklist_short,
@@ -77,6 +79,8 @@ def price_poller() -> None:
                 crude = angel_client.get_ltp("MCX", config.CRUDEOIL_SYMBOL)
                 gold = angel_client.get_ltp("MCX", config.GOLD_SYMBOL)
                 silver = angel_client.get_ltp("MCX", config.SILVER_SYMBOL)
+                usdinr = angel_client.get_ltp("CDS", config.USDINR_SYMBOL)
+                midcap = angel_client.get_ltp("NSE", config.MIDCAP_SYMBOL)
 
                 # Try NSE first for VIX, fallback to NFO
                 vix = angel_client.get_ltp("NSE", config.VIX_SYMBOL)
@@ -97,6 +101,8 @@ def price_poller() -> None:
                 if crude is not None: config.latest_prices["crudeoil"] = crude
                 if gold is not None: config.latest_prices["gold"] = gold
                 if silver is not None: config.latest_prices["silver"] = silver
+                if usdinr is not None: config.latest_prices["usdinr"] = usdinr
+                if midcap is not None: config.latest_prices["midcap"] = midcap
                 if vix is not None: config.latest_prices["vix"] = vix
 
                 # Global Indices (Simulated for now or fetched via API if available)

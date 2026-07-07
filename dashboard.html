@@ -609,7 +609,7 @@ body::before{content:'';position:fixed;inset:0;
       <div class="ms"><div class="ms-l">🇰🇷 KOSPI</div><div class="ms-v" id="gl-kospi">--</div></div>
       <div class="ms"><div class="ms-l">🇺🇸 NASDAQ</div><div class="ms-v" id="gl-nasdaq">--</div></div>
       <div class="ms"><div class="ms-l">🇺🇸 DOW JONES</div><div class="ms-v" id="gl-dji">--</div></div>
-      <div class="ms"><div class="ms-l">🇬🇧 FTSE</div><div class="ms-v" id="gl-ftse">--</div></div>
+      <div class="ms"><div class="ms-l">🇮🇳 USD-INR</div><div class="ms-v" id="gl-usdinr">--</div></div>
     </div>
   </div>
 
@@ -799,6 +799,7 @@ async function fetchRealData(){
       if(d.global.kospi) document.getElementById('gl-kospi').textContent = d.global.kospi.toFixed(2);
       if(d.global.nasdaq) document.getElementById('gl-nasdaq').textContent = d.global.nasdaq.toFixed(2);
       if(d.global.dji) document.getElementById('gl-dji').textContent = d.global.dji.toFixed(2);
+      if(d.usdinr) document.getElementById('gl-usdinr').textContent = '₹' + d.usdinr.toFixed(4);
     }
 
     // AI Analyst Commentary Logic

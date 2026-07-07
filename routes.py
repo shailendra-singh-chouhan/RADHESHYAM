@@ -82,6 +82,8 @@ async def api_data(db: Session = Depends(get_db)) -> JSONResponse:
         "crudeoil": config.latest_prices.get("crudeoil"),
         "gold": config.latest_prices.get("gold"),
         "silver": config.latest_prices.get("silver"),
+        "usdinr": config.latest_prices.get("usdinr"),
+        "midcap": config.latest_prices.get("midcap"),
         "vix": config.latest_prices["vix"],
         "day_open": config.latest_prices["day_open"],
         "market_status": market_status,
