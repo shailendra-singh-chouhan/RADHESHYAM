@@ -1,7 +1,8 @@
 import os
 import pytz
+import threading
 from datetime import datetime, time
-from typing import Optional
+from typing import Optional, Dict, Any, List
 
 # ────────────────────────────────────────────
 # Angel One API Credentials (from env)
@@ -31,63 +32,120 @@ NASDAQ_SYMBOL    = "^IXIC"
 FTSE_SYMBOL      = "^FTSE"
 
 # ────────────────────────────────────────────
-# Shared state (populated at runtime)
+# Thread-safe State Manager
 # ────────────────────────────────────────────
-latest_prices: dict = {
-    "nifty": None,
-    "banknifty": None,
-    "vix": None,
-    "finnifty": None,
-    "sensex": None,
-    "crudeoil": None,
-    "gold": None,
-    "silver": None,
-    "usdinr": None,
-    "midcap": None,
-    "kospi": None,
-    "dji": None,
-    "nasdaq": None,
-    "ftse": None,
-    "day_open": None,
-    "day_open_date": "",
-    "last_update": "",
-}
+class StateManager:
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._latest_prices: Dict[str, Any] = {
+            "nifty": None,
+            "banknifty": None,
+            "vix": None,
+            "finnifty": None,
+            "sensex": None,
+            "crudeoil": None,
+            "gold": None,
+            "silver": None,
+            "usdinr": None,
+            "midcap": None,
+            "kospi": None,
+            "dji": None,
+            "nasdaq": None,
+            "ftse": None,
+            "day_open": None,
+            "day_open_date": "",
+            "last_update": "",
+        }
+        self._oi_data: Dict[str, Any] = {
+            "call_oi": 0,
+            "put_oi": 0,
+            "pcr": 0.0,
+            "max_pain": None,
+        }
+        self._greeks_data: Dict[str, Any] = {
+            "iv": None,
+            "delta": None,
+            "theta": None,
+            "gamma": None,
+            "vega": None,
+        }
+        self._news_feed: List[Any] = []
+        self._market_alerts: List[Any] = []
+        self._candle_store: List[Any] = []
+        self._indicator_data: Dict[str, Any] = {
+            "rsi": None,
+            "ema9": None,
+            "ema21": None,
+            "vwap_approx": None,
+            "macd": None,
+            "supertrend": None,
+        }
+        self._signal_data: Dict[str, Any] = {
+            "signal": "WAIT",
+            "confidence": 0,
+            "checklist": {},
+            "orb_high": None,
+            "orb_low": None,
+            "note": "Initializing...",
+        }
 
-oi_data: dict = {
-    "call_oi": 0,
-    "put_oi": 0,
-    "pcr": 0.0,
-    "max_pain": None,
-}
+    def get_state(self, key: str) -> Any:
+        with self._lock:
+            return getattr(self, f"_{key}", None)
 
-greeks_data: dict = {
-    "iv": None,
-    "delta": None,
-    "theta": None,
-    "gamma": None,
-    "vega": None,
-}
+    def set_state(self, key: str, value: Any):
+        with self._lock:
+            setattr(self, f"_{key}", value)
 
-news_feed: list = []
-market_alerts: list = []
+    def update_state(self, key: str, updates: Dict[str, Any]):
+        with self._lock:
+            current_state = getattr(self, f"_{key}", {})
+            current_state.update(updates)
+            setattr(self, f"_{key}", current_state)
 
-candle_store: list = []
+    # Property accessors for convenience
+    @property
+    def latest_prices(self) -> Dict[str, Any]:
+        with self._lock:
+            return self._latest_prices.copy() # Return a copy to prevent external modification
 
-indicator_data: dict = {
-    "rsi": None,
-    "ema9": None,
-    "ema21": None,
-    "vwap_approx": None,
-}
+    @property
+    def oi_data(self) -> Dict[str, Any]:
+        with self._lock:
+            return self._oi_data.copy()
 
-signal_data: dict = {
-    "signal": "WAIT",
-    "confidence": 0,
-    "checklist": {},
-    "orb_high": None,
-    "orb_low": None,
-    "note": "Initializing...",
-}
+    @property
+    def greeks_data(self) -> Dict[str, Any]:
+        with self._lock:
+            return self._greeks_data.copy()
+
+    @property
+    def news_feed(self) -> List[Any]:
+        with self._lock:
+            return self._news_feed.copy()
+
+    @property
+    def market_alerts(self) -> List[Any]:
+        with self._lock:
+            return self._market_alerts.copy()
+
+    @property
+    def candle_store(self) -> List[Any]:
+        with self._lock:
+            return self._candle_store.copy()
+
+    @property
+    def indicator_data(self) -> Dict[str, Any]:
+        with self._lock:
+            return self._indicator_data.copy()
+
+    @property
+    def signal_data(self) -> Dict[str, Any]:
+        with self._lock:
+            return self._signal_data.copy()
+
+# Instantiate the State Manager
+state_manager = StateManager()
 
 # ────────────────────────────────────────────
 # Time helpers
