@@ -347,20 +347,12 @@ body::before{content:'';position:fixed;inset:0;
     </div>
   </div>
 
-  <div class="jadui" id="jadui-card" style="border-color:rgba(10,158,92,0.4);background:var(--green2);">
-    <div class="j-badge" id="j-badge" style="background:var(--green2);color:var(--green);border:1px solid rgba(10,158,92,0.3)">🎲 DEMO ANALYSIS</div>
-    <div class="j-title" id="j-title" style="color:var(--green)">🌟 BULLISH JADUI SPOT DETECTED!</div>
-    <div class="j-desc" id="j-desc">
-      🔨 <strong>Hammer Candle</strong> at VWAP Support + 📊 RSI 38 (Oversold Bounce) + 📈 OI Long Buildup detected.<br>
-      🧠 <strong>Smart Money</strong> accumulation zone — Institutions buying dikh raha hai.<br>
-      🎯 <strong>Confluence Score: 8/10</strong> — High probability reversal. Chhota SL, bada target!
-      <br><span style="font-size:11px;color:var(--dim)">(Yeh illustrative demo hai — neeche wala GOAT Signal card asli hai)</span>
-    </div>
-    <div class="j-levels">
-      <div class="jlev e">🟢 ENTRY: 24,380</div>
-      <div class="jlev s">🔴 SL: 24,350 (30 pts)</div>
-      <div class="jlev t">🎯 TGT1: 24,440 · TGT2: 24,490</div>
-      <div class="jlev r">⚖️ R:R = 1:2 ✅</div>
+  <div class="jadui" id="jadui-card" style="border-color:rgba(107,114,128,0.4);background:var(--panel2);">
+    <div class="j-badge" id="j-badge" style="background:var(--panel2);color:var(--dim);border:1px solid var(--border)">⏳ SCANNING</div>
+    <div class="j-title" id="j-title" style="color:var(--dim)">🔍 WAITING FOR JADUI SETUP...</div>
+    <div class="j-desc" id="j-desc">Loading live signals...</div>
+    <div class="j-levels" id="j-levels">
+      <div class="jlev t">⏳ Waiting for Trigger</div>
     </div>
   </div>
 
@@ -710,7 +702,6 @@ function setTf(el,tf){
   drawChart(); updateIndicators();
 }
 
-// ── REAL CANDLES (NIFTY only) ───────────────────────────────
 async function fetchRealCandles(){
   if(currentMarket!=='nifty') return;
   try{
@@ -730,7 +721,6 @@ async function fetchRealCandles(){
 fetchRealCandles();
 setInterval(fetchRealCandles, 60000);
 
-// ── REAL DATA (NIFTY + VIX + Stats) ─────────────────────────
 async function fetchRealData(){
   try{
     const res=await fetch('/api/data');
@@ -740,61 +730,56 @@ async function fetchRealData(){
     document.getElementById('cap-trades').textContent=d.total_trades||0;
     document.getElementById('tb-pnl').textContent='₹'+(d.session_pnl_rs||0);
     document.getElementById('cap-pnl').textContent='₹'+(d.session_pnl_rs||0);
-      document.getElementById('tb-winrate').textContent=(d.win_rate||0)+'%';
+    document.getElementById('tb-winrate').textContent=(d.win_rate||0)+'%';
       
-      // Update additional live symbols
-      if(d.banknifty) document.getElementById('bn-px').textContent = '₹' + d.banknifty.toFixed(2);
-      if(d.sensex) document.getElementById('sx-px').textContent = '₹' + d.sensex.toFixed(2);
-      if(d.crudeoil) document.getElementById('cr-px').textContent = '₹' + d.crudeoil.toFixed(2);
-      if(d.gold) document.getElementById('gd-px').textContent = '₹' + d.gold.toFixed(2);
-      if(d.silver) document.getElementById('sv-px').textContent = '₹' + d.silver.toFixed(2);
+    if(d.banknifty) document.getElementById('bn-px').textContent = '₹' + d.banknifty.toFixed(2);
+    if(d.sensex) document.getElementById('sx-px').textContent = '₹' + d.sensex.toFixed(2);
+    if(d.crudeoil) document.getElementById('cr-px').textContent = '₹' + d.crudeoil.toFixed(2);
+    if(d.gold) document.getElementById('gd-px').textContent = '₹' + d.gold.toFixed(2);
+    if(d.silver) document.getElementById('sv-px').textContent = '₹' + d.silver.toFixed(2);
 
-      // Update Live Stocks
-      if(d.stocks){
-        const stockList = document.getElementById('stock-list');
-        stockList.innerHTML = '';
-        Object.entries(d.stocks).forEach(([name, data]) => {
-          if(!data.ltp) return;
-          const row = document.createElement('div');
-          row.className = 'ind-row';
-          row.innerHTML = `<div class="iname">🏢 ${name}</div>
-                           <div class="ibar"><div class="ibfill" style="background:var(--green);width:60%"></div></div>
-                           <div class="ival" style="color:var(--green)">₹${data.ltp.toFixed(2)}</div>
-                           <div class="isig bull">📈 LIVE</div>`;
-          stockList.appendChild(row);
-        });
-      }
+    if(d.stocks){
+      const stockList = document.getElementById('stock-list');
+      stockList.innerHTML = '';
+      Object.entries(d.stocks).forEach(([name, data]) => {
+        if(!data.ltp) return;
+        const row = document.createElement('div');
+        row.className = 'ind-row';
+        row.innerHTML = `<div class="iname">🏢 ${name}</div>
+                         <div class="ibar"><div class="ibfill" style="background:var(--green);width:60%"></div></div>
+                         <div class="ival" style="color:var(--green)">₹${data.ltp.toFixed(2)}</div>
+                         <div class="isig bull">📈 LIVE</div>`;
+        stockList.appendChild(row);
+      });
+    }
 
-      // Update Greeks & OI
-      if(d.greeks){
-        if(d.greeks.iv) document.getElementById('iv-v').textContent = d.greeks.iv + '%';
-        if(d.greeks.theta) document.getElementById('tht-v').textContent = '-₹' + Math.abs(d.greeks.theta);
-        if(d.greeks.gamma) document.getElementById('gam-v').textContent = d.greeks.gamma;
-      }
-      if(d.oi_data){
-        document.getElementById('call-oi').textContent = (d.oi_data.call_oi/100000).toFixed(1) + 'L';
-        document.getElementById('put-oi').textContent = (d.oi_data.put_oi/100000).toFixed(1) + 'L';
-        const total = d.oi_data.call_oi + d.oi_data.put_oi;
-        document.getElementById('call-bar').style.width = (d.oi_data.call_oi/total*100) + '%';
-        document.getElementById('put-bar').style.width = (d.oi_data.put_oi/total*100) + '%';
-      }
+    if(d.greeks){
+      if(d.greeks.iv) document.getElementById('iv-v').textContent = d.greeks.iv + '%';
+      if(d.greeks.theta) document.getElementById('tht-v').textContent = '-₹' + Math.abs(d.greeks.theta);
+      if(d.greeks.gamma) document.getElementById('gam-v').textContent = d.greeks.gamma;
+    }
+    if(d.oi_data){
+      document.getElementById('call-oi').textContent = (d.oi_data.call_oi/100000).toFixed(1) + 'L';
+      document.getElementById('put-oi').textContent = (d.oi_data.put_oi/100000).toFixed(1) + 'L';
+      const total = d.oi_data.call_oi + d.oi_data.put_oi;
+      document.getElementById('call-bar').style.width = (d.oi_data.call_oi/total*100) + '%';
+      document.getElementById('put-bar').style.width = (d.oi_data.put_oi/total*100) + '%';
+    }
 
-      // Update Alert Feed
-      if(d.alerts && d.alerts.length > 0){
-        const alertList = document.getElementById('alert-list');
-        alertList.innerHTML = '';
-        d.alerts.forEach(a => {
-          const div = document.createElement('div');
-          div.className = 'alert-item';
-          div.innerHTML = `<div class="alert-time">${a.time}</div>
-                           <div class="alert-badge" style="background:var(--blue2);color:var(--blue)">${a.badge}</div>
-                           <div class="alert-msg">${a.msg}</div>
-                           <div class="alert-px">${a.px ? a.px.toFixed(2) : '--'}</div>`;
-          alertList.appendChild(div);
-        });
-      }
+    if(d.alerts && d.alerts.length > 0){
+      const alertList = document.getElementById('alert-list');
+      alertList.innerHTML = '';
+      d.alerts.forEach(a => {
+        const div = document.createElement('div');
+        div.className = 'alert-item';
+        div.innerHTML = `<div class="alert-time">${a.time}</div>
+                         <div class="alert-badge" style="background:var(--blue2);color:var(--blue)">${a.badge}</div>
+                         <div class="alert-msg">${a.msg}</div>
+                         <div class="alert-px">${a.px ? a.px.toFixed(2) : '--'}</div>`;
+        alertList.appendChild(div);
+      });
+    }
 
-    // Update Global Cues
     if(d.global){
       if(d.global.kospi) document.getElementById('gl-kospi').textContent = d.global.kospi.toFixed(2);
       if(d.global.nasdaq) document.getElementById('gl-nasdaq').textContent = d.global.nasdaq.toFixed(2);
@@ -802,22 +787,16 @@ async function fetchRealData(){
       if(d.usdinr) document.getElementById('gl-usdinr').textContent = '₹' + d.usdinr.toFixed(4);
     }
 
-    // AI Analyst Commentary Logic
     if(d.spot && d.vix){
       let msg = "";
       const chg = d.spot - d.day_open;
       const pct = (chg/d.day_open*100).toFixed(2);
-      
       if(pct < -0.5) {
         msg = `⚠️ <strong>Nifty is showing sharp weakness (${pct}%).</strong> Main reasons: Profit booking at upper levels and weak global cues (KOSPI/US Futures). `;
-        if(d.indicators && d.indicators.supertrend && d.indicators.supertrend.trend === 'SELL') {
-          msg += "Supertrend has triggered a SELL signal. VWAP and EMA crossovers confirm the bearish momentum.";
-        }
+        if(d.indicators && d.indicators.supertrend && d.indicators.supertrend.trend === 'SELL') msg += "Supertrend has triggered a SELL signal. VWAP and EMA crossovers confirm the bearish momentum.";
       } else if(pct > 0.5) {
         msg = `🚀 <strong>Nifty is in a strong bullish rally (+${pct}%).</strong> Buying seen in heavyweights. Global markets are supportive. `;
-        if(d.indicators && d.indicators.supertrend && d.indicators.supertrend.trend === 'BUY') {
-          msg += "Supertrend is in BUY mode. RSI is strong but watch for overbought levels (>70).";
-        }
+        if(d.indicators && d.indicators.supertrend && d.indicators.supertrend.trend === 'BUY') msg += "Supertrend is in BUY mode. RSI is strong but watch for overbought levels (>70).";
       } else {
         msg = "⚖️ <strong>Market is in a consolidation phase.</strong> No clear direction yet. Watch for 24,500 resistance or 24,200 support breakout.";
       }
@@ -838,66 +817,37 @@ async function fetchRealData(){
       document.getElementById('hero-price').textContent = d.spot ? d.spot.toFixed(2) : '--';
       document.getElementById('h-vix').textContent = d.vix ? d.vix.toFixed(2) : '--';
       document.getElementById('h-open').textContent = d.day_open ? d.day_open.toFixed(2) : '--';
-
       const chgEl=document.getElementById('hero-chg');
       const tabEl=document.getElementById('nifty-chg-tab');
       if(d.spot && d.day_open){
         const chg=d.spot-d.day_open, pct=((chg/d.day_open)*100).toFixed(2);
-        if(chg>=0){
-          chgEl.style.color='#4ade80';
-          chgEl.innerHTML='▲ +'+chg.toFixed(2)+' ('+pct+'%)';
-          tabEl.textContent='+'+pct+'%'; tabEl.style.color='#4ade80';
-        } else {
-          chgEl.style.color='#f87171';
-          chgEl.innerHTML='▼ '+chg.toFixed(2)+' ('+pct+'%)';
-          tabEl.textContent=pct+'%'; tabEl.style.color='#f87171';
-        }
-      } else {
-        chgEl.textContent = d.market_status==='CLOSED' ? 'Market Closed' : 'Waiting for live price...';
-      }
+        if(chg>=0){ chgEl.style.color='#4ade80'; chgEl.innerHTML='▲ +'+chg.toFixed(2)+' ('+pct+'%)'; tabEl.textContent='+'+pct+'%'; tabEl.style.color='#4ade80'; }
+        else { chgEl.style.color='#f87171'; chgEl.innerHTML='▼ '+chg.toFixed(2)+' ('+pct+'%)'; tabEl.textContent=pct+'%'; tabEl.style.color='#f87171'; }
+      } else { chgEl.textContent = d.market_status==='CLOSED' ? 'Market Closed' : 'Waiting for live price...'; }
     }
 
-    // Real technical indicators (RSI, EMA9, EMA21, VWAP-approx)
     if(d.indicators){
       const ind=d.indicators;
       if(ind.rsi!==null && ind.rsi!==undefined){
         const rc = ind.rsi<30?'var(--green)':ind.rsi>70?'var(--red)':'var(--blue)';
         const rs = ind.rsi<30?'🟢 OVERSOLD':ind.rsi>70?'🔴 OVERBOUGHT':'⚡ NEUTRAL';
-        document.getElementById('rsi-val').textContent=ind.rsi;
-        document.getElementById('rsi-val').style.color=rc;
+        document.getElementById('rsi-val').textContent=ind.rsi; document.getElementById('rsi-val').style.color=rc;
         document.getElementById('rsi-bar').style.cssText=`background:${rc};width:${ind.rsi}%`;
-        document.getElementById('rsi-sig').textContent=rs;
-        document.getElementById('rsi-sig').className='isig '+(ind.rsi<30?'bull':ind.rsi>70?'bear':'neu');
-      } else {
-        document.getElementById('rsi-val').textContent='Waiting...';
-        document.getElementById('rsi-sig').textContent='--';
+        document.getElementById('rsi-sig').textContent=rs; document.getElementById('rsi-sig').className='isig '+(ind.rsi<30?'bull':ind.rsi>70?'bear':'neu');
       }
       if(ind.ema9!==null && ind.ema9!==undefined && ind.ema21!==null){
-        const bullish = ind.ema9 >= ind.ema21;
-        const ec = bullish?'var(--green)':'var(--red)';
+        const bullish = ind.ema9 >= ind.ema21; const ec = bullish?'var(--green)':'var(--red)';
         document.getElementById('ema9-val').textContent=ind.ema9; document.getElementById('ema9-val').style.color=ec;
         document.getElementById('ema21-val').textContent=ind.ema21; document.getElementById('ema21-val').style.color=ec;
-        document.getElementById('ema9-sig').textContent=bullish?'📈 BULL':'📉 BEAR';
-        document.getElementById('ema9-sig').className='isig '+(bullish?'bull':'bear');
-        document.getElementById('ema21-sig').textContent=bullish?'📈 BULL':'📉 BEAR';
-        document.getElementById('ema21-sig').className='isig '+(bullish?'bull':'bear');
-      } else {
-        document.getElementById('ema9-val').textContent='Waiting...';
-        document.getElementById('ema21-val').textContent='Waiting...';
+        document.getElementById('ema9-sig').textContent=bullish?'📈 BULL':'📉 BEAR'; document.getElementById('ema9-sig').className='isig '+(bullish?'bull':'bear');
+        document.getElementById('ema21-sig').textContent=bullish?'📈 BULL':'📉 BEAR'; document.getElementById('ema21-sig').className='isig '+(bullish?'bull':'bear');
       }
       if(ind.vwap_approx!==null && ind.vwap_approx!==undefined){
         document.getElementById('vwap-val').textContent=ind.vwap_approx;
-        if(d.spot){
-          const above = d.spot >= ind.vwap_approx;
-          document.getElementById('vwap-sig').textContent = above?'🔵 ABOVE':'🔴 BELOW';
-          document.getElementById('vwap-sig').className='isig '+(above?'bull':'bear');
-        }
-      } else {
-        document.getElementById('vwap-val').textContent='Waiting...';
+        if(d.spot){ const above = d.spot >= ind.vwap_approx; document.getElementById('vwap-sig').textContent = above?'🔵 ABOVE':'🔴 BELOW'; document.getElementById('vwap-sig').className='isig '+(above?'bull':'bear'); }
       }
     }
 
-    // Real GOAT Signal (ORB+VWAP+EMA+RSI strategy)
     if(d.real_signal){
       const rs=d.real_signal;
       const sigEl=document.getElementById('rs-signal');
@@ -907,19 +857,55 @@ async function fetchRealData(){
       document.getElementById('rs-orb-high').textContent = rs.orb_high!==null && rs.orb_high!==undefined ? rs.orb_high : '--';
       document.getElementById('rs-orb-low').textContent = rs.orb_low!==null && rs.orb_low!==undefined ? rs.orb_low : '--';
       document.getElementById('rs-confidence').textContent = rs.confidence!==undefined ? rs.confidence : '--';
-      const listEl=document.getElementById('rs-checklist');
-      listEl.innerHTML='';
-      if(rs.checklist){
-        Object.entries(rs.checklist).forEach(([key,val])=>{
-          const row=document.createElement('div');
-          row.style.cssText='display:flex;justify-content:space-between;padding:3px 8px;border-radius:4px;background:'+(val?'var(--green2)':'var(--red2)');
-          row.innerHTML=`<span>${key.replace(/_/g,' ')}</span><span style="color:${val?'var(--green)':'var(--red)'}">${val?'✅':'❌'}</span>`;
-          listEl.appendChild(row);
-        });
+      const listEl=document.getElementById('rs-checklist'); listEl.innerHTML='';
+      if(rs.checklist){ Object.entries(rs.checklist).forEach(([key,val])=>{ const row=document.createElement('div'); row.style.cssText='display:flex;justify-content:space-between;padding:3px 8px;border-radius:4px;background:'+(val?'var(--green2)':'var(--red2)'); row.innerHTML=`<span>${key.replace(/_/g,' ')}</span><span style="color:${val?'var(--green)':'var(--red)'}">${val?'✅':'❌'}</span>`; listEl.appendChild(row); }); }
+      
+      // --- LIVE JADUI BOX LOGIC ---
+      const card=document.getElementById('jadui-card');
+      const badge=document.getElementById('j-badge');
+      const title=document.getElementById('j-title');
+      const desc=document.getElementById('j-desc');
+      const levels=document.getElementById('j-levels');
+      
+      if(rs.signal==='WAIT'){
+        card.style.borderColor='rgba(107,114,128,0.4)'; card.style.background='var(--panel2)';
+        badge.style.background='var(--panel2)'; badge.style.color='var(--dim)'; badge.style.borderColor='var(--border)'; badge.innerHTML='⏳ SCANNING';
+        title.style.color='var(--dim)'; title.innerHTML='🔍 WAITING FOR JADUI SETUP...';
+        desc.innerHTML='Market abhi clear direction nahi de raha. Jab 4+ checks align honge, tab yeh box green/red glow karega aur exact Entry/SL/Target dega.';
+        levels.innerHTML='<div class="jlev t">⏳ Waiting for Trigger</div>';
+      } else if(rs.signal==='LONG'){
+        card.style.borderColor='rgba(10,158,92,0.6)'; card.style.background='var(--green2)';
+        badge.style.background='var(--green2)'; badge.style.color='var(--green)'; badge.style.borderColor='rgba(10,158,92,0.3)'; badge.innerHTML='🟢 LIVE SIGNAL';
+        title.style.color='var(--green)'; title.innerHTML='🌟 BULLISH JADUI SPOT DETECTED!';
+        let dsc='';
+        if(rs.checklist.orb_breakout) dsc+='🔨 <strong>ORB Breakout</strong> — Price broke above opening range.<br>';
+        if(rs.checklist.above_vwap) dsc+='📍 <strong>Above VWAP</strong> — Strong buyers holding price.<br>';
+        if(rs.checklist.ema_bullish) dsc+='📈 <strong>EMA Bullish</strong> — Fast EMA above Slow EMA.<br>';
+        if(rs.checklist.rsi_not_overbought) dsc+='📊 <strong>RSI Valid</strong> — Room for upside.<br>';
+        if(rs.checklist.macd_bullish) dsc+='🌊 <strong>MACD Bullish</strong> — Positive momentum.<br>';
+        if(rs.checklist.supertrend_buy) dsc+='🚀 <strong>Supertrend Buy</strong> — Trend flipped bullish.<br>';
+        dsc+=`<br>🧠 <strong>Confluence: ${rs.confidence}/6</strong>`;
+        desc.innerHTML=dsc;
+        const e=d.spot?d.spot.toFixed(1):'--', t1=d.spot?(d.spot+50).toFixed(1):'--', t2=d.spot?(d.spot+80).toFixed(1):'--', s=d.spot?(d.spot-25).toFixed(1):'--';
+        levels.innerHTML=`<div class="jlev e">🟢 ENTRY: ${e}</div><div class="jlev s">🔴 SL: ${s} (25 pts)</div><div class="jlev t">🎯 TGT1: ${t1} · TGT2: ${t2}</div><div class="jlev r">⚖️ R:R = 1:2 ✅</div>`;
+      } else if(rs.signal==='SHORT'){
+        card.style.borderColor='rgba(224,45,60,0.6)'; card.style.background='var(--red2)';
+        badge.style.background='var(--red2)'; badge.style.color='var(--red)'; badge.style.borderColor='rgba(224,45,60,0.3)'; badge.innerHTML='🔴 LIVE SIGNAL';
+        title.style.color='var(--red)'; title.innerHTML='📉 BEARISH JADUI SPOT DETECTED!';
+        let dsc='';
+        if(rs.checklist.orb_breakdown) dsc+='🔨 <strong>ORB Breakdown</strong> — Price broke below opening range.<br>';
+        if(rs.checklist.below_vwap) dsc+='📍 <strong>Below VWAP</strong> — Sellers dominating.<br>';
+        if(rs.checklist.ema_bearish) dsc+='📉 <strong>EMA Bearish</strong> — Death cross confirmed.<br>';
+        if(rs.checklist.rsi_not_oversold) dsc+='📊 <strong>RSI Valid</strong> — Room to fall.<br>';
+        if(rs.checklist.macd_bearish) dsc+='🌊 <strong>MACD Bearish</strong> — Negative momentum.<br>';
+        if(rs.checklist.supertrend_sell) dsc+='💥 <strong>Supertrend Sell</strong> — Trend flipped bearish.<br>';
+        dsc+=`<br>🧠 <strong>Confluence: ${rs.confidence}/6</strong>`;
+        desc.innerHTML=dsc;
+        const e=d.spot?d.spot.toFixed(1):'--', t1=d.spot?(d.spot-50).toFixed(1):'--', t2=d.spot?(d.spot-80).toFixed(1):'--', s=d.spot?(d.spot+25).toFixed(1):'--';
+        levels.innerHTML=`<div class="jlev e">🔴 SHORT ENTRY: ${e}</div><div class="jlev s">🛑 SL: ${s} (25 pts)</div><div class="jlev t">🎯 TGT1: ${t1} · TGT2: ${t2}</div><div class="jlev r">⚖️ R:R = 1:2 ✅</div>`;
       }
     }
 
-    // Real paper trade panel
     const statusEl=document.getElementById('trade-status');
     const box=document.getElementById('active-trade-box');
     const execBtn=document.getElementById('execute-btn');
@@ -932,142 +918,40 @@ async function fetchRealData(){
       document.getElementById('at-entry').textContent=d.active_trade.entry;
       document.getElementById('at-target').textContent=d.active_trade.target;
       document.getElementById('at-sl').textContent=d.active_trade.sl;
-      const pnl=d.active_trade.live_pnl;
       const pnlEl=document.getElementById('at-pnl');
-      pnlEl.textContent = pnl!==null ? (pnl>=0?'+₹'+pnl:'₹'+pnl) : '--';
-      pnlEl.style.color = pnl>=0 ? 'var(--green)' : 'var(--red)';
-      statusEl.textContent = 'Trade active — live NIFTY price ke saath track ho raha hai';
+      pnlEl.textContent='₹'+(d.active_trade.live_pnl!=null?d.active_trade.live_pnl.toFixed(2):'0.00');
+      pnlEl.style.color=d.active_trade.live_pnl>=0?'var(--green)':'var(--red)';
+      statusEl.innerHTML='Trade is <strong style="color:var(--green)">ACTIVE</strong>';
     } else {
       box.style.display='none';
       execBtn.style.display='block';
       closeBtn.style.display='none';
-      statusEl.textContent = d.market_status==='OPEN' ? 'Ready — koi trade active nahi hai' : 'Market band hai — trade sirf 9:15–3:30 (Mon-Fri) mein execute hoga';
+      statusEl.innerHTML='No active trade';
     }
+
   } catch(e){ console.error(e); }
 }
-fetchRealData();
-setInterval(fetchRealData, 6000);
 
 async function executeTrade(){
   try{
     const res=await fetch('/api/execute_trade',{method:'POST'});
     const d=await res.json();
-    if(!d.success) alert('⚠️ '+d.message);
+    alert(d.message);
     fetchRealData();
-  }catch(e){ alert('Error: could not execute trade'); }
+  }catch(e){ alert('Error: '+e); }
 }
 
 async function closeTrade(){
   try{
     const res=await fetch('/api/close_trade',{method:'POST'});
     const d=await res.json();
-    if(!d.success) alert('⚠️ '+d.message);
+    alert(d.message);
     fetchRealData();
-  }catch(e){ alert('Error: could not close trade'); }
+  }catch(e){ alert('Error: '+e); }
 }
 
-// ── DEMO GREEKS/OI/MINIS TICKS (unchanged — illustrative only) ──
-function tickGreeks(){
-  document.getElementById('iv-v').textContent=(13.5+Math.random()*2).toFixed(1)+'%';
-  document.getElementById('gam-v').textContent=(0.004+Math.random()*0.002).toFixed(4);
-  document.getElementById('tht-v').textContent='-₹'+(10+Math.random()*5).toFixed(1);
-}
-setInterval(tickGreeks,4000);
-
-function tickOI(){
-  const ce=(44+Math.random()*10).toFixed(1);
-  const pe=(52+Math.random()*15).toFixed(1);
-  document.getElementById('call-oi').textContent=ce+'L';
-  document.getElementById('put-oi').textContent=pe+'L';
-  document.getElementById('call-bar').style.width=Math.min(85,parseFloat(ce)/1.2)+'%';
-  document.getElementById('put-bar').style.width=Math.min(85,parseFloat(pe)/1.2)+'%';
-}
-setInterval(tickOI,5000);
-
-function tickMinis(){
-  const bnBase=51240+(Math.random()-0.52)*30;
-  document.getElementById('bn-px').textContent='₹'+bnBase.toFixed(0)+' ▼';
-  const sxBase=80140+(Math.random()-0.47)*20;
-  document.getElementById('sx-px').textContent='₹'+sxBase.toFixed(0)+' ▲';
-  const crBase=6842+(Math.random()-0.47)*15;
-  document.getElementById('cr-px').textContent='₹'+crBase.toFixed(0)+' ▲';
-  const gdBase=71240+(Math.random()-0.52)*20;
-  document.getElementById('gd-px').textContent='₹'+gdBase.toFixed(0)+' ▼';
-  const svBase=84120+(Math.random()-0.47)*25;
-  document.getElementById('sv-px').textContent='₹'+svBase.toFixed(0)+' ▲';
-  document.getElementById('hdfc-v').textContent='₹'+(1842+(Math.random()-0.5)*8).toFixed(0);
-  document.getElementById('sbi-v').textContent='₹'+(824+(Math.random()-0.5)*4).toFixed(0);
-}
-setInterval(tickMinis,3000);
-
-const SETUPS=[
-  {rsi:38.4,rc:'var(--green)',rs:'🟢 OVERSOLD',vwap:24362,ema9:24371,ema21:24344,ec:'var(--green)',es:'📈 BULL',st:24290,sc:'var(--green)',ss:'✅ BUY'},
-  {rsi:68.2,rc:'var(--red)',rs:'🔴 OVERBOUGHT',vwap:24480,ema9:24460,ema21:24490,ec:'var(--red)',es:'📉 BEAR',st:24510,sc:'var(--red)',ss:'🔴 SELL'},
-];
-let si=0;
-function updateIndicators(){
-  const s=SETUPS[si]; si=(si+1)%SETUPS.length;
-  // NOTE: RSI, VWAP, EMA9, EMA21 are now real (updated separately via fetchRealData).
-  // Only Supertrend remains demo/illustrative here.
-  document.getElementById('st-val').textContent=s.st; document.getElementById('st-val').style.color=s.sc;
-  addAlert();
-}
-
-const alertMsgs=[
-  {b:'🎲 DEMO',cls:'neu',m:'Yeh illustrative signal hai — asli strategy engine agla step hai'},
-];
-function addAlert(){
-  const now=new Date();
-  const t=`${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
-  const a=alertMsgs[0];
-  const list=document.getElementById('alert-list');
-  const item=document.createElement('div'); item.className='alert-item';
-  item.innerHTML=`<div class="alert-time">${t}</div><div class="alert-badge ${a.cls}" style="background:var(--blue2);color:var(--blue)">${a.b}</div><div class="alert-msg">${a.m}</div>`;
-  list.insertBefore(item,list.firstChild);
-  if(list.children.length>5)list.removeChild(list.lastChild);
-}
-
-const markets={
-  banknifty:{label:'🏦 BANKNIFTY · INDEX 🎲',price:51240,open:51100,pcr:'0.88 🎲'},
-  sensex:{label:'📊 SENSEX · BSE INDEX 🎲',price:80140,open:79880,pcr:'1.12 🎲'},
-  crude:{label:'🛢️ CRUDE OIL · MCX 🎲',price:6842,open:6760,pcr:'N/A'},
-  gold:{label:'🥇 MCX GOLD 🎲',price:71240,open:71380,pcr:'N/A'},
-  silver:{label:'🥈 MCX SILVER 🎲',price:84120,open:83800,pcr:'N/A'},
-  stocks:{label:'🏢 BANK STOCKS 🎲',price:1842,open:1830,pcr:'1.05 🎲'},
-};
-
-function switchMarket(el,key){
-  document.querySelectorAll('.mktab').forEach(t=>t.classList.remove('on'));
-  el.classList.add('on');
-  currentMarket=key;
-  if(key==='nifty'){
-    document.getElementById('hero-label').innerHTML='🔵 NIFTY 50 · INDEX <span class="live-tag" style="background:rgba(255,255,255,0.2);color:#fff;border-color:transparent">LIVE</span>';
-    fetchRealData();
-    fetchRealCandles();
-  } else {
-    const m=markets[key];
-    document.getElementById('hero-label').textContent=m.label;
-    document.getElementById('hero-price').textContent=m.price.toLocaleString('en-IN');
-    document.getElementById('hero-chg').textContent='Demo data — illustrative only';
-    document.getElementById('h-vix').textContent='--';
-    document.getElementById('h-open').textContent=m.open.toLocaleString('en-IN');
-    document.getElementById('chart-tag').textContent='Demo';
-    document.getElementById('chart-tag').style.background='var(--gold)';
-    candles=genCandles(60, (markets[key]?markets[key].price:24300)*0.995);
-    drawChart();
-  }
-  updateIndicators();
-}
-
-function refreshAll(){
-  candles=genCandles(currentTf==='1m'?60:currentTf==='5m'?40:20,24250+Math.random()*100);
-  drawChart(); updateIndicators(); tickGreeks(); tickOI(); tickMinis();
-}
-
-candles=genCandles(60,24250); drawChart(); updateIndicators();
-setInterval(drawChart,5000);
-setInterval(updateIndicators,25000);
-window.addEventListener('resize',drawChart);
+fetchRealData();
+setInterval(fetchRealData, 3000);
 </script>
 </body>
 </html>
