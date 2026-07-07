@@ -6,9 +6,8 @@ from logzero import logger
 import config
 import angel_client
 import indicators
-import auto_execute  # Auto-execution integration
+import auto_execute
 
-# Thread safety for shared variables
 candle_lock = threading.Lock()
 
 def compute_orb_range(candles: list) -> tuple[Optional[float], Optional[float]]:
@@ -70,23 +69,29 @@ def price_poller() -> None:
     while True:
         try:
             if config.get_market_status() in ("OPEN", "PRE_OPEN"):
-                nifty = angel_client.get_ltp("NSE", config.NIFTY_SYMBOL, config.NIFTY_TOKEN)
-                banknifty = angel_client.get_ltp("NSE", config.BANKNIFTY_SYMBOL, config.BANKNIFTY_TOKEN)
-                vix = angel_client.get_ltp("NSE", config.VIX_SYMBOL, config.VIX_TOKEN)
+                # Dynamic token resolution - no hardcoded tokens needed
+                nifty = angel_client.get_ltp("NSE", config.NIFTY_SYMBOL)
+                banknifty = angel_client.get_ltp("NSE", config.BANKNIFTY_SYMBOL)
+
+                # Try NSE first for VIX, fallback to NFO
+                vix = angel_client.get_ltp("NSE", config.VIX_SYMBOL)
+                if vix is None:
+                    vix = angel_client.get_ltp("NFO", config.VIX_SYMBOL)
+
                 today = config.get_ist_now().date().isoformat()
-                
+
                 if nifty is not None:
                     config.latest_prices["nifty"] = nifty
                     if config.latest_prices["day_open_date"] != today:
                         config.latest_prices["day_open"] = nifty
                         config.latest_prices["day_open_date"] = today
-                
+
                 if banknifty is not None:
                     config.latest_prices["banknifty"] = banknifty
-                    
+
                 if vix is not None:
                     config.latest_prices["vix"] = vix
-                
+
                 config.latest_prices["last_update"] = config.get_ist_now().isoformat()
         except Exception as e:
             logger.error(f"price_poller error: {e}")
@@ -102,19 +107,16 @@ def indicator_poller() -> None:
                     with candle_lock:
                         config.candle_store.clear()
                         config.candle_store.extend(candles)
-                    
+
                     closes = [c["close"] for c in candles]
                     config.indicator_data["rsi"] = indicators.calculate_rsi(closes)
                     config.indicator_data["ema9"] = indicators.calculate_ema(closes, 9)
                     config.indicator_data["ema21"] = indicators.calculate_ema(closes, 21)
                     config.indicator_data["vwap_approx"] = indicators.calculate_vwap_approx(candles)
-                    
-                    # Update signal
+
                     config.signal_data.update(compute_real_signal(candles))
-                    
-                    # Call Auto-Execute
                     auto_execute.process_and_auto_execute()
-                    
+
         except Exception as e:
             logger.error(f"indicator_poller error: {e}")
         time.sleep(300)
