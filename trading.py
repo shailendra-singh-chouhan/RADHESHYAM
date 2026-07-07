@@ -23,10 +23,10 @@ def calculate_atr(candles: list, period: int = 14) -> float:
         
     tr_list = []
     for i in range(1, len(candles)):
-        h = candles[i].get('high', 0)
-        l = candles[i].get('low', 0)
-        c = candles[i].get('close', 0)
-        pc = candles[i-1].get('close', 0)
+        h = candles[i].get("high", 0)
+        l = candles[i].get("low", 0)
+        c = candles[i].get("close", 0)
+        pc = candles[i-1].get("close", 0)
         
         # True Range = max(High-Low, abs(High-Prev Close), abs(Low-Prev Close))
         tr = max(h - l, abs(h - pc), abs(l - pc))
@@ -76,7 +76,7 @@ def execute_trade(signal: str, spot_price: float) -> dict:
     if not contract: return None
     
     # Calculate dynamic SL/Target based on current ATR
-    candles = getattr(config, 'candle_store', [])
+    candles = config.state_manager.candle_store # Use state manager
     atr = calculate_atr(candles)
     
     sl_points = round(atr * 1.5, 2) # SL = 1.5x ATR
@@ -121,14 +121,14 @@ def get_institutional_stats(db) -> dict:
 def open_paper_trade(db, signal: str = None, spot: float = None) -> tuple[bool, str]:
     try:
         if db is None: return False, "Database not connected"
-        if signal is None: signal = config.signal_data.get("signal")
-        if spot is None: spot = config.latest_prices.get("nifty")
+        if signal is None: signal = config.state_manager.signal_data.get("signal") # Use state manager
+        if spot is None: spot = config.state_manager.latest_prices.get("nifty") # Use state manager
         if signal not in ["LONG", "SHORT"] or spot is None: return False, "Invalid signal or no spot price"
         already_open = db.query(Trade).filter(Trade.status == "ACTIVE").first()
         if already_open: return False, "Already have an open trade"
         
         # --- DYNAMIC SL & TARGET LOGIC ---
-        candles = getattr(config, 'candle_store', [])
+        candles = config.state_manager.candle_store # Use state manager
         atr = calculate_atr(candles)
         
         sl_points = round(atr * 1.5, 2) 
@@ -159,7 +159,7 @@ def close_paper_trade(db, reason: str = "Manual Close", pnl: float = None) -> tu
         if db is None: return False, "Database not connected"
         open_trade = db.query(Trade).filter(Trade.status == "ACTIVE").first()
         if not open_trade: return False, "No open trade to close"
-        spot = config.latest_prices.get("nifty", open_trade.entry)
+        spot = config.state_manager.latest_prices.get("nifty", open_trade.entry) # Use state manager
         if pnl is None:
             pnl = (spot - open_trade.entry) if open_trade.direction == "LONG" else (open_trade.entry - spot)
         open_trade.status = "CLOSED"
@@ -183,12 +183,12 @@ def process_auto_signal(db) -> dict:
         if not risk_ok:
             return {"action": "stopped", "reason": risk_msg}
 
-        signal_data = config.signal_data
+        signal_data = config.state_manager.signal_data # Use state manager
         if not signal_data or signal_data.get("signal") == "WAIT": return {"action": "waiting", "reason": "No clear signal"}
         current_signal = signal_data.get("signal")
         confidence = signal_data.get("confidence", 0)
         if confidence < 4: return {"action": "waiting", "reason": f"Low confidence ({confidence})"}
-        spot = config.latest_prices.get("nifty")
+        spot = config.state_manager.latest_prices.get("nifty") # Use state manager
         if not spot: return {"action": "waiting", "reason": "No spot price"}
         
         active_trade = db.query(Trade).filter(Trade.status == "ACTIVE").first()
