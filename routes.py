@@ -47,6 +47,9 @@ async def api_data(db: Session = Depends(get_db)) -> JSONResponse:
     market_status = config.get_market_status()
     risk_ok, risk_message = trading.check_risk_limits(db) if db else (True, "Risk OK (no DB)")
     stats = trading.get_institutional_stats(db)
+    
+    # PRO Auto-Trade Logic यहाँ चलेगा हर बार
+    auto_status = trading.process_auto_signal(db) if db else {"action": "skipped", "reason": "No DB"}
 
     current_active = None
     session_pnl = 0.0
@@ -89,6 +92,7 @@ async def api_data(db: Session = Depends(get_db)) -> JSONResponse:
         "market_status": market_status,
         "risk_ok": risk_ok,
         "risk_message": risk_message,
+        "auto_trade": auto_status,
         "session_pnl_rs": session_pnl,
         "win_rate": stats["win_rate"],
         "total_trades": stats["total_trades"],
