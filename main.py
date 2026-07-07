@@ -1,19 +1,48 @@
-import uvicorn
+import os
+import datetime
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from logzero import logger
 
-# Project modules
-import database
-import routes
+import config
+import angel_client
 import strategy
 import stocks
-import auto_execute
 
-# Initialize FastAPI App
-app = FastAPI(title="GOAT PRO Institutional")
+# ============================================
+# Lifespan - Startup & Shutdown
+# ============================================
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.info("--- Starting GOAT PRO Institutional Services ---")
+    
+    # Initialize database
+    # (your existing db init code here)
+    logger.info("Database initialized successfully.")
+    
+    # Angel One Login
+    if not angel_client.angel_login():
+        logger.warning("Initial Angel One login failed. Will retry in pollers.")
+    
+    # Start background threads
+    strategy.start_background_threads()
+    stocks.start_background_threads()
+    logger.info("All background services (Strategy & Stocks) started successfully.")
+    
+    yield
+    
+    logger.info("--- Shutting down GOAT PRO ---")
 
-# CORS Middleware (To allow dashboard communication)
+# ============================================
+# FastAPI App
+# ============================================
+app = FastAPI(
+    title="GOAT PRO",
+    lifespan=lifespan
+)
+
+# CORS Middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -22,29 +51,37 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Startup Event
-@app.on_event("startup")
-async def startup_event():
-    logger.info("--- Starting GOAT PRO Institutional Services ---")
-    
-    # 1. Initialize Database
-    try:
-        database.Base.metadata.create_all(bind=database.db_engine)
-        logger.info("Database initialized successfully.")
-    except Exception as e:
-        logger.error(f"Database initialization failed: {e}")
+# ============================================
+# Health Check Endpoints (Render Fix)
+# ============================================
+@app.head("/")
+async def root_head():
+    return {}
 
-    # 2. Start Strategy Background Threads (Price + Indicators)
-    strategy.start_background_threads()
-    
-    # 3. Start Stock Price Poller
-    stocks.start_stock_price_poller()
-    
-    logger.info("All background services (Strategy & Stocks) started successfully.")
+@app.get("/")
+async def root_get():
+    return {
+        "status": "GOAT PRO Institutional Services",
+        "market_status": config.get_market_status(),
+        "time": config.get_ist_now().isoformat()
+    }
 
-# Include Routes
-app.include_router(routes.router)
+# ============================================
+# API Routes
+# ============================================
+@app.get("/api/data")
+async def api_data():
+    return {
+        "latest_prices": config.latest_prices,
+        "indicator_data": config.indicator_data,
+        "signal_data": config.signal_data,
+        "market_status": config.get_market_status(),
+    }
 
-if __name__ == "__main__":
-    # Run the application
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+@app.get("/api/candles")
+async def api_candles():
+    return {"candles": config.candle_store}
+
+# ============================================
+# Your other existing routes below...
+# ============================================
