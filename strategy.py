@@ -8,8 +8,6 @@ import angel_client
 import indicators
 import auto_execute
 
-candle_lock = threading.Lock()
-
 def compute_orb_range(candles: list) -> tuple[Optional[float], Optional[float]]:
     """Opening Range = high/low of candles between 9:15 and 9:30 AM."""
     orb_candles = [c for c in candles if "09:15" <= c["time"][11:16] <= "09:30"]
@@ -31,6 +29,8 @@ def compute_real_signal(candles: list) -> dict:
     rsi = indicators.calculate_rsi(closes)
     vwap = indicators.calculate_vwap_approx(candles)
 
+    indicator_data = config.state_manager.indicator_data
+
     if orb_high is None or ema9 is None or ema21 is None or rsi is None or vwap is None:
         return {"signal": "WAIT", "confidence": 0, "checklist": {},
                 "orb_high": orb_high, "orb_low": orb_low, "note": "Waiting for opening range (9:15-9:30)"}
@@ -46,8 +46,8 @@ def compute_real_signal(candles: list) -> dict:
         "below_vwap": current_price < vwap,
         "ema_bearish": ema9 < ema21,
         "rsi_not_oversold": rsi > 30,
-        "macd_bearish": config.indicator_data.get("macd", {}).get("macd", 0) < config.indicator_data.get("macd", {}).get("signal", 0),
-        "supertrend_sell": config.indicator_data.get("supertrend", {}).get("trend") == "SELL",
+        "macd_bearish": indicator_data.get("macd", {}).get("macd", 0) < indicator_data.get("macd", {}).get("signal", 0),
+        "supertrend_sell": indicator_data.get("supertrend", {}).get("trend") == "SELL",
     }
     long_score = sum(checklist_long.values())
     short_score = sum(checklist_short.values())
@@ -88,29 +88,32 @@ def price_poller() -> None:
                     vix = angel_client.get_ltp("NFO", config.VIX_SYMBOL)
 
                 today = config.get_ist_now().date().isoformat()
-
+                
+                updates = {}
                 if nifty is not None:
-                    config.latest_prices["nifty"] = nifty
-                    if config.latest_prices["day_open_date"] != today:
-                        config.latest_prices["day_open"] = nifty
-                        config.latest_prices["day_open_date"] = today
+                    updates["nifty"] = nifty
+                    latest_prices = config.state_manager.latest_prices
+                    if latest_prices["day_open_date"] != today:
+                        updates["day_open"] = nifty
+                        updates["day_open_date"] = today
 
-                if banknifty is not None: config.latest_prices["banknifty"] = banknifty
-                if finnifty is not None: config.latest_prices["finnifty"] = finnifty
-                if sensex is not None: config.latest_prices["sensex"] = sensex
-                if crude is not None: config.latest_prices["crudeoil"] = crude
-                if gold is not None: config.latest_prices["gold"] = gold
-                if silver is not None: config.latest_prices["silver"] = silver
-                if usdinr is not None: config.latest_prices["usdinr"] = usdinr
-                if midcap is not None: config.latest_prices["midcap"] = midcap
-                if vix is not None: config.latest_prices["vix"] = vix
+                if banknifty is not None: updates["banknifty"] = banknifty
+                if finnifty is not None: updates["finnifty"] = finnifty
+                if sensex is not None: updates["sensex"] = sensex
+                if crude is not None: updates["crudeoil"] = crude
+                if gold is not None: updates["gold"] = gold
+                if silver is not None: updates["silver"] = silver
+                if usdinr is not None: updates["usdinr"] = usdinr
+                if midcap is not None: updates["midcap"] = midcap
+                if vix is not None: updates["vix"] = vix
 
                 # Global Indices (Simulated for now or fetched via API if available)
-                config.latest_prices["kospi"] = 2520.5 - (int(time.time()) % 100) * 0.1
-                config.latest_prices["nasdaq"] = 18200.0 + (int(time.time()) % 50)
-                config.latest_prices["dji"] = 42100.0 - (int(time.time()) % 30)
+                updates["kospi"] = 2520.5 - (int(time.time()) % 100) * 0.1
+                updates["nasdaq"] = 18200.0 + (int(time.time()) % 50)
+                updates["dji"] = 42100.0 - (int(time.time()) % 30)
+                updates["last_update"] = config.get_ist_now().isoformat()
 
-                config.latest_prices["last_update"] = config.get_ist_now().isoformat()
+                config.state_manager.update_state("latest_prices", updates)
         except Exception as e:
             logger.error(f"price_poller error: {e}")
         time.sleep(15)
@@ -122,19 +125,22 @@ def indicator_poller() -> None:
             if config.get_market_status() == "OPEN":
                 candles = angel_client.fetch_todays_candles()
                 if candles and len(candles) >= 15:
-                    with candle_lock:
-                        config.candle_store.clear()
-                        config.candle_store.extend(candles)
+                    config.state_manager.set_state("candle_store", candles)
 
                     closes = [c["close"] for c in candles]
-                    config.indicator_data["rsi"] = indicators.calculate_rsi(closes)
-                    config.indicator_data["ema9"] = indicators.calculate_ema(closes, 9)
-                    config.indicator_data["ema21"] = indicators.calculate_ema(closes, 21)
-                    config.indicator_data["vwap_approx"] = indicators.calculate_vwap_approx(candles)
-                    config.indicator_data["macd"] = indicators.calculate_macd(closes)
-                    config.indicator_data["supertrend"] = indicators.calculate_supertrend(candles)
+                    indicator_updates = {
+                        "rsi": indicators.calculate_rsi(closes),
+                        "ema9": indicators.calculate_ema(closes, 9),
+                        "ema21": indicators.calculate_ema(closes, 21),
+                        "vwap_approx": indicators.calculate_vwap_approx(candles),
+                        "macd": indicators.calculate_macd(closes),
+                        "supertrend": indicators.calculate_supertrend(candles)
+                    }
+                    config.state_manager.update_state("indicator_data", indicator_updates)
 
-                    config.signal_data.update(compute_real_signal(candles))
+                    signal_update = compute_real_signal(candles)
+                    config.state_manager.update_state("signal_data", signal_update)
+                    
                     auto_execute.process_and_auto_execute()
 
         except Exception as e:
@@ -148,30 +154,36 @@ def extra_data_poller() -> None:
         try:
             if config.get_market_status() == "OPEN":
                 # 1. Update OI Data (Simulated for now based on market trend)
-                nifty_px = config.latest_prices.get("nifty")
+                nifty_px = config.state_manager.latest_prices.get("nifty")
                 if nifty_px:
-                    # Logic: Higher Nifty = higher Put OI usually
-                    config.oi_data["call_oi"] = 4500000 + (int(nifty_px) % 100) * 1000
-                    config.oi_data["put_oi"] = 5200000 + (int(nifty_px) % 100) * 1500
-                    config.oi_data["pcr"] = round(config.oi_data["put_oi"] / config.oi_data["call_oi"], 2)
-                    config.oi_data["max_pain"] = round(nifty_px / 50) * 50
+                    oi_updates = {
+                        "call_oi": 4500000 + (int(nifty_px) % 100) * 1000,
+                        "put_oi": 5200000 + (int(nifty_px) % 100) * 1500,
+                    }
+                    oi_updates["pcr"] = round(oi_updates["put_oi"] / oi_updates["call_oi"], 2)
+                    oi_updates["max_pain"] = round(nifty_px / 50) * 50
+                    config.state_manager.update_state("oi_data", oi_updates)
 
                 # 2. Update Greeks
-                vix = config.latest_prices.get("vix")
+                vix = config.state_manager.latest_prices.get("vix")
                 if vix:
-                    config.greeks_data["iv"] = round(vix * 0.95, 2)
-                    config.greeks_data["theta"] = -12.5
-                    config.greeks_data["gamma"] = 0.0045
+                    greeks_updates = {
+                        "iv": round(vix * 0.95, 2),
+                        "theta": -12.5,
+                        "gamma": 0.0045
+                    }
+                    config.state_manager.update_state("greeks_data", greeks_updates)
 
                 # 3. News Feed & Alerts
                 new_alert = {
                     "time": config.get_ist_now().strftime("%H:%M:%S"),
                     "badge": "INFO",
-                    "msg": f"Market showing strong support at {config.oi_data['max_pain']}",
+                    "msg": f"Market showing strong support at {config.state_manager.oi_data.get('max_pain')}",
                     "px": nifty_px
                 }
-                config.market_alerts.insert(0, new_alert)
-                config.market_alerts = config.market_alerts[:10] # Keep last 10
+                alerts = config.state_manager.market_alerts
+                alerts.insert(0, new_alert)
+                config.state_manager.set_state("market_alerts", alerts[:10])
 
         except Exception as e:
             logger.error(f"extra_data_poller error: {e}")
