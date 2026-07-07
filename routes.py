@@ -33,7 +33,7 @@ async def health() -> dict:
         "status": "healthy",
         "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "service": "GOAT PRO Institutional",
-        "version": "3.1",
+        "version": "3.2",
         "db_connected": db_engine is not None,
     }
 
@@ -51,15 +51,12 @@ async def api_data(db: Session = Depends(get_db)) -> JSONResponse:
     # PRO Auto-Trade Logic
     auto_status = trading.process_auto_signal(db) if db else {"action": "skipped", "reason": "No DB"}
     
-    # HACK: Auto-Trade updates को Alerts में भेज देते हैं (बिना HTML छुए)
-    current_alerts = list(config.market_alerts)
-    action = auto_status.get("action", "")
-    if action == "auto_opened":
-        current_alerts.append({"time": config.get_ist_now().strftime("%H:%M:%S"), "badge": "🤖 BOT", "msg": f"Auto Trade Opened: {auto_status.get('msg', '')}", "px": config.latest_prices.get("nifty")})
-    elif action == "auto_closed":
-        current_alerts.append({"time": config.get_ist_now().strftime("%H:%M:%S"), "badge": "🎯 BOT", "msg": f"Auto Trade Closed: {auto_status.get('msg', '')}", "px": config.latest_prices.get("nifty")})
-    elif action == "reversed":
-        current_alerts.append({"time": config.get_ist_now().strftime("%H:%M:%S"), "badge": "🔄 BOT", "msg": f"Signal Reversed! Closed old, Opened new.", "px": config.latest_prices.get("nifty")})
+    # Phase 4: Calculate Options Contract dynamically
+    selected_contract = None
+    signal_data = config.signal_data
+    spot = config.latest_prices.get("nifty")
+    if signal_data and signal_data.get("signal") in ["LONG", "SHORT"] and spot:
+        selected_contract = trading.get_options_contract(spot, signal_data["signal"])
 
     current_active = None
     session_pnl = 0.0
@@ -107,9 +104,10 @@ async def api_data(db: Session = Depends(get_db)) -> JSONResponse:
         "win_rate": stats["win_rate"],
         "total_trades": stats["total_trades"],
         "institutional_stats": stats,
+        "options_contract": selected_contract, # <--- PHASE 4 ADDED HERE
         "oi_data": config.oi_data,
         "greeks": config.greeks_data,
-        "alerts": current_alerts, # <--- यहाँ अब बॉट के मैसेज भी आएंगे
+        "alerts": list(config.market_alerts)[-10:], # last 10 alerts to save bandwidth
         "stocks": stocks.get_all_stock_data(),
         "indicators": config.indicator_data,
         "global": {
@@ -174,10 +172,8 @@ async def get_market_data_endpoint(symbol: str) -> dict:
         raise HTTPException(status_code=404, detail=f"Unknown symbol: {symbol}")
     
     exch, sym = symbol_map[key]
-    # get_ltp without token will auto-resolve it
     ltp = angel_client.get_ltp(exch, sym)
     
-    # VIX fallback to NFO if NSE fails
     if key == "VIX" and ltp is None:
         ltp = angel_client.get_ltp("NFO", sym)
         
