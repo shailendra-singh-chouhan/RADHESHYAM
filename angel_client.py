@@ -32,23 +32,30 @@ def get_ltp(exchange: str, symbol: str, token: str) -> Optional[float]:
     """Fetches live Last Traded Price (LTP) for an asset."""
     global smart_api
     if smart_api is None:
-        return None
+        if not angel_login():
+            return None
     try:
         with session_lock:
             resp = smart_api.ltpData(exchange, symbol, token)
         if resp and resp.get("status"):
-            return resp["data"]["ltp"]
+            data = resp.get("data", {})
+            if isinstance(data, dict):
+                return data.get("ltp")
+            elif isinstance(data, list) and len(data) > 0:
+                return data[0].get("ltp")
         logger.error(f"get_ltp non-success response for {symbol}: {resp}")
         return None
     except Exception as e:
         logger.error(f"get_ltp error for {symbol}: {e}")
+        angel_login()
         return None
 
 def fetch_todays_candles() -> Optional[list]:
     """Fetches 1-minute historical candles for NIFTY from 9:15 AM to now."""
     global smart_api
     if smart_api is None:
-        return None
+        if not angel_login():
+            return None
     try:
         now = config.get_ist_now()
         from_dt = now.replace(hour=9, minute=15, second=0, microsecond=0)
@@ -68,7 +75,9 @@ def fetch_todays_candles() -> Optional[list]:
                     "low": row[3], "close": row[4],
                 })
             return candles
+        logger.error(f"fetch_todays_candles non-success: {resp}")
         return None
     except Exception as e:
         logger.error(f"fetch_todays_candles error: {e}")
+        angel_login()
         return None
