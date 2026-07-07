@@ -1,137 +1,108 @@
-import datetime
 from sqlalchemy.orm import Session
-from sqlalchemy import func
-from typing import Optional
+from models import Trade
+import config
 from logzero import logger
 
-import config
-from models import Trade
+def open_paper_trade(db: Session, direction: str = "LONG") -> tuple[bool, str]:
+    """
+    Opens a paper trade with support for LONG or SHORT direction.
+    - LONG: SL = 0.5% below entry, Target = 1% above entry
+    - SHORT: SL = 0.5% above entry, Target = 1% below entry
+    """
+    # 1. Check if trade already active
+    active = db.query(Trade).filter(Trade.status == "ACTIVE").first()
+    if active:
+        return False, "A trade is already active."
 
-def _today_ist_str() -> str:
-    return config.get_ist_now().date().isoformat()
+    # 2. Get current price
+    current_price = config.latest_prices.get("nifty")
+    if not current_price:
+        return False, "No market data available."
 
-def check_risk_limits(db: Session) -> tuple[bool, str]:
-    """Checks daily max trades (5) and max drawdown limit (-2000)."""
-    if db is None:
-        return True, "Risk OK (no DB)"
-    today = _today_ist_str()
-    todays_closed = db.query(Trade).filter(
-        Trade.status == "CLOSED",
-        Trade.trade_date == today,
-    ).all()
-    todays_pnl = sum(t.pnl or 0 for t in todays_closed)
-    if len(todays_closed) >= 5:
-        return False, "Daily trade limit (5) reached"
-    if todays_pnl <= -2000:
-        return False, "Daily loss limit (-2000) hit"
-    return True, "Risk OK"
+    # 3. Calculate SL/Target based on direction
+    sl_pct = 0.005  # 0.5%
+    target_pct = 0.01  # 1%
+    
+    entry = current_price
+    if direction == "LONG":
+        sl = round(entry * (1 - sl_pct), 2)
+        target = round(entry * (1 + target_pct), 2)
+    else:  # SHORT
+        sl = round(entry * (1 + sl_pct), 2)
+        target = round(entry * (1 - target_pct), 2)
 
-def open_paper_trade(db: Session) -> tuple[bool, str]:
-    """Executes a long paper trade position on Nifty."""
-    if db is None:
-        return False, "Database not connected"
-    existing = db.query(Trade).filter(Trade.status == "ACTIVE").first()
-    if existing:
-        return False, "A trade is already active"
-    if config.get_market_status() != "OPEN":
-        return False, "Market is closed"
-    if config.latest_prices["nifty"] is None:
-        return False, "Live price not available yet"
-    risk_ok, risk_message = check_risk_limits(db)
-    if not risk_ok:
-        return False, risk_message
-
-    entry = config.latest_prices["nifty"]
-    new_trade = Trade(
-        direction="LONG",
-        entry=entry,
-        target=round(entry + 50, 2),
-        sl=round(entry - 25, 2),
-        opened_at=datetime.datetime.utcnow(),
-        status="ACTIVE",
-        trade_date=_today_ist_str(),
-    )
+    # 4. Save to DB
     try:
+        new_trade = Trade(
+            direction=direction,
+            entry=entry,
+            sl=sl,
+            target=target,
+            status="ACTIVE",
+            trade_date=config.get_ist_now().date().isoformat()
+        )
         db.add(new_trade)
         db.commit()
-        db.refresh(new_trade)
-        logger.info(f"Opened trade #{new_trade.id} at {entry}")
-        return True, "Trade opened"
+        logger.info(f"Trade opened: {direction} at {entry} (SL: {sl}, TGT: {target})")
+        return True, f"{direction} trade opened at {entry}"
     except Exception as e:
-        db.rollback()
-        logger.error(f"open_paper_trade error: {e}")
-        return False, f"DB error: {e}"
+        logger.error(f"Error opening trade: {e}")
+        return False, f"Database error: {str(e)}"
 
 def close_paper_trade(db: Session) -> tuple[bool, str]:
-    """Closes active long positions and saves realized PnL."""
-    if db is None:
-        return False, "Database not connected"
-    if config.latest_prices["nifty"] is None:
-        return False, "Live price not available"
+    """Closes the active paper trade."""
+    active = db.query(Trade).filter(Trade.status == "ACTIVE").first()
+    if not active:
+        return False, "No active trade to close."
+    
+    current_price = config.latest_prices.get("nifty")
+    if not current_price:
+        return False, "Cannot close: No market data."
 
-    trade = db.query(Trade).filter(Trade.status == "ACTIVE").first()
-    if not trade:
-        return False, "No active trade"
+    active.status = "CLOSED"
+    active.closed_at = config.get_ist_now()
+    active.exit_price = current_price
+    
+    # PnL Calculation
+    if active.direction == "LONG":
+        active.pnl = round(current_price - active.entry, 2)
+    else:
+        active.pnl = round(active.entry - current_price, 2)
+        
+    db.commit()
+    logger.info(f"Trade closed: {active.direction} at {current_price}, PnL: {active.pnl}")
+    return True, f"Trade closed. PnL: {active.pnl}"
 
-    exit_price = config.latest_prices["nifty"]
-    pnl = round(exit_price - trade.entry, 2)
-    trade.exit_price = exit_price
-    trade.pnl = pnl
-    trade.closed_at = datetime.datetime.utcnow()
-    trade.status = "CLOSED"
-    try:
-        db.commit()
-        db.refresh(trade)
-        logger.info(f"Closed trade #{trade.id} with PnL {pnl}")
-        return True, f"Trade closed (PnL: {pnl})"
-    except Exception as e:
-        db.rollback()
-        logger.error(f"close_paper_trade error: {e}")
-        return False, f"DB error: {e}"
+def check_risk_limits(db: Session) -> tuple[bool, str]:
+    """Checks if we can take more trades based on risk rules."""
+    today = config.get_ist_now().date().isoformat()
+    
+    # 1. Max trades per day (e.g., 5)
+    total_today = db.query(Trade).filter(Trade.trade_date == today).count()
+    if total_today >= 5:
+        return False, "Max 5 trades limit reached."
+    
+    # 2. Daily Loss Limit (-2000)
+    today_closed = db.query(Trade).filter(
+        Trade.status == "CLOSED", Trade.trade_date == today
+    ).all()
+    today_pnl = sum(t.pnl or 0 for t in today_closed)
+    if today_pnl <= -2000:
+        return False, "Daily loss limit of -2000 reached."
+        
+    return True, "Risk OK"
 
-def get_institutional_stats(db: Optional[Session]) -> dict:
-    """Calculates Sharpe Ratio, Max Drawdown, and Win Rate metrics."""
-    empty = {
-        "sharpe_ratio": 0, "max_drawdown": 0, "expectancy": 0,
-        "win_rate": 0, "total_trades": 0,
-    }
-    if db is None:
-        return empty
-    try:
-        closed_trades = db.query(Trade).filter(Trade.status == "CLOSED")\
-                                       .order_by(Trade.closed_at.asc()).all()
-    except Exception as e:
-        logger.error(f"get_institutional_stats query error: {e}")
-        return empty
-
-    if not closed_trades:
-        return empty
-
-    pnls = [t.pnl or 0 for t in closed_trades]
-    wins = [p for p in pnls if p > 0]
-    win_rate = round((len(wins) / len(pnls)) * 100, 1) if pnls else 0
-    expectancy = round(sum(pnls) / len(pnls), 1) if pnls else 0
-
-    cumulative = peak = 0
-    max_dd = 0
-    for p in pnls:
-        cumulative += p
-        peak = max(peak, cumulative)
-        dd = cumulative - peak
-        max_dd = min(max_dd, dd)
-
-    sharpe = 0
-    if len(pnls) > 1:
-        mean = sum(pnls) / len(pnls)
-        variance = sum((p - mean) ** 2 for p in pnls) / (len(pnls) - 1)
-        stddev = variance ** 0.5
-        if stddev > 0:
-            sharpe = round(mean / stddev, 2)
-
+def get_institutional_stats(db: Session) -> dict:
+    if not db:
+        return {"win_rate": 0, "total_trades": 0}
+    
+    all_closed = db.query(Trade).filter(Trade.status == "CLOSED").all()
+    total = len(all_closed)
+    if total == 0:
+        return {"win_rate": 0, "total_trades": 0}
+    
+    wins = sum(1 for t in all_closed if (t.pnl or 0) > 0)
     return {
-        "sharpe_ratio": sharpe,
-        "max_drawdown": max_dd,
-        "expectancy": expectancy,
-        "win_rate": win_rate,
-        "total_trades": len(pnls),
+        "win_rate": round((wins / total) * 100, 1),
+        "total_trades": total
     }
