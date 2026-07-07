@@ -1,35 +1,50 @@
-import os
+import uvicorn
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from logzero import logger
 
-import angel_client
+# Project modules
+import database
+import routes
 import strategy
-from routes import router
-from database import init_db, db_engine
+import stocks
+import auto_execute
 
-app = FastAPI(title="GOAT PRO Institutional", version="3.0")
+# Initialize FastAPI App
+app = FastAPI(title="GOAT PRO Institutional")
 
-# Mounting our modular routes
-app.include_router(router)
+# CORS Middleware (To allow dashboard communication)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
+# Startup Event
 @app.on_event("startup")
-async def startup_event() -> None:
-    """Initialize DB tables, run Angel One Login, and start background execution tasks."""
-    logger.info("Application startup event triggered.")
+async def startup_event():
+    logger.info("--- Starting GOAT PRO Institutional Services ---")
     
-    if db_engine:
-        init_db(db_engine)
-    else:
-        logger.warning("Database engine is not available. Trades will not be persisted.")
-        
-    # Fire up Angel One authorization
-    angel_client.angel_login()
-    
-    # Launch asynchronous pricing and indicator engine loops
-    strategy.start_background_threads()
+    # 1. Initialize Database
+    try:
+        database.Base.metadata.create_all(bind=database.db_engine)
+        logger.info("Database initialized successfully.")
+    except Exception as e:
+        logger.error(f"Database initialization failed: {e}")
 
-# Render command compatibility or local deployment execution
+    # 2. Start Strategy Background Threads (Price + Indicators)
+    strategy.start_background_threads()
+    
+    # 3. Start Stock Price Poller
+    stocks.start_stock_price_poller()
+    
+    logger.info("All background services (Strategy & Stocks) started successfully.")
+
+# Include Routes
+app.include_router(routes.router)
+
 if __name__ == "__main__":
-    import uvicorn
-    port = int(os.environ.get("PORT", 5000))
-    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
+    # Run the application
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
