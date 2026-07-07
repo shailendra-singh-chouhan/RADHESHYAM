@@ -1,4 +1,5 @@
 import threading
+import requests
 import pyotp
 import pandas as pd
 from typing import Optional
@@ -31,19 +32,18 @@ def angel_login() -> bool:
         return False
 
 def refresh_scrip_master() -> bool:
-    """Downloads full scrip master and caches it as DataFrame."""
-    global smart_api, _scrip_master_df
-    if smart_api is None:
-        if not angel_login():
-            return False
+    """Downloads scrip master from public Angel One URL."""
+    global _scrip_master_df
     try:
-        with session_lock:
-            data = smart_api.getScripMaster()
+        url = "https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json"
+        resp = requests.get(url, timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
         if data and isinstance(data, list) and len(data) > 0:
             _scrip_master_df = pd.DataFrame(data)
             logger.info(f"Scrip master loaded: {len(data)} instruments")
             return True
-        logger.error("Scrip master returned empty/invalid data")
+        logger.error("Scrip master returned empty data")
         return False
     except Exception as e:
         logger.error(f"refresh_scrip_master error: {e}")
@@ -62,7 +62,6 @@ def get_token(exchange: str, symbol: str) -> Optional[str]:
         ]
         if not match.empty:
             return str(match.iloc[0]["token"])
-        # Try partial match for indices
         match = _scrip_master_df[
             (_scrip_master_df["exch_seg"] == exchange) & 
             (_scrip_master_df["symbol"].str.contains(symbol, case=False, na=False))
@@ -79,14 +78,11 @@ def get_ltp(exchange: str, symbol: str, token: Optional[str] = None) -> Optional
     if smart_api is None:
         if not angel_login():
             return None
-
-    # Auto-resolve token if not provided
     if token is None:
         token = get_token(exchange, symbol)
         if token is None:
             logger.warning(f"Could not resolve token for {exchange}:{symbol}")
             return None
-
     try:
         with session_lock:
             resp = smart_api.ltpData(exchange, symbol, token)
@@ -109,12 +105,10 @@ def fetch_todays_candles() -> Optional[list]:
     if smart_api is None:
         if not angel_login():
             return None
-
     token = get_token("NSE", config.NIFTY_SYMBOL)
     if token is None:
         logger.error("Could not resolve NIFTY token for candle fetch")
         return None
-
     try:
         now = config.get_ist_now()
         from_dt = now.replace(hour=9, minute=15, second=0, microsecond=0)
