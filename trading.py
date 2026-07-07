@@ -4,6 +4,7 @@ from logzero import logger
 from sqlalchemy import func
 from models import Trade
 import config
+from sqlalchemy.orm import Session
 
 # Phase 4 Prep: Angel Client import for premium fetching
 try:
@@ -92,7 +93,7 @@ def execute_trade(signal: str, spot_price: float) -> dict:
         
     return {"direction": signal, "entry": entry_price, "target": target, "sl": sl, "contract": contract, "live_pnl": 0.0, "status": "OPEN", "atr": round(atr, 2)}
 
-def check_risk_limits(db) -> tuple[bool, str]:
+def check_risk_limits(db: Session) -> tuple[bool, str]:
     """REAL RISK MANAGEMENT: अगर आज का नुकसान -2000 से नीचे हो, तो बॉट बंद हो जाएगा।"""
     try:
         if not db: return True, "Risk OK (No DB)"
@@ -102,14 +103,14 @@ def check_risk_limits(db) -> tuple[bool, str]:
                        .scalar() or 0.0
 
         if total_pnl <= -2000.0:
-            logger.warning(f"🛑 DAILY LIMIT HIT! Today's PnL is {total_pnl}. Stopping bot.")
+            logger.warning(f"🛑 DAILY LIMIT HIT! Today\'s PnL is {total_pnl}. Stopping bot.")
             return False, f"🛑 DAILY LIMIT HIT (₹{total_pnl:.2f}). Bot Stopped."
             
         return True, f"Risk OK (Day PnL: ₹{total_pnl:.2f})"
     except Exception as e:
         return True, f"Risk check skipped: {e}"
 
-def get_institutional_stats(db) -> dict:
+def get_institutional_stats(db: Session) -> dict:
     try:
         if db is None: return {"fii_long": 0, "fii_short": 0, "fii_net": 0, "dii_long": 0, "dii_short": 0, "dii_net": 0, "win_rate": 0.0, "total_trades": 0, "status": "No DB"}
         total = db.query(Trade).filter(Trade.status == "CLOSED").count()
@@ -118,7 +119,7 @@ def get_institutional_stats(db) -> dict:
         return {"fii_long": 0, "fii_short": 0, "fii_net": 0, "dii_long": 0, "dii_short": 0, "dii_net": 0, "win_rate": win_rate, "total_trades": total, "status": "Live"}
     except Exception as e: return {"fii_long": 0, "fii_short": 0, "fii_net": 0, "dii_long": 0, "dii_short": 0, "dii_net": 0, "win_rate": 0.0, "total_trades": 0, "status": f"Error: {e}"}
 
-def open_paper_trade(db, signal: str = None, spot: float = None) -> tuple[bool, str]:
+def open_paper_trade(db: Session, signal: str = None, spot: float = None) -> tuple[bool, str]:
     try:
         if db is None: return False, "Database not connected"
         if signal is None: signal = config.state_manager.signal_data.get("signal") # Use state manager
@@ -147,6 +148,17 @@ def open_paper_trade(db, signal: str = None, spot: float = None) -> tuple[bool, 
         new_trade = Trade(direction=signal, entry=entry, target=target, sl=sl, status="ACTIVE", trade_date=config.get_ist_now().date().isoformat())
         db.add(new_trade)
         db.commit()
+        
+        # Store active trade context in StateManager for persistence
+        config.state_manager.active_trade_context = {
+            "id": new_trade.id,
+            "direction": new_trade.direction,
+            "entry": new_trade.entry,
+            "target": new_trade.target,
+            "sl": new_trade.sl,
+            "trade_date": new_trade.trade_date,
+        }
+
         logger.info(f"✅ TRADE OPENED: {signal} @ {entry} | T: {target} | SL: {sl}")
         return True, f"Opened {signal} @ {entry}"
     except Exception as e:
@@ -154,7 +166,7 @@ def open_paper_trade(db, signal: str = None, spot: float = None) -> tuple[bool, 
         db.rollback()
         return False, f"Error: {e}"
 
-def close_paper_trade(db, reason: str = "Manual Close", pnl: float = None) -> tuple[bool, str]:
+def close_paper_trade(db: Session, reason: str = "Manual Close", pnl: float = None) -> tuple[bool, str]:
     try:
         if db is None: return False, "Database not connected"
         open_trade = db.query(Trade).filter(Trade.status == "ACTIVE").first()
@@ -166,6 +178,10 @@ def close_paper_trade(db, reason: str = "Manual Close", pnl: float = None) -> tu
         open_trade.pnl = round(pnl, 2)
         open_trade.closed_at = config.get_ist_now()
         db.commit()
+        
+        # Clear active trade context from StateManager
+        config.state_manager.active_trade_context = None
+
         logger.info(f"🔴 TRADE CLOSED: {reason} | PnL: {pnl}")
         return True, f"Closed: {reason} | PnL: {pnl}"
     except Exception as e:
@@ -173,7 +189,43 @@ def close_paper_trade(db, reason: str = "Manual Close", pnl: float = None) -> tu
         db.rollback()
         return False, f"Error: {e}"
 
-def process_auto_signal(db) -> dict:
+def check_market_open_gap(db: Session, current_spot_price: float) -> tuple[bool, str]:
+    """Checks for significant gaps at market open and closes trade if threshold exceeded."""
+    active_trade_context = config.state_manager.active_trade_context
+    if not active_trade_context: # No active trade to check
+        return True, "No active trade for gap check."
+
+    market_status = config.get_market_status()
+    # Only perform gap check if market just opened and we have an active trade from previous session
+    if market_status == "OPEN" and config.state_manager.last_state_save_time and \
+       config.state_manager.last_state_save_time.date() < config.get_ist_now().date():
+        
+        entry = active_trade_context["entry"]
+        sl = active_trade_context["sl"]
+        target = active_trade_context["target"]
+        direction = active_trade_context["direction"]
+
+        gap_percent = 0.0
+        if direction == "LONG":
+            if current_spot_price < sl:
+                gap_percent = abs((current_spot_price - sl) / sl) * 100
+                if gap_percent > config.GAP_THRESHOLD_PERCENT:
+                    logger.warning(f"🚨 Market Open Gap Protector: LONG trade gapped down past SL. Current: {current_spot_price}, SL: {sl}, Gap: {gap_percent:.2f}%")
+                    pnl = current_spot_price - entry
+                    return close_paper_trade(db, f"Gap Down SL Hit ({gap_percent:.2f}%) at Open", pnl)
+        elif direction == "SHORT":
+            if current_spot_price > sl:
+                gap_percent = abs((current_spot_price - sl) / sl) * 100
+                if gap_percent > config.GAP_THRESHOLD_PERCENT:
+                    logger.warning(f"🚨 Market Open Gap Protector: SHORT trade gapped up past SL. Current: {current_spot_price}, SL: {sl}, Gap: {gap_percent:.2f}%")
+                    pnl = entry - current_spot_price
+                    return close_paper_trade(db, f"Gap Up SL Hit ({gap_percent:.2f}%) at Open", pnl)
+        
+        logger.info(f"Market Open Gap Protector: No significant gap detected for active {direction} trade.")
+    
+    return True, "Gap check passed or not applicable."
+
+def process_auto_signal(db: Session) -> dict:
     """CORE PRO LOGIC: हर पोल पर चलेगा और ऑटो ट्रेड करेगा"""
     try:
         if not db: return {"action": "skipped", "reason": "No DB"}
@@ -190,6 +242,11 @@ def process_auto_signal(db) -> dict:
         if confidence < 4: return {"action": "waiting", "reason": f"Low confidence ({confidence})"}
         spot = config.state_manager.latest_prices.get("nifty") # Use state manager
         if not spot: return {"action": "waiting", "reason": "No spot price"}
+        
+        # --- Market Open Gap Protection ---
+        gap_check_ok, gap_check_msg = check_market_open_gap(db, spot)
+        if not gap_check_ok: # If trade was closed by gap protector
+            return {"action": "gap_closed", "success": False, "msg": gap_check_msg}
         
         active_trade = db.query(Trade).filter(Trade.status == "ACTIVE").first()
         
