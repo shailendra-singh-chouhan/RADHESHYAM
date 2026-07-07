@@ -50,26 +50,44 @@ def refresh_scrip_master() -> bool:
         return False
 
 def get_token(exchange: str, symbol: str) -> Optional[str]:
-    """Looks up symbol token from cached scrip master."""
+    """Looks up symbol token from cached scrip master with precise matching."""
     global _scrip_master_df
     if _scrip_master_df is None or _scrip_master_df.empty:
         if not refresh_scrip_master():
             return None
     try:
+        # Normalize symbol names for better matching (e.g., SBIN-EQ vs SBIN)
+        # 1. Try exact match on name
         match = _scrip_master_df[
             (_scrip_master_df["exch_seg"] == exchange) & 
-            (_scrip_master_df["symbol"] == symbol)
+            (_scrip_master_df["name"].str.upper() == symbol.upper())
         ]
         if not match.empty:
             return str(match.iloc[0]["token"])
+
+        # 2. Try exact match on symbol
         match = _scrip_master_df[
             (_scrip_master_df["exch_seg"] == exchange) & 
-            (_scrip_master_df["symbol"].str.contains(symbol, case=False, na=False))
+            (_scrip_master_df["symbol"].str.upper() == symbol.upper())
         ]
         if not match.empty:
             return str(match.iloc[0]["token"])
+
+        # 3. Special case for NIFTY/BANKNIFTY/VIX
+        if symbol.upper() == "NIFTY":
+            symbol = "Nifty 50"
+        elif symbol.upper() == "BANKNIFTY":
+            symbol = "Nifty Bank"
+        
+        match = _scrip_master_df[
+            (_scrip_master_df["exch_seg"] == exchange) & 
+            (_scrip_master_df["name"].str.contains(symbol, case=False, na=False))
+        ]
+        if not match.empty:
+            return str(match.iloc[0]["token"])
+
     except Exception as e:
-        logger.error(f"get_token error: {e}")
+        logger.error(f"get_token error for {symbol}: {e}")
     return None
 
 def get_ltp(exchange: str, symbol: str, token: Optional[str] = None) -> Optional[float]:
@@ -78,14 +96,23 @@ def get_ltp(exchange: str, symbol: str, token: Optional[str] = None) -> Optional
     if smart_api is None:
         if not angel_login():
             return None
+    # Always re-resolve token if it's not provided to avoid stale token issues
+    token = get_token(exchange, symbol)
     if token is None:
-        token = get_token(exchange, symbol)
-        if token is None:
-            logger.warning(f"Could not resolve token for {exchange}:{symbol}")
-            return None
+        logger.warning(f"Could not resolve token for {exchange}:{symbol}")
+        return None
+    
+    # Precise trading symbol from scrip master for the API call
+    trading_symbol = symbol
+    try:
+        match = _scrip_master_df[_scrip_master_df["token"] == token]
+        if not match.empty:
+            trading_symbol = match.iloc[0]["symbol"]
+    except: pass
+
     try:
         with session_lock:
-            resp = smart_api.ltpData(exchange, symbol, token)
+            resp = smart_api.ltpData(exchange, trading_symbol, token)
         if resp and resp.get("status"):
             data = resp.get("data", {})
             if isinstance(data, dict):

@@ -22,11 +22,11 @@ STOCK_TOKENS = {
 }
 
 STOCK_SYMBOLS = {
-    "HDFC": "HDFC",
-    "SBI": "SBIN",
-    "PNB": "PNB",
-    "YES": "YESBANK",
-    "INFY": "INFY",
+    "HDFC": "HDFCBANK-EQ",
+    "SBI": "SBIN-EQ",
+    "PNB": "PNB-EQ",
+    "YES": "YESBANK-EQ",
+    "INFY": "INFY-EQ",
 }
 
 # Global stock prices dictionary
