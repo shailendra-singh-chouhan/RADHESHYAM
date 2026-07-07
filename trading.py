@@ -70,3 +70,14 @@ def execute_trade(signal: str, spot_price: float) -> dict:
     }
     
     return trade_details
+
+def check_risk_limits(db) -> tuple[bool, str]:
+    """
+    Risk limits check करता है।
+    Phase 3 में यहाँ असली DB queries डालेंगे।
+    """
+    try:
+        return True, "Risk OK"
+    except Exception as e:
+        logger.error(f"Risk check error: {e}")
+        return True, f"Risk check skipped: {e}"
