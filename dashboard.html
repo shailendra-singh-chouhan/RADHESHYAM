@@ -189,6 +189,11 @@ body::before{content:'';position:fixed;inset:0;
   background:var(--panel);border:1.5px solid var(--border);border-radius:10px;
   display:flex;justify-content:center;align-items:center;gap:8px;}
 .footer-text{font-size:10px;color:var(--dim);letter-spacing:1px;font-family:'JetBrains Mono',monospace;}
+.opt-card{padding:14px 16px; display:flex; gap: 20px; align-items: center; flex-wrap: wrap;}
+.opt-main{flex:1; min-width: 200px;}
+.opt-sym{font-family:'Bebas Neue',sans-serif; font-size: 24px; letter-spacing: 2px; color: var(--accent);}
+.opt-px{font-family:'JetBrains Mono',monospace; font-size: 18px; font-weight: 700; margin-top: 4px;}
+.opt-meta{display: flex; gap: 15px; font-family:'JetBrains Mono',monospace; font-size: 11px; color: var(--dim); margin-top: 6px;}
 </style>
 </head>
 <body>
@@ -225,7 +230,7 @@ body::before{content:'';position:fixed;inset:0;
 
 <div class="legal-banner">
   <div class="legal-badge">⚖️ DISCLAIMER</div>
-  <span>⚠️ <strong>Educational Tool Only.</strong> NIFTY/VIX/Stocks are live via Angel One. Advanced modules (OI, Greeks, Patterns) activate during market hours. Not SEBI registered advice.</span>
+  <span>⚠️ <strong>Educational Tool Only.</strong> NIFTY/VIX/Stocks are live via Angel One. Advanced modules (OI, Greeks, Options) activate during market hours. Not SEBI registered advice.</span>
 </div>
 
 <div class="sess-strip" id="sess-strip">
@@ -300,6 +305,23 @@ body::before{content:'';position:fixed;inset:0;
     </div>
   </div>
 
+  <!-- PHASE 4: LIVE OPTIONS STRIKE CARD -->
+  <div class="card" id="options-card" style="border-color:var(--gold); background:var(--gold2); display:none;">
+    <div class="chdr" style="background:var(--gold);">
+      <div class="ctitle" style="color:#fff">⚡ OPTIONS STRIKE SELECTOR <span class="live-tag" style="background:rgba(255,255,255,0.2);color:#fff;border-color:transparent">LIVE PREMIUM</span></div>
+    </div>
+    <div class="opt-card">
+      <div class="opt-main">
+        <div class="opt-sym" id="opt-symbol">NIFTY 24400 CE</div>
+        <div class="opt-px" id="opt-premium" style="color:var(--gold)">₹0.00</div>
+        <div class="opt-meta">
+          <span>📉 ATM STRIKE</span>
+          <span>⚡ NFO SEGMENT</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="card" style="border-color:rgba(10,158,92,0.4)">
     <div class="chdr" style="background:var(--green2)">
       <div class="ctitle" style="color:var(--green)">📝 PAPER TRADE ENGINE <span class="live-tag">AUTO-TRADE ACTIVE</span></div>
@@ -346,7 +368,6 @@ body::before{content:'';position:fixed;inset:0;
 </div>
 
 <div class="right">
-
   <div class="card">
     <div class="chdr"><div class="ctitle">⚡ GREEKS & IV <span class="pro-tag">PRO MODULE</span></div></div>
     <div class="greek-row"><div class="greek-l">📊 IV (ATM)</div><div class="greek-v" style="color:var(--gold)" id="iv-v">--</div></div>
@@ -371,13 +392,9 @@ body::before{content:'';position:fixed;inset:0;
   </div>
 
   <div class="mini"><div class="mini-hdr"><div class="mini-name">🏦 BANKNIFTY</div><div class="mini-px" id="bn-px" style="color:var(--dim)">--</div></div><div class="mini-body"><div class="ms"><div class="ms-l">📡 LTP</div><div class="ms-v" id="bn-rsi">--</div></div><div class="ms"><div class="ms-l">波浪 TREND</div><div class="ms-v" id="bn-tr">--</div></div></div></div>
-  
   <div class="mini"><div class="mini-hdr"><div class="mini-name">📊 SENSEX</div><div class="mini-px" id="sx-px" style="color:var(--dim)">--</div></div><div class="mini-body"><div class="ms"><div class="ms-l">📡 LTP</div><div class="ms-v" id="sx-rsi">--</div></div><div class="ms"><div class="ms-l">波浪 TREND</div><div class="ms-v" id="sx-tr">--</div></div></div></div>
-
   <div class="mini"><div class="mini-hdr"><div class="mini-name">🛢️ CRUDE OIL</div><div class="mini-px" id="cr-px" style="color:var(--dim)">--</div></div><div class="mini-body"><div class="ms"><div class="ms-l">📡 LTP</div><div class="ms-v" id="cr-rsi">--</div></div><div class="ms"><div class="ms-l">📈 TREND</div><div class="ms-v" id="cr-tr">--</div></div></div></div>
-
   <div class="mini"><div class="mini-hdr"><div class="mini-name">🥇 GOLD</div><div class="mini-px" id="gd-px" style="color:var(--dim)">--</div></div><div class="mini-body"><div class="ms"><div class="ms-l">📡 LTP</div><div class="ms-v" id="gd-rsi">--</div></div><div class="ms"><div class="ms-l">📈 TREND</div><div class="ms-v" id="gd-tr">--</div></div></div></div>
-
   <div class="mini"><div class="mini-hdr"><div class="mini-name">🥈 SILVER</div><div class="mini-px" id="sv-px" style="color:var(--dim)">--</div></div><div class="mini-body"><div class="ms"><div class="ms-l">📡 LTP</div><div class="ms-v" id="sv-rsi">--</div></div><div class="ms"><div class="ms-l">📈 TREND</div><div class="ms-v" id="sv-tr">--</div></div></div></div>
 
   <div class="card">
@@ -399,7 +416,7 @@ body::before{content:'';position:fixed;inset:0;
     <div style="padding:14px;text-align:center">
       <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--dim);letter-spacing:1px">SYSTEM STATUS</div>
       <div style="font-family:'Bebas Neue',sans-serif;font-size:18px;color:var(--green);letter-spacing:3px;margin:4px 0">🟢 ALL SYSTEMS OPERATIONAL</div>
-      <div style="font-size:11px;color:var(--dim)">Auto-Trader Active · Engine v3.2</div>
+      <div style="font-size:11px;color:var(--dim)">Auto-Trader Active · Options Engine Active · v3.2</div>
     </div>
   </div>
 
@@ -449,7 +466,6 @@ async function fetchRealData(){
     const res=await fetch('/api/data');const d=await res.json();
     document.getElementById('tb-trades').textContent=d.total_trades||0;document.getElementById('cap-trades').textContent=d.total_trades||0;
     
-    // PRO P&L COLOR LOGIC (Red for Loss, Green for Profit)
     const pnlVal = d.session_pnl_rs || 0;
     const pnlColor = pnlVal >= 0 ? '#4ade80' : '#f87171';
     const tbPnl = document.getElementById('tb-pnl');
@@ -458,7 +474,6 @@ async function fetchRealData(){
     document.getElementById('cap-pnl').textContent = '₹' + pnlVal;
     document.getElementById('cap-pnl').style.color = pnlColor;
     
-    // P&L BLINK EFFECT ON AUTO-TRADE
     if(d.auto_trade && (d.auto_trade.action === 'auto_opened' || d.auto_trade.action === 'auto_closed' || d.auto_trade.action === 'reversed')) {
         tbPnl.style.transform = 'scale(1.3)';
         setTimeout(() => tbPnl.style.transform = 'scale(1)', 500);
@@ -495,6 +510,17 @@ async function fetchRealData(){
       if(ind.ema9!==null&&ind.ema9!==undefined&&ind.ema21!==null){const bull=ind.ema9>=ind.ema21,ec=bull?'var(--green)':'var(--red)';document.getElementById('ema9-val').textContent=ind.ema9;document.getElementById('ema9-val').style.color=ec;document.getElementById('ema21-val').textContent=ind.ema21;document.getElementById('ema21-val').style.color=ec;document.getElementById('ema9-sig').textContent=bull?'📈 BULL':'📉 BEAR';document.getElementById('ema9-sig').className='isig '+(bull?'bull':'bear');document.getElementById('ema21-sig').textContent=bull?'📈 BULL':'📉 BEAR';document.getElementById('ema21-sig').className='isig '+(bull?'bull':'bear');}
       if(ind.vwap_approx!==null&&ind.vwap_approx!==undefined){document.getElementById('vwap-val').textContent=ind.vwap_approx;if(d.spot){const above=d.spot>=ind.vwap_approx;document.getElementById('vwap-sig').textContent=above?'🔵 ABOVE':'🔴 BELOW';document.getElementById('vwap-sig').className='isig '+(above?'bull':'bear');}}
       if(ind.supertrend){document.getElementById('st-val').textContent=ind.supertrend.value||'--';document.getElementById('st-sig').textContent=ind.supertrend.trend==='SELL'?'📉 SELL':'📈 BUY';document.getElementById('st-sig').className='isig '+(ind.supertrend.trend==='SELL'?'bear':'bull');}
+    }
+
+    // Phase 4: Update Options Card
+    const optCard = document.getElementById('options-card');
+    if(d.options_contract && d.real_signal && d.real_signal.signal !== 'WAIT') {
+      optCard.style.display = 'block';
+      document.getElementById('opt-symbol').textContent = d.options_contract.symbol;
+      const premText = d.options_contract.premium_estimate;
+      document.getElementById('opt-premium').textContent = premText.includes('₹') ? premText : premText;
+    } else {
+      optCard.style.display = 'none';
     }
 
     if(d.real_signal){
