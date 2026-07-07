@@ -51,10 +51,14 @@ async def api_data(db: Session = Depends(get_db)) -> JSONResponse:
     # PRO Auto-Trade Logic
     auto_status = trading.process_auto_signal(db) if db else {"action": "skipped", "reason": "No DB"}
     
+    # Access state via state_manager
+    state = config.state_manager
+    latest_prices = state.latest_prices
+    signal_data = state.signal_data
+    
     # Phase 4: Calculate Options Contract dynamically
     selected_contract = None
-    signal_data = config.signal_data
-    spot = config.latest_prices.get("nifty")
+    spot = latest_prices.get("nifty")
     if signal_data and signal_data.get("signal") in ["LONG", "SHORT"] and spot:
         selected_contract = trading.get_options_contract(spot, signal_data["signal"])
 
@@ -73,8 +77,8 @@ async def api_data(db: Session = Depends(get_db)) -> JSONResponse:
                     "target": active_row.target,
                     "sl": active_row.sl,
                 }
-                if config.latest_prices["nifty"] is not None:
-                    live_pnl = round(config.latest_prices["nifty"] - active_row.entry, 2)
+                if latest_prices["nifty"] is not None:
+                    live_pnl = round(latest_prices["nifty"] - active_row.entry, 2)
             
             # Today's closed trades PnL
             today_closed = db.query(Trade).filter(
@@ -85,17 +89,17 @@ async def api_data(db: Session = Depends(get_db)) -> JSONResponse:
             logger.error(f"api_data query error: {e}")
 
     return JSONResponse({
-        "spot": config.latest_prices["nifty"],
-        "banknifty": config.latest_prices.get("banknifty"),
-        "finnifty": config.latest_prices.get("finnifty"),
-        "sensex": config.latest_prices.get("sensex"),
-        "crudeoil": config.latest_prices.get("crudeoil"),
-        "gold": config.latest_prices.get("gold"),
-        "silver": config.latest_prices.get("silver"),
-        "usdinr": config.latest_prices.get("usdinr"),
-        "midcap": config.latest_prices.get("midcap"),
-        "vix": config.latest_prices["vix"],
-        "day_open": config.latest_prices["day_open"],
+        "spot": latest_prices["nifty"],
+        "banknifty": latest_prices.get("banknifty"),
+        "finnifty": latest_prices.get("finnifty"),
+        "sensex": latest_prices.get("sensex"),
+        "crudeoil": latest_prices.get("crudeoil"),
+        "gold": latest_prices.get("gold"),
+        "silver": latest_prices.get("silver"),
+        "usdinr": latest_prices.get("usdinr"),
+        "midcap": latest_prices.get("midcap"),
+        "vix": latest_prices["vix"],
+        "day_open": latest_prices["day_open"],
         "market_status": market_status,
         "risk_ok": risk_ok,
         "risk_message": risk_message,
@@ -104,16 +108,16 @@ async def api_data(db: Session = Depends(get_db)) -> JSONResponse:
         "win_rate": stats["win_rate"],
         "total_trades": stats["total_trades"],
         "institutional_stats": stats,
-        "options_contract": selected_contract, # <--- PHASE 4 ADDED HERE
-        "oi_data": config.oi_data,
-        "greeks": config.greeks_data,
-        "alerts": list(config.market_alerts)[-10:], # last 10 alerts to save bandwidth
+        "options_contract": selected_contract,
+        "oi_data": state.oi_data,
+        "greeks": state.greeks_data,
+        "alerts": list(state.market_alerts)[-10:], # last 10 alerts to save bandwidth
         "stocks": stocks.get_all_stock_data(),
-        "indicators": config.indicator_data,
+        "indicators": state.indicator_data,
         "global": {
-            "kospi": config.latest_prices.get("kospi"),
-            "nasdaq": config.latest_prices.get("nasdaq"),
-            "dji": config.latest_prices.get("dji"),
+            "kospi": latest_prices.get("kospi"),
+            "nasdaq": latest_prices.get("nasdaq"),
+            "dji": latest_prices.get("dji"),
         },
         "active_trade": {
             "direction": current_active["direction"],
@@ -122,9 +126,8 @@ async def api_data(db: Session = Depends(get_db)) -> JSONResponse:
             "sl": current_active["sl"],
             "live_pnl": live_pnl,
         } if current_active else None,
-        "indicators": config.indicator_data,
-        "real_signal": config.signal_data,
-        "last_update": config.latest_prices["last_update"],
+        "real_signal": signal_data,
+        "last_update": latest_prices["last_update"],
     })
 
 @router.get("/api/trades")
@@ -156,8 +159,7 @@ async def api_close_trade(db: Session = Depends(get_db)) -> dict:
 
 @router.get("/api/candles")
 async def api_candles() -> dict:
-    with strategy.candle_lock:
-        candles = list(config.candle_store)
+    candles = config.state_manager.candle_store
     return {"candles": candles}
 
 @router.get("/get_market_data")
