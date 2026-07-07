@@ -22,6 +22,11 @@ SENSEX_SYMBOL    = "SENSEX"
 CRUDEOIL_SYMBOL  = "CRUDEOIL"
 GOLD_SYMBOL      = "GOLD"
 SILVER_SYMBOL    = "SILVER"
+# Global Indices
+KOSPI_SYMBOL     = "^KS11"
+DJI_SYMBOL       = "^DJI"
+NASDAQ_SYMBOL    = "^IXIC"
+FTSE_SYMBOL      = "^FTSE"
 
 # ────────────────────────────────────────────
 # Shared state (populated at runtime)
@@ -35,6 +40,10 @@ latest_prices: dict = {
     "crudeoil": None,
     "gold": None,
     "silver": None,
+    "kospi": None,
+    "dji": None,
+    "nasdaq": None,
+    "ftse": None,
     "day_open": None,
     "day_open_date": "",
     "last_update": "",

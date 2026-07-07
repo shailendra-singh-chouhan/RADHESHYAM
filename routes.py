@@ -95,6 +95,12 @@ async def api_data(db: Session = Depends(get_db)) -> JSONResponse:
         "greeks": config.greeks_data,
         "alerts": config.market_alerts,
         "stocks": stocks.get_all_stock_data(),
+        "indicators": config.indicator_data,
+        "global": {
+            "kospi": config.latest_prices.get("kospi"),
+            "nasdaq": config.latest_prices.get("nasdaq"),
+            "dji": config.latest_prices.get("dji"),
+        },
         "active_trade": {
             "direction": current_active["direction"],
             "entry": current_active["entry"],

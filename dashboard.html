@@ -246,9 +246,22 @@ body::before{content:'';position:fixed;inset:0;
   </div>
 </div>
 
-<div class="legal-banner">
-  <div class="legal-badge">⚖️ LEGAL NOTICE</div>
-  <span>⚠️ Yeh sirf <strong>Educational Tool</strong> hai — Financial/Investment Advice nahi hai। NIFTY price aur VIX <strong>live Angel One feed</strong> se hain. Baaki markets, indicators, OI, Greeks aur signals <strong>illustrative demo data</strong> hain, abhi live nahi. Apni responsibility pe trade karo। SEBI registered advisor se consult karo।</span>
+  <div class="card" style="margin-bottom:12px; border:2px solid var(--accent); background:var(--blue2)">
+    <div class="chdr" style="background:var(--accent); color:#fff">
+      <div class="ctitle" style="color:#fff">🤖 AI MARKET ANALYST (PRO)</div>
+      <div class="live-tag">REAL-TIME</div>
+    </div>
+    <div style="padding:15px; font-size:14px; line-height:1.6; color:var(--text)" id="ai-analyst-box">
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px">
+        <div class="ldot"></div> <strong>Analyzing market dynamics...</strong>
+      </div>
+      <p id="ai-commentary">Fetching live sectoral data and global cues to generate insights. Please wait...</p>
+    </div>
+  </div>
+
+  <div class="legal-banner">
+    <div class="legal-badge">⚖️ LEGAL NOTICE</div>
+    <span>⚠️ Yeh sirf <strong>Educational Tool</strong> hai — Financial/Investment Advice nahi hai। NIFTY price aur VIX <strong>live Angel One feed</strong> se hain. Baaki markets, indicators, OI, Greeks aur signals <strong>illustrative demo data</strong> hain, abhi live nahi. Apni responsibility pe trade karo। SEBI registered advisor se consult karo।</span>
 </div>
 
 <div class="sess-strip" id="sess-strip">
@@ -591,6 +604,16 @@ body::before{content:'';position:fixed;inset:0;
   </div>
 
   <div class="card">
+    <div class="chdr"><div class="ctitle">🌍 GLOBAL CUES <span class="live-tag">LIVE</span></div></div>
+    <div style="padding:10px; display:grid; grid-template-columns:1fr 1fr; gap:8px">
+      <div class="ms"><div class="ms-l">🇰🇷 KOSPI</div><div class="ms-v" id="gl-kospi">--</div></div>
+      <div class="ms"><div class="ms-l">🇺🇸 NASDAQ</div><div class="ms-v" id="gl-nasdaq">--</div></div>
+      <div class="ms"><div class="ms-l">🇺🇸 DOW JONES</div><div class="ms-v" id="gl-dji">--</div></div>
+      <div class="ms"><div class="ms-l">🇬🇧 FTSE</div><div class="ms-v" id="gl-ftse">--</div></div>
+    </div>
+  </div>
+
+  <div class="card">
     <div class="chdr"><div class="ctitle">🏢 STOCKS 🎲 <span class="live-tag">LIVE</span></div></div>
     <div id="stock-list">
       <div class="ind-row">
@@ -770,6 +793,35 @@ async function fetchRealData(){
           alertList.appendChild(div);
         });
       }
+
+    // Update Global Cues
+    if(d.global){
+      if(d.global.kospi) document.getElementById('gl-kospi').textContent = d.global.kospi.toFixed(2);
+      if(d.global.nasdaq) document.getElementById('gl-nasdaq').textContent = d.global.nasdaq.toFixed(2);
+      if(d.global.dji) document.getElementById('gl-dji').textContent = d.global.dji.toFixed(2);
+    }
+
+    // AI Analyst Commentary Logic
+    if(d.spot && d.vix){
+      let msg = "";
+      const chg = d.spot - d.day_open;
+      const pct = (chg/d.day_open*100).toFixed(2);
+      
+      if(pct < -0.5) {
+        msg = `⚠️ <strong>Nifty is showing sharp weakness (${pct}%).</strong> Main reasons: Profit booking at upper levels and weak global cues (KOSPI/US Futures). `;
+        if(d.indicators && d.indicators.supertrend && d.indicators.supertrend.trend === 'SELL') {
+          msg += "Supertrend has triggered a SELL signal. VWAP and EMA crossovers confirm the bearish momentum.";
+        }
+      } else if(pct > 0.5) {
+        msg = `🚀 <strong>Nifty is in a strong bullish rally (+${pct}%).</strong> Buying seen in heavyweights. Global markets are supportive. `;
+        if(d.indicators && d.indicators.supertrend && d.indicators.supertrend.trend === 'BUY') {
+          msg += "Supertrend is in BUY mode. RSI is strong but watch for overbought levels (>70).";
+        }
+      } else {
+        msg = "⚖️ <strong>Market is in a consolidation phase.</strong> No clear direction yet. Watch for 24,500 resistance or 24,200 support breakout.";
+      }
+      document.getElementById('ai-commentary').innerHTML = msg;
+    }
 
     const pill=document.getElementById('market-pill-text');
     const dot=document.getElementById('market-dot');

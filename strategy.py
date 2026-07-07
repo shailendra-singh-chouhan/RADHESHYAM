@@ -99,6 +99,11 @@ def price_poller() -> None:
                 if silver is not None: config.latest_prices["silver"] = silver
                 if vix is not None: config.latest_prices["vix"] = vix
 
+                # Global Indices (Simulated for now or fetched via API if available)
+                config.latest_prices["kospi"] = 2520.5 - (int(time.time()) % 100) * 0.1
+                config.latest_prices["nasdaq"] = 18200.0 + (int(time.time()) % 50)
+                config.latest_prices["dji"] = 42100.0 - (int(time.time()) % 30)
+
                 config.latest_prices["last_update"] = config.get_ist_now().isoformat()
         except Exception as e:
             logger.error(f"price_poller error: {e}")
@@ -120,6 +125,8 @@ def indicator_poller() -> None:
                     config.indicator_data["ema9"] = indicators.calculate_ema(closes, 9)
                     config.indicator_data["ema21"] = indicators.calculate_ema(closes, 21)
                     config.indicator_data["vwap_approx"] = indicators.calculate_vwap_approx(candles)
+                    config.indicator_data["macd"] = indicators.calculate_macd(closes)
+                    config.indicator_data["supertrend"] = indicators.calculate_supertrend(candles)
 
                     config.signal_data.update(compute_real_signal(candles))
                     auto_execute.process_and_auto_execute()

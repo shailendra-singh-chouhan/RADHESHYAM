@@ -32,3 +32,22 @@ def calculate_vwap_approx(candles: list) -> Optional[float]:
         return None
     typical = [(c["high"] + c["low"] + c["close"]) / 3 for c in candles]
     return round(sum(typical) / len(typical), 2)
+
+def calculate_macd(closes: list) -> dict:
+    """Simplified MACD (12, 26, 9)."""
+    if len(closes) < 26:
+        return {"macd": None, "signal": None}
+    ema12 = calculate_ema(closes, 12)
+    ema26 = calculate_ema(closes, 26)
+    macd_val = ema12 - ema26
+    return {"macd": round(macd_val, 2), "signal": round(macd_val * 0.9, 2)}
+
+def calculate_supertrend(candles: list, period: int = 10) -> dict:
+    """Simplified Supertrend-like trend detection."""
+    if len(candles) < period:
+        return {"trend": "NEUTRAL", "value": None}
+    closes = [c["close"] for c in candles]
+    ema = calculate_ema(closes, period)
+    current = closes[-1]
+    trend = "BUY" if current > ema else "SELL"
+    return {"trend": trend, "value": ema}
