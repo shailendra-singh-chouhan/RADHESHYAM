@@ -1,12 +1,4 @@
-"""
-database.py
-===========
-SQLAlchemy engine + session factory for the GOAT PRO PostgreSQL database.
-
-Reads `DATABASE_URL` from the environment (already configured on Render).
-Handles both `postgres://` (older Render format) and `postgresql://` (newer).
-"""
-
+import json
 import os
 import logging
 from sqlalchemy import create_engine, text
@@ -14,21 +6,23 @@ from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.engine import Engine
 from typing import Generator, Optional
 
-from models import Base
+from models import Base, Trade, AppState
+import config
 
 logger = logging.getLogger(__name__)
 
+# ────────────────────────────────────────────
+# Database Setup
+# ────────────────────────────────────────────
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
-# Render's older postgres URLs used `postgres://` which SQLAlchemy 1.4+ rejects.
-# Normalize to `postgresql://` (or `postgresql+psycopg2://` for explicit driver).
+# For Render.com PostgreSQL, convert postgres:// to postgresql://
 if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 if DATABASE_URL and DATABASE_URL.startswith("postgresql://") and "+" not in DATABASE_URL.split(":", 1)[1]:
     # Use psycopg2 explicitly for maximum compatibility with Render
     DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
 
-# Create the engine lazily — Render may not have DATABASE_URL set on first build
 db_engine: Optional[Engine] = None
 SessionLocal = None
 
@@ -50,26 +44,20 @@ if DATABASE_URL:
 else:
     logger.warning("DATABASE_URL not set. Trades will NOT be persisted.")
 
-
-def init_db(engine: Optional[Engine] = None) -> None:
-    """Create all tables. Safe to call on every startup (CREATE IF NOT EXISTS)."""
-    target = engine or db_engine
-    if target is None:
+def init_db() -> None:
+    """Create all tables and load initial app state. Safe to call on every startup."""
+    if db_engine is None:
         logger.warning("init_db skipped — no engine.")
         return
     try:
-        Base.metadata.create_all(bind=target)
+        Base.metadata.create_all(bind=db_engine)
         logger.info("Database tables verified / created.")
     except Exception as e:
         logger.error(f"init_db error: {e}")
 
-    # ---- One-time lightweight migration ----
-    # create_all() only creates tables that don't exist yet — it never
-    # alters an EXISTING table. If a `trades` table already existed from
-    # an earlier version of this project (without trade_date), we add the
-    # missing column here so the app doesn't crash looking for it.
+    # ---- One-time lightweight migration for trade_date ----
     try:
-        with target.connect() as conn:
+        with db_engine.connect() as conn:
             conn.execute(text(
                 "ALTER TABLE trades ADD COLUMN IF NOT EXISTS trade_date VARCHAR(10)"
             ))
@@ -78,6 +66,10 @@ def init_db(engine: Optional[Engine] = None) -> None:
     except Exception as e:
         logger.error(f"migration check error (safe to ignore if table is brand new): {e}")
 
+    # Load app state on startup
+    if SessionLocal:
+        with SessionLocal() as db:
+            load_app_state(db, config.state_manager)
 
 def get_db() -> Generator[Session, None, None]:
     """FastAPI dependency that yields a SQLAlchemy session and closes it after."""
@@ -90,3 +82,54 @@ def get_db() -> Generator[Session, None, None]:
         yield db
     finally:
         db.close()
+
+# ────────────────────────────────────────────
+# State Persistence Functions
+# ────────────────────────────────────────────
+def save_app_state(db: Session, state_manager: config.StateManager):
+    """Saves the current state of the StateManager to the database."""
+    if not db_engine: return
+    try:
+        state_data = {
+            "latest_prices": state_manager.latest_prices,
+            "oi_data": state_manager.oi_data,
+            "greeks_data": state_manager.greeks_data,
+            "news_feed": state_manager.news_feed,
+            "market_alerts": state_manager.market_alerts,
+            "candle_store": state_manager.candle_store,
+            "indicator_data": state_manager.indicator_data,
+            "signal_data": state_manager.signal_data,
+            "active_trade_context": state_manager.active_trade_context,
+        }
+        
+        for key, value in state_data.items():
+            serialized_value = json.dumps(value)
+            app_state_entry = db.query(AppState).filter(AppState.state_key == key).first()
+            if app_state_entry:
+                app_state_entry.state_value = serialized_value
+            else:
+                app_state_entry = AppState(state_key=key, state_value=serialized_value)
+                db.add(app_state_entry)
+        db.commit()
+        state_manager.last_state_save_time = config.get_ist_now()
+        logger.debug("App state saved to DB.")
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error saving app state to DB: {e}")
+
+def load_app_state(db: Session, state_manager: config.StateManager):
+    """Loads the application state from the database into the StateManager."""
+    if not db_engine: return
+    try:
+        for key in [
+            "latest_prices", "oi_data", "greeks_data", "news_feed", 
+            "market_alerts", "candle_store", "indicator_data", "signal_data",
+            "active_trade_context"
+        ]:
+            app_state_entry = db.query(AppState).filter(AppState.state_key == key).first()
+            if app_state_entry:
+                value = json.loads(app_state_entry.state_value)
+                state_manager.set_state(key, value)
+        logger.info("App state loaded from DB.")
+    except Exception as e:
+        logger.error(f"Error loading app state from DB: {e}")
