@@ -95,19 +95,27 @@ class StateManager:
         }
         self._active_trade_context: Optional[Dict[str, Any]] = None # To store context of active trade for persistence
         self._last_state_save_time: Optional[datetime] = None
+        self._last_data_update_time: Optional[datetime] = None # New: Timestamp for last successful data update
 
     def get_state(self, key: str) -> Any:
         with self._lock:
             return getattr(self, f"_{key}", None)
 
-    def set_state(self, key: str, value: Any):
+    def set_state(self, key: str, value: Any, allow_none_overwrite: bool = True):
+        """Sets a state variable. If allow_none_overwrite is False, None values will not overwrite existing non-None values."""
         with self._lock:
+            if not allow_none_overwrite and value is None and getattr(self, f"_{key}", None) is not None:
+                return
             setattr(self, f"_{key}", value)
 
-    def update_state(self, key: str, updates: Dict[str, Any]):
+    def update_state(self, key: str, updates: Dict[str, Any], allow_none_overwrite: bool = True):
+        """Updates a state dictionary. If allow_none_overwrite is False, None values in updates will not overwrite existing non-None values."""
         with self._lock:
             current_state = getattr(self, f"_{key}", {})
-            current_state.update(updates)
+            for k, v in updates.items():
+                if not allow_none_overwrite and v is None and current_state.get(k) is not None:
+                    continue
+                current_state[k] = v
             setattr(self, f"_{key}", current_state)
 
     # Property accessors for convenience
@@ -170,6 +178,16 @@ class StateManager:
     def last_state_save_time(self, value: Optional[datetime]):
         with self._lock:
             self._last_state_save_time = value
+
+    @property
+    def last_data_update_time(self) -> Optional[datetime]:
+        with self._lock:
+            return self._last_data_update_time
+
+    @last_data_update_time.setter
+    def last_data_update_time(self, value: Optional[datetime]):
+        with self._lock:
+            self._last_data_update_time = value
 
 # Instantiate the State Manager
 state_manager = StateManager()
