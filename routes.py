@@ -77,7 +77,7 @@ async def api_data(db: Session = Depends(get_db)) -> JSONResponse:
                     "target": active_row.target,
                     "sl": active_row.sl,
                 }
-                if latest_prices["nifty"] is not None:
+                if latest_prices.get("nifty") is not None:
                     live_pnl = round(latest_prices["nifty"] - active_row.entry, 2)
             
             # Today's closed trades PnL
@@ -89,7 +89,7 @@ async def api_data(db: Session = Depends(get_db)) -> JSONResponse:
             logger.error(f"api_data query error: {e}")
 
     return JSONResponse({
-        "spot": latest_prices["nifty"],
+        "spot": latest_prices.get("nifty"),
         "banknifty": latest_prices.get("banknifty"),
         "finnifty": latest_prices.get("finnifty"),
         "sensex": latest_prices.get("sensex"),
@@ -98,8 +98,8 @@ async def api_data(db: Session = Depends(get_db)) -> JSONResponse:
         "silver": latest_prices.get("silver"),
         "usdinr": latest_prices.get("usdinr"),
         "midcap": latest_prices.get("midcap"),
-        "vix": latest_prices["vix"],
-        "day_open": latest_prices["day_open"],
+        "vix": latest_prices.get("vix"),
+        "day_open": latest_prices.get("day_open"),
         "market_status": market_status,
         "risk_ok": risk_ok,
         "risk_message": risk_message,
@@ -127,7 +127,7 @@ async def api_data(db: Session = Depends(get_db)) -> JSONResponse:
             "live_pnl": live_pnl,
         } if current_active else None,
         "real_signal": signal_data,
-        "last_update": latest_prices["last_update"],
+        "last_update": state.last_data_update_time.isoformat() if state.last_data_update_time else "N/A", # Use last_data_update_time
     })
 
 @router.get("/api/trades")
