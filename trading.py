@@ -81,3 +81,26 @@ def check_risk_limits(db) -> tuple[bool, str]:
     except Exception as e:
         logger.error(f"Risk check error: {e}")
         return True, f"Risk check skipped: {e}"
+
+def get_institutional_stats(db) -> dict:
+    """
+    Institutional data (FII/DII) return करता है।
+    Phase 4 में असली data लगाएंगे।
+    """
+    try:
+        return {
+            "fii_long": 0,
+            "fii_short": 0,
+            "fii_net": 0,
+            "dii_long": 0,
+            "dii_short": 0,
+            "dii_net": 0,
+            "status": "Coming Soon"
+        }
+    except Exception as e:
+        logger.error(f"Institutional stats error: {e}")
+        return {
+            "fii_long": 0, "fii_short": 0, "fii_net": 0,
+            "dii_long": 0, "dii_short": 0, "dii_net": 0,
+            "status": f"Error: {e}"
+        }
