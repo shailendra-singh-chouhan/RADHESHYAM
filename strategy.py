@@ -69,15 +69,22 @@ def price_poller() -> None:
         try:
             if config.get_market_status() in ("OPEN", "PRE_OPEN"):
                 nifty = angel_client.get_ltp("NSE", config.NIFTY_SYMBOL, config.NIFTY_TOKEN)
+                banknifty = angel_client.get_ltp("NSE", config.BANKNIFTY_SYMBOL, config.BANKNIFTY_TOKEN)
                 vix = angel_client.get_ltp("NSE", config.VIX_SYMBOL, config.VIX_TOKEN)
                 today = config.get_ist_now().date().isoformat()
+                
                 if nifty is not None:
                     config.latest_prices["nifty"] = nifty
                     if config.latest_prices["day_open_date"] != today:
                         config.latest_prices["day_open"] = nifty
                         config.latest_prices["day_open_date"] = today
+                
+                if banknifty is not None:
+                    config.latest_prices["banknifty"] = banknifty
+                    
                 if vix is not None:
                     config.latest_prices["vix"] = vix
+                
                 config.latest_prices["last_update"] = config.get_ist_now().isoformat()
         except Exception as e:
             logger.error(f"price_poller error: {e}")
