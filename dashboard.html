@@ -257,17 +257,6 @@ body::before{content:'';position:fixed;inset:0;
 </head>
 <body>
 
-<!-- Login Overlay -->
-<div id="login-overlay">
-    <div class="login-card">
-        <h2>⚡ GOAT PRO LOGIN</h2>
-        <div id="login-error" class="error-msg">Invalid credentials. Try again.</div>
-        <input type="text" id="username" placeholder="Username" value="admin">
-        <input type="password" id="password" placeholder="Password" value="adminpass">
-        <button onclick="handleLogin()">ENTER COMMAND CENTER</button>
-    </div>
-</div>
-
 <div class="wrap" id="main-wrap">
 
 <div class="topbar">
@@ -437,58 +426,12 @@ body::before{content:'';position:fixed;inset:0;
 </div>
 
 <script>
-let token = localStorage.getItem('goat_pro_token');
-
-async function handleLogin() {
-    const user = document.getElementById('username').value;
-    const pass = document.getElementById('password').value;
-    const errorDiv = document.getElementById('login-error');
-
-    try {
-        const formData = new FormData();
-        formData.append('username', user);
-        formData.append('password', pass);
-
-        const res = await fetch('/token', {
-            method: 'POST',
-            body: formData
-        });
-
-        if (res.ok) {
-            const data = await res.json();
-            token = data.access_token;
-            localStorage.setItem('goat_pro_token', token);
-            document.getElementById('login-overlay').style.display = 'none';
-            document.getElementById('main-wrap').style.display = 'block';
-            fetchData();
-            setInterval(fetchData, 5000);
-        } else {
-            errorDiv.style.display = 'block';
-        }
-    } catch (e) {
-        errorDiv.style.display = 'block';
-    }
-}
-
-// Check if already logged in
-if (token) {
-    document.getElementById('login-overlay').style.display = 'none';
-    document.getElementById('main-wrap').style.display = 'block';
-    setInterval(fetchData, 5000);
-    fetchData();
-}
+// Login removed — dashboard now loads directly, no username/password gate.
+fetchData();
+setInterval(fetchData, 5000);
 
 async function apiFetch(url, options = {}) {
-    options.headers = {
-        ...options.headers,
-        'Authorization': `Bearer ${token}`
-    };
     const res = await fetch(url, options);
-    if (res.status === 401) {
-        // Token expired or invalid
-        localStorage.removeItem('goat_pro_token');
-        location.reload();
-    }
     return res.json();
 }
 
