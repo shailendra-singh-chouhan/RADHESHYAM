@@ -1,5 +1,6 @@
 import threading
 import pyotp
+import pandas as pd
 from typing import Optional
 from SmartApi import SmartConnect
 from logzero import logger
@@ -7,6 +8,7 @@ import config
 
 smart_api: Optional[SmartConnect] = None
 session_lock = threading.Lock()
+_scrip_master_df: Optional[pd.DataFrame] = None
 
 def angel_login() -> bool:
     """Logs into Angel One SmartAPI using pyotp."""
@@ -28,12 +30,63 @@ def angel_login() -> bool:
         logger.error(f"Angel One login exception: {e}")
         return False
 
-def get_ltp(exchange: str, symbol: str, token: str) -> Optional[float]:
+def refresh_scrip_master() -> bool:
+    """Downloads full scrip master and caches it as DataFrame."""
+    global smart_api, _scrip_master_df
+    if smart_api is None:
+        if not angel_login():
+            return False
+    try:
+        with session_lock:
+            data = smart_api.getScripMaster()
+        if data and isinstance(data, list) and len(data) > 0:
+            _scrip_master_df = pd.DataFrame(data)
+            logger.info(f"Scrip master loaded: {len(data)} instruments")
+            return True
+        logger.error("Scrip master returned empty/invalid data")
+        return False
+    except Exception as e:
+        logger.error(f"refresh_scrip_master error: {e}")
+        return False
+
+def get_token(exchange: str, symbol: str) -> Optional[str]:
+    """Looks up symbol token from cached scrip master."""
+    global _scrip_master_df
+    if _scrip_master_df is None or _scrip_master_df.empty:
+        if not refresh_scrip_master():
+            return None
+    try:
+        match = _scrip_master_df[
+            (_scrip_master_df["exch_seg"] == exchange) & 
+            (_scrip_master_df["symbol"] == symbol)
+        ]
+        if not match.empty:
+            return str(match.iloc[0]["token"])
+        # Try partial match for indices
+        match = _scrip_master_df[
+            (_scrip_master_df["exch_seg"] == exchange) & 
+            (_scrip_master_df["symbol"].str.contains(symbol, case=False, na=False))
+        ]
+        if not match.empty:
+            return str(match.iloc[0]["token"])
+    except Exception as e:
+        logger.error(f"get_token error: {e}")
+    return None
+
+def get_ltp(exchange: str, symbol: str, token: Optional[str] = None) -> Optional[float]:
     """Fetches live Last Traded Price (LTP) for an asset."""
     global smart_api
     if smart_api is None:
         if not angel_login():
             return None
+
+    # Auto-resolve token if not provided
+    if token is None:
+        token = get_token(exchange, symbol)
+        if token is None:
+            logger.warning(f"Could not resolve token for {exchange}:{symbol}")
+            return None
+
     try:
         with session_lock:
             resp = smart_api.ltpData(exchange, symbol, token)
@@ -56,17 +109,24 @@ def fetch_todays_candles() -> Optional[list]:
     if smart_api is None:
         if not angel_login():
             return None
+
+    token = get_token("NSE", config.NIFTY_SYMBOL)
+    if token is None:
+        logger.error("Could not resolve NIFTY token for candle fetch")
+        return None
+
     try:
         now = config.get_ist_now()
         from_dt = now.replace(hour=9, minute=15, second=0, microsecond=0)
         params = {
             "exchange": "NSE",
-            "symboltoken": config.NIFTY_TOKEN,
+            "symboltoken": token,
             "interval": "ONE_MINUTE",
             "fromdate": from_dt.strftime("%Y-%m-%d %H:%M"),
             "todate": now.strftime("%Y-%m-%d %H:%M"),
         }
-        resp = smart_api.getCandleData(params)
+        with session_lock:
+            resp = smart_api.getCandleData(params)
         if resp and resp.get("status") and resp.get("data"):
             candles = []
             for row in resp["data"]:
