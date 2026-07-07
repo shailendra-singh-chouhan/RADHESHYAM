@@ -12,6 +12,34 @@ try:
 except ImportError:
     ANGEL_AVAILABLE = False
 
+def calculate_atr(candles: list, period: int = 14) -> float:
+    """
+    Calculates Average True Range (ATR) based on real 1m candles.
+    Yeh batata hai ki market kitni tezi se move kar rahi hai.
+    """
+    if not candles or len(candles) < period + 1:
+        # Agar candles nahi mile (e.g. market band hai), toh safe default
+        return 20.0 
+        
+    tr_list = []
+    for i in range(1, len(candles)):
+        h = candles[i].get('high', 0)
+        l = candles[i].get('low', 0)
+        c = candles[i].get('close', 0)
+        pc = candles[i-1].get('close', 0)
+        
+        # True Range = max(High-Low, abs(High-Prev Close), abs(Low-Prev Close))
+        tr = max(h - l, abs(h - pc), abs(l - pc))
+        if tr > 0:
+            tr_list.append(tr)
+            
+    if not tr_list:
+        return 20.0
+        
+    # Last 14 periods ka average
+    recent_tr = tr_list[-period:]
+    return sum(recent_tr) / len(recent_tr)
+
 def get_options_contract(spot_price: float, signal: str, index: str = "NIFTY", strategy: str = "ATM") -> dict:
     if spot_price is None or signal not in ["LONG", "SHORT"]:
         return None
@@ -27,8 +55,7 @@ def get_options_contract(spot_price: float, signal: str, index: str = "NIFTY", s
         if strategy == "ITM": selected_strike = atm_strike + step_size
 
     contract_symbol = f"{index} {selected_strike} {opt_type}"
-    logger.info(f"🎯 STRIKE SELECTED: Spot was {spot_price}, chose {contract_symbol}")
-
+    
     premium_estimate = "Opens at 9:15 AM"
     if ANGEL_AVAILABLE and config.get_market_status() == "OPEN":
         try:
@@ -36,9 +63,7 @@ def get_options_contract(spot_price: float, signal: str, index: str = "NIFTY", s
             ltp = angel_client.get_ltp("NFO", search_symbol)
             if ltp and ltp > 0:
                 premium_estimate = f"₹{ltp}"
-                logger.info(f"💰 LIVE PREMIUM FETCHED: {search_symbol} @ {ltp}")
         except Exception as e:
-            logger.error(f"Premium fetch failed: {e}")
             premium_estimate = "Fetching..."
 
     return {
@@ -49,34 +74,39 @@ def get_options_contract(spot_price: float, signal: str, index: str = "NIFTY", s
 def execute_trade(signal: str, spot_price: float) -> dict:
     contract = get_options_contract(spot_price, signal)
     if not contract: return None
-    logger.info(f"🚀 EXECUTING {signal} TRADE on {contract['symbol']}")
+    
+    # Calculate dynamic SL/Target based on current ATR
+    candles = getattr(config, 'candle_store', [])
+    atr = calculate_atr(candles)
+    
+    sl_points = round(atr * 1.5, 2) # SL = 1.5x ATR
+    target_points = round(atr * 2.0, 2) # Target = 2.0x ATR (R:R > 1:1)
+    
     entry_price = spot_price
-    target = spot_price + 50 if signal == "LONG" else spot_price - 50
-    sl = spot_price - 25 if signal == "LONG" else spot_price + 25
-    return {"direction": signal, "entry": entry_price, "target": target, "sl": sl, "contract": contract, "live_pnl": 0.0, "status": "OPEN"}
+    if signal == "LONG":
+        target = round(spot_price + target_points, 2)
+        sl = round(spot_price - sl_points, 2)
+    else:
+        target = round(spot_price - target_points, 2)
+        sl = round(spot_price + sl_points, 2)
+        
+    return {"direction": signal, "entry": entry_price, "target": target, "sl": sl, "contract": contract, "live_pnl": 0.0, "status": "OPEN", "atr": round(atr, 2)}
 
 def check_risk_limits(db) -> tuple[bool, str]:
-    """
-    REAL RISK MANAGEMENT: अगर आज का नुकसान -2000 से ज्यादा हो, तो बॉट बंद हो जाएगा।
-    """
+    """REAL RISK MANAGEMENT: अगर आज का नुकसान -2000 से नीचे हो, तो बॉट बंद हो जाएगा।"""
     try:
         if not db: return True, "Risk OK (No DB)"
-        
         today = datetime.datetime.now().date().isoformat()
-        
-        # आज के सारे बंद हुए ट्रेड्स का PnL निकालो
         total_pnl = db.query(func.coalesce(func.sum(Trade.pnl), 0.0))\
                        .filter(Trade.status == "CLOSED", Trade.trade_date == today)\
                        .scalar() or 0.0
 
-        # अगर -2000 से नीचे गिरा, तो Risk Fail
         if total_pnl <= -2000.0:
             logger.warning(f"🛑 DAILY LIMIT HIT! Today's PnL is {total_pnl}. Stopping bot.")
             return False, f"🛑 DAILY LIMIT HIT (₹{total_pnl:.2f}). Bot Stopped."
             
         return True, f"Risk OK (Day PnL: ₹{total_pnl:.2f})"
     except Exception as e:
-        logger.error(f"Risk check error: {e}")
         return True, f"Risk check skipped: {e}"
 
 def get_institutional_stats(db) -> dict:
@@ -96,9 +126,24 @@ def open_paper_trade(db, signal: str = None, spot: float = None) -> tuple[bool, 
         if signal not in ["LONG", "SHORT"] or spot is None: return False, "Invalid signal or no spot price"
         already_open = db.query(Trade).filter(Trade.status == "ACTIVE").first()
         if already_open: return False, "Already have an open trade"
+        
+        # --- DYNAMIC SL & TARGET LOGIC ---
+        candles = getattr(config, 'candle_store', [])
+        atr = calculate_atr(candles)
+        
+        sl_points = round(atr * 1.5, 2) 
+        target_points = round(atr * 2.0, 2) 
+        
         entry = spot
-        target = spot + 50 if signal == "LONG" else spot - 50
-        sl = spot - 25 if signal == "LONG" else spot + 25
+        if signal == "LONG":
+            target = round(spot + target_points, 2)
+            sl = round(spot - sl_points, 2)
+        else:
+            target = round(spot - target_points, 2)
+            sl = round(spot + sl_points, 2)
+            
+        logger.info(f"🧠 ATR: {atr:.2f} | SL Points: {sl_points} | TGT Points: {target_points}")
+            
         new_trade = Trade(direction=signal, entry=entry, target=target, sl=sl, status="ACTIVE", trade_date=config.get_ist_now().date().isoformat())
         db.add(new_trade)
         db.commit()
