@@ -23,15 +23,15 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 # ────────────────────────────────────────────
 def get_password_hash(password: str) -> str:
     # bcrypt requires bytes, so we encode the password
-    pwd_bytes = password.encode('utf-8')
+    pwd_bytes = password.encode("utf-8")
     salt = bcrypt.gensalt()
     hashed = bcrypt.hashpw(pwd_bytes, salt)
-    return hashed.decode('utf-8')
+    return hashed.decode("utf-8")
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     # bcrypt requires bytes for both plain and hashed password
-    password_byte_enc = plain_password.encode('utf-8')
-    hashed_password_byte_enc = hashed_password.encode('utf-8')
+    password_byte_enc = plain_password.encode("utf-8")
+    hashed_password_byte_enc = hashed_password.encode("utf-8")
     return bcrypt.checkpw(password_byte_enc, hashed_password_byte_enc)
 
 # ────────────────────────────────────────────
@@ -77,8 +77,8 @@ class UserInDB:
         self.hashed_password = hashed_password
 
 # This should ideally come from a database
-# Pre-hashing 'adminpass' for the test user
-ADMIN_HASHED_PASSWORD = get_password_hash("adminpass")
+# Using a pre-generated hash for "adminpass" to ensure consistency
+ADMIN_HASHED_PASSWORD = "$2b$12$zqJma7.Zfa2khlP1sigp3.tXOwY6FTy1nRjTExDVit5KdROGAig3C" # Hash for "adminpass"
 TEST_USER_DB = {
     "admin": UserInDB(username="admin", hashed_password=ADMIN_HASHED_PASSWORD)
 }
