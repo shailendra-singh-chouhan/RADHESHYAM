@@ -8,10 +8,15 @@ from logzero import logger
 import config
 import angel_client
 import strategy
+import routes
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("--- Starting GOAT PRO Institutional Services ---")
+    
+    # Initialize database tables and migrations
+    from database import init_db
+    init_db()
     logger.info("Database initialized successfully.")
 
     if angel_client.angel_login():
@@ -27,6 +32,9 @@ async def lifespan(app: FastAPI):
     logger.info("--- Shutting down GOAT PRO ---")
 
 app = FastAPI(title="GOAT PRO", lifespan=lifespan)
+
+# Mount the main dashboard router
+app.include_router(routes.router)
 
 app.add_middleware(
     CORSMiddleware,

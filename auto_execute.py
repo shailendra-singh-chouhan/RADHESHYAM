@@ -70,7 +70,7 @@ class AutoTradeExecutor:
             logger.info(f"AUTO-EXECUTE: {sig_type} signal (confidence {confidence}/4) - {note}")
             
             # Call the paper trading engine
-            success, message = trading.open_paper_trade(db_session, signal_type=sig_type)
+            success, message = trading.open_paper_trade(db_session, direction=sig_type)
             
             if success:
                 self.last_signal = sig_type

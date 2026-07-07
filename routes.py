@@ -133,15 +133,22 @@ async def api_candles() -> dict:
 @router.get("/get_market_data")
 async def get_market_data_endpoint(symbol: str) -> dict:
     symbol_map = {
-        "NIFTY": ("NSE", config.NIFTY_SYMBOL, config.NIFTY_TOKEN),
-        "BANKNIFTY": ("NSE", config.BANKNIFTY_SYMBOL, config.BANKNIFTY_TOKEN),
-        "VIX": ("NSE", config.VIX_SYMBOL, config.VIX_TOKEN),
+        "NIFTY": ("NSE", config.NIFTY_SYMBOL),
+        "BANKNIFTY": ("NSE", config.BANKNIFTY_SYMBOL),
+        "VIX": ("NSE", config.VIX_SYMBOL),
     }
     key = symbol.upper().strip()
     if key not in symbol_map:
         raise HTTPException(status_code=404, detail=f"Unknown symbol: {symbol}")
-    exch, sym, tok = symbol_map[key]
-    ltp = angel_client.get_ltp(exch, sym, tok)
+    
+    exch, sym = symbol_map[key]
+    # get_ltp without token will auto-resolve it
+    ltp = angel_client.get_ltp(exch, sym)
+    
+    # VIX fallback to NFO if NSE fails
+    if key == "VIX" and ltp is None:
+        ltp = angel_client.get_ltp("NFO", sym)
+        
     candles = angel_client.fetch_todays_candles() if key == "NIFTY" else []
     return {"symbol": sym, "ltp": ltp, "todays_candles": candles or []}
 
