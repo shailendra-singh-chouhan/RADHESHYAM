@@ -2,7 +2,6 @@ import datetime
 from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from logzero import logger
@@ -14,7 +13,6 @@ import trading
 import angel_client
 import strategy
 import stocks
-from auth import create_access_token, get_current_user, get_user, verify_password, ACCESS_TOKEN_EXPIRE_MINUTES
 
 router = APIRouter()
 
@@ -43,23 +41,13 @@ async def health() -> dict:
 async def ping() -> dict:
     return {"status": "alive"}
 
-@router.post("/token")
-async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()) -> dict:
-    user = get_user(form_data.username)
-    if not user or not verify_password(form_data.password, user.hashed_password):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(
-        data={"sub": user.username}, expires_delta=access_token_expires
-    )
-    return {"access_token": access_token, "token_type": "bearer"}
+# NOTE: The /token login route and all `Depends(get_current_user)` auth checks
+# were removed here (per user request) - they made the dashboard's own API
+# calls return 401 Unauthorized because dashboard.html never sends a Bearer
+# token. auth.py is left in the repo but unused; nothing imports it now.
 
 @router.get("/api/data")
-async def api_data(db: Session = Depends(get_db), user: str = Depends(get_current_user)) -> JSONResponse:
+async def api_data(db: Session = Depends(get_db)) -> JSONResponse:
     """Main data endpoint that the dashboard polls every few seconds."""
     market_status = config.get_market_status()
     risk_ok, risk_message = trading.check_risk_limits(db) if db else (True, "Risk OK (no DB)")
@@ -148,7 +136,7 @@ async def api_data(db: Session = Depends(get_db), user: str = Depends(get_curren
     })
 
 @router.get("/api/trades")
-async def api_trades(db: Session = Depends(get_db), user: str = Depends(get_current_user)) -> dict:
+async def api_trades(db: Session = Depends(get_db)) -> dict:
     if db is None:
         return {"open": None, "closed": [], "stats": trading.get_institutional_stats(None)}
     try:
@@ -165,22 +153,22 @@ async def api_trades(db: Session = Depends(get_db), user: str = Depends(get_curr
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/api/execute_trade")
-async def api_execute_trade(db: Session = Depends(get_db), user: str = Depends(get_current_user)) -> dict:
+async def api_execute_trade(db: Session = Depends(get_db)) -> dict:
     success, message = trading.open_paper_trade(db)
     return {"success": success, "message": message}
 
 @router.post("/api/close_trade")
-async def api_close_trade(db: Session = Depends(get_db), user: str = Depends(get_current_user)) -> dict:
+async def api_close_trade(db: Session = Depends(get_db)) -> dict:
     success, message = trading.close_paper_trade(db)
     return {"success": success, "message": message}
 
 @router.get("/api/candles")
-async def api_candles(user: str = Depends(get_current_user)) -> dict:
+async def api_candles() -> dict:
     candles = config.state_manager.candle_store
     return {"candles": candles}
 
 @router.get("/get_market_data")
-async def get_market_data_endpoint(symbol: str, user: str = Depends(get_current_user)) -> dict:
+async def get_market_data_endpoint(symbol: str) -> dict:
     symbol_map = {
         "NIFTY": ("NSE", config.NIFTY_SYMBOL),
         "BANKNIFTY": ("NSE", config.BANKNIFTY_SYMBOL),
@@ -200,7 +188,7 @@ async def get_market_data_endpoint(symbol: str, user: str = Depends(get_current_
     return {"symbol": sym, "ltp": ltp, "todays_candles": candles or []}
 
 @router.get("/institutional_stats")
-async def get_stats_endpoint(db: Session = Depends(get_db), user: str = Depends(get_current_user)) -> dict:
+async def get_stats_endpoint(db: Session = Depends(get_db)) -> dict:
     if db is None:
         raise HTTPException(status_code=500, detail="Database is not connected.")
     try:
