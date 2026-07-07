@@ -72,7 +72,6 @@ def price_poller() -> None:
     while True:
         try:
             if config.get_market_status() in ("OPEN", "PRE_OPEN"):
-                # Dynamic token resolution - no hardcoded tokens needed
                 nifty = angel_client.get_ltp("NSE", config.NIFTY_SYMBOL)
                 banknifty = angel_client.get_ltp("NSE", config.BANKNIFTY_SYMBOL)
                 finnifty = angel_client.get_ltp("NSE", config.FINNIFTY_SYMBOL)
@@ -83,7 +82,6 @@ def price_poller() -> None:
                 usdinr = angel_client.get_ltp("CDS", config.USDINR_SYMBOL)
                 midcap = angel_client.get_ltp("NSE", config.MIDCAP_SYMBOL)
 
-                # Try NSE first for VIX, fallback to NFO
                 vix = angel_client.get_ltp("NSE", config.VIX_SYMBOL)
                 if vix is None:
                     vix = angel_client.get_ltp("NFO", config.VIX_SYMBOL)
@@ -109,12 +107,21 @@ def price_poller() -> None:
                 if vix is not None: updates["vix"] = vix
 
                 # Global Indices (Simulated for now or fetched via API if available)
-                updates["kospi"] = 2520.5 - (int(time.time()) % 100) * 0.1
-                updates["nasdaq"] = 18200.0 + (int(time.time()) % 50)
-                updates["dji"] = 42100.0 - (int(time.time()) % 30)
-                updates["last_update"] = config.get_ist_now().isoformat()
+                # Only update if not None, to retain last known value
+                kospi_val = 2520.5 - (int(time.time()) % 100) * 0.1 # Example simulation
+                if kospi_val is not None: updates["kospi"] = kospi_val
+                nasdaq_val = 18200.0 + (int(time.time()) % 50) # Example simulation
+                if nasdaq_val is not None: updates["nasdaq"] = nasdaq_val
+                dji_val = 42100.0 - (int(time.time()) % 30) # Example simulation
+                if dji_val is not None: updates["dji"] = dji_val
 
-                config.state_manager.update_state("latest_prices", updates)
+                if updates: # Only update if there's actual non-None data
+                    config.state_manager.update_state("latest_prices", updates, allow_none_overwrite=False)
+                    config.state_manager.last_data_update_time = config.get_ist_now()
+
+            # Always update last_update in latest_prices, even if market is closed, to show when the bot last checked
+            config.state_manager.update_state("latest_prices", {"last_update": config.get_ist_now().isoformat()})
+
         except Exception as e:
             logger.error(f"price_poller error: {e}")
         time.sleep(15)
@@ -129,18 +136,28 @@ def indicator_poller() -> None:
                     config.state_manager.set_state("candle_store", candles)
 
                     closes = [c["close"] for c in candles]
-                    indicator_updates = {
-                        "rsi": indicators.calculate_rsi(closes),
-                        "ema9": indicators.calculate_ema(closes, 9),
-                        "ema21": indicators.calculate_ema(closes, 21),
-                        "vwap_approx": indicators.calculate_vwap_approx(candles),
-                        "macd": indicators.calculate_macd(closes),
-                        "supertrend": indicators.calculate_supertrend(candles)
-                    }
-                    config.state_manager.update_state("indicator_data", indicator_updates)
+                    indicator_updates = {}
+                    rsi_val = indicators.calculate_rsi(closes)
+                    if rsi_val is not None: indicator_updates["rsi"] = rsi_val
+                    ema9_val = indicators.calculate_ema(closes, 9)
+                    if ema9_val is not None: indicator_updates["ema9"] = ema9_val
+                    ema21_val = indicators.calculate_ema(closes, 21)
+                    if ema21_val is not None: indicator_updates["ema21"] = ema21_val
+                    vwap_approx_val = indicators.calculate_vwap_approx(candles)
+                    if vwap_approx_val is not None: indicator_updates["vwap_approx"] = vwap_approx_val
+                    macd_val = indicators.calculate_macd(closes)
+                    if macd_val is not None: indicator_updates["macd"] = macd_val
+                    supertrend_val = indicators.calculate_supertrend(candles)
+                    if supertrend_val is not None: indicator_updates["supertrend"] = supertrend_val
+
+                    if indicator_updates:
+                        config.state_manager.update_state("indicator_data", indicator_updates, allow_none_overwrite=False)
+                        config.state_manager.last_data_update_time = config.get_ist_now()
 
                     signal_update = compute_real_signal(candles)
-                    config.state_manager.update_state("signal_data", signal_update)
+                    if signal_update:
+                        config.state_manager.update_state("signal_data", signal_update, allow_none_overwrite=False)
+                        config.state_manager.last_data_update_time = config.get_ist_now()
                     
                     auto_execute.process_and_auto_execute()
 
@@ -154,26 +171,39 @@ def extra_data_poller() -> None:
     while True:
         try:
             if config.get_market_status() == "OPEN":
-                # 1. Update OI Data (Simulated for now based on market trend)
                 nifty_px = config.state_manager.latest_prices.get("nifty")
+                
+                # 1. Update OI Data (Simulated for now based on market trend)
                 if nifty_px:
-                    oi_updates = {
-                        "call_oi": 4500000 + (int(nifty_px) % 100) * 1000,
-                        "put_oi": 5200000 + (int(nifty_px) % 100) * 1500,
-                    }
-                    oi_updates["pcr"] = round(oi_updates["put_oi"] / oi_updates["call_oi"], 2)
-                    oi_updates["max_pain"] = round(nifty_px / 50) * 50
-                    config.state_manager.update_state("oi_data", oi_updates)
+                    oi_updates = {}
+                    call_oi_val = 4500000 + (int(nifty_px) % 100) * 1000
+                    if call_oi_val is not None: oi_updates["call_oi"] = call_oi_val
+                    put_oi_val = 5200000 + (int(nifty_px) % 100) * 1500
+                    if put_oi_val is not None: oi_updates["put_oi"] = put_oi_val
+
+                    if oi_updates.get("call_oi") and oi_updates.get("put_oi"):
+                        oi_updates["pcr"] = round(oi_updates["put_oi"] / oi_updates["call_oi"], 2)
+                    max_pain_val = round(nifty_px / 50) * 50
+                    if max_pain_val is not None: oi_updates["max_pain"] = max_pain_val
+
+                    if oi_updates:
+                        config.state_manager.update_state("oi_data", oi_updates, allow_none_overwrite=False)
+                        config.state_manager.last_data_update_time = config.get_ist_now()
 
                 # 2. Update Greeks
                 vix = config.state_manager.latest_prices.get("vix")
                 if vix:
-                    greeks_updates = {
-                        "iv": round(vix * 0.95, 2),
-                        "theta": -12.5,
-                        "gamma": 0.0045
-                    }
-                    config.state_manager.update_state("greeks_data", greeks_updates)
+                    greeks_updates = {}
+                    iv_val = round(vix * 0.95, 2)
+                    if iv_val is not None: greeks_updates["iv"] = iv_val
+                    theta_val = -12.5
+                    if theta_val is not None: greeks_updates["theta"] = theta_val
+                    gamma_val = 0.0045
+                    if gamma_val is not None: greeks_updates["gamma"] = gamma_val
+
+                    if greeks_updates:
+                        config.state_manager.update_state("greeks_data", greeks_updates, allow_none_overwrite=False)
+                        config.state_manager.last_data_update_time = config.get_ist_now()
 
                 # 3. News Feed & Alerts
                 new_alert = {
