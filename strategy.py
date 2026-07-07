@@ -7,6 +7,7 @@ import config
 import angel_client
 import indicators
 import auto_execute
+import database # Import database module for state saving
 
 def compute_orb_range(candles: list) -> tuple[Optional[float], Optional[float]]:
     """Opening Range = high/low of candles between 9:15 and 9:30 AM."""
@@ -189,6 +190,19 @@ def extra_data_poller() -> None:
             logger.error(f"extra_data_poller error: {e}")
         time.sleep(600)
 
+def state_saver_poller() -> None:
+    """Periodically saves the application state to the database."""
+    while True:
+        try:
+            if database.SessionLocal:
+                with database.SessionLocal() as db:
+                    database.save_app_state(db, config.state_manager)
+            else:
+                logger.warning("State saver skipped: Database not connected.")
+        except Exception as e:
+            logger.error(f"state_saver_poller error: {e}")
+        time.sleep(60) # Save state every 60 seconds
+
 def start_background_threads() -> None:
     global _started
     if _started:
@@ -197,4 +211,5 @@ def start_background_threads() -> None:
     threading.Thread(target=price_poller, daemon=True).start()
     threading.Thread(target=indicator_poller, daemon=True).start()
     threading.Thread(target=extra_data_poller, daemon=True).start()
-    logger.info("Background threads started (price, indicator, extra_data).")
+    threading.Thread(target=state_saver_poller, daemon=True).start() # Start the state saver poller
+    logger.info("Background threads started (price, indicator, extra_data, state_saver).")
