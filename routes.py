@@ -33,7 +33,7 @@ async def health() -> dict:
         "status": "healthy",
         "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "service": "GOAT PRO Institutional",
-        "version": "3.0",
+        "version": "3.1",
         "db_connected": db_engine is not None,
     }
 
@@ -48,8 +48,18 @@ async def api_data(db: Session = Depends(get_db)) -> JSONResponse:
     risk_ok, risk_message = trading.check_risk_limits(db) if db else (True, "Risk OK (no DB)")
     stats = trading.get_institutional_stats(db)
     
-    # PRO Auto-Trade Logic यहाँ चलेगा हर बार
+    # PRO Auto-Trade Logic
     auto_status = trading.process_auto_signal(db) if db else {"action": "skipped", "reason": "No DB"}
+    
+    # HACK: Auto-Trade updates को Alerts में भेज देते हैं (बिना HTML छुए)
+    current_alerts = list(config.market_alerts)
+    action = auto_status.get("action", "")
+    if action == "auto_opened":
+        current_alerts.append({"time": config.get_ist_now().strftime("%H:%M:%S"), "badge": "🤖 BOT", "msg": f"Auto Trade Opened: {auto_status.get('msg', '')}", "px": config.latest_prices.get("nifty")})
+    elif action == "auto_closed":
+        current_alerts.append({"time": config.get_ist_now().strftime("%H:%M:%S"), "badge": "🎯 BOT", "msg": f"Auto Trade Closed: {auto_status.get('msg', '')}", "px": config.latest_prices.get("nifty")})
+    elif action == "reversed":
+        current_alerts.append({"time": config.get_ist_now().strftime("%H:%M:%S"), "badge": "🔄 BOT", "msg": f"Signal Reversed! Closed old, Opened new.", "px": config.latest_prices.get("nifty")})
 
     current_active = None
     session_pnl = 0.0
@@ -99,7 +109,7 @@ async def api_data(db: Session = Depends(get_db)) -> JSONResponse:
         "institutional_stats": stats,
         "oi_data": config.oi_data,
         "greeks": config.greeks_data,
-        "alerts": config.market_alerts,
+        "alerts": current_alerts, # <--- यहाँ अब बॉट के मैसेज भी आएंगे
         "stocks": stocks.get_all_stock_data(),
         "indicators": config.indicator_data,
         "global": {
