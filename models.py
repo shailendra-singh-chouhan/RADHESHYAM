@@ -1,12 +1,7 @@
-"""
-models.py
-=========
-SQLAlchemy Trade model for GOAT PRO.
-"""
-
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Float, DateTime, Index
+from sqlalchemy import Column, Integer, String, Float, DateTime, Index, Text
 from sqlalchemy.orm import declarative_base
+import json
 
 Base = declarative_base()
 
@@ -40,6 +35,24 @@ class Trade(Base):
             "opened_at": self.opened_at.isoformat() if self.opened_at else None,
             "closed_at": self.closed_at.isoformat() if self.closed_at else None,
             "trade_date": self.trade_date,
+        }
+
+
+class AppState(Base):
+    """Stores a snapshot of the application's StateManager for persistence."""
+    __tablename__ = "app_state"
+
+    id = Column(Integer, primary_key=True, index=True)
+    state_key = Column(String(255), unique=True, nullable=False)
+    state_value = Column(Text, nullable=False) # Storing JSON serialized state
+    last_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "state_key": self.state_key,
+            "state_value": json.loads(self.state_value),
+            "last_updated": self.last_updated.isoformat() if self.last_updated else None,
         }
 
 
