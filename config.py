@@ -32,6 +32,11 @@ NASDAQ_SYMBOL    = "^IXIC"
 FTSE_SYMBOL      = "^FTSE"
 
 # ────────────────────────────────────────────
+# Trading Configuration
+# ────────────────────────────────────────────
+GAP_THRESHOLD_PERCENT = float(os.getenv("GAP_THRESHOLD_PERCENT", "0.5")) # 0.5% gap threshold
+
+# ────────────────────────────────────────────
 # Thread-safe State Manager
 # ────────────────────────────────────────────
 class StateManager:
@@ -88,6 +93,8 @@ class StateManager:
             "orb_low": None,
             "note": "Initializing...",
         }
+        self._active_trade_context: Optional[Dict[str, Any]] = None # To store context of active trade for persistence
+        self._last_state_save_time: Optional[datetime] = None
 
     def get_state(self, key: str) -> Any:
         with self._lock:
@@ -143,6 +150,26 @@ class StateManager:
     def signal_data(self) -> Dict[str, Any]:
         with self._lock:
             return self._signal_data.copy()
+
+    @property
+    def active_trade_context(self) -> Optional[Dict[str, Any]]:
+        with self._lock:
+            return self._active_trade_context.copy() if self._active_trade_context else None
+
+    @active_trade_context.setter
+    def active_trade_context(self, value: Optional[Dict[str, Any]]):
+        with self._lock:
+            self._active_trade_context = value
+
+    @property
+    def last_state_save_time(self) -> Optional[datetime]:
+        with self._lock:
+            return self._last_state_save_time
+
+    @last_state_save_time.setter
+    def last_state_save_time(self, value: Optional[datetime]):
+        with self._lock:
+            self._last_state_save_time = value
 
 # Instantiate the State Manager
 state_manager = StateManager()
