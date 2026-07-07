@@ -726,6 +726,22 @@ async function fetchRealData(){
       if(d.gold) document.getElementById('gd-px').textContent = '₹' + d.gold.toFixed(2);
       if(d.silver) document.getElementById('sv-px').textContent = '₹' + d.silver.toFixed(2);
 
+      // Update Live Stocks
+      if(d.stocks){
+        const stockList = document.getElementById('stock-list');
+        stockList.innerHTML = '';
+        Object.entries(d.stocks).forEach(([name, data]) => {
+          if(!data.ltp) return;
+          const row = document.createElement('div');
+          row.className = 'ind-row';
+          row.innerHTML = `<div class="iname">🏢 ${name}</div>
+                           <div class="ibar"><div class="ibfill" style="background:var(--green);width:60%"></div></div>
+                           <div class="ival" style="color:var(--green)">₹${data.ltp.toFixed(2)}</div>
+                           <div class="isig bull">📈 LIVE</div>`;
+          stockList.appendChild(row);
+        });
+      }
+
       // Update Greeks & OI
       if(d.greeks){
         if(d.greeks.iv) document.getElementById('iv-v').textContent = d.greeks.iv + '%';

@@ -24,6 +24,9 @@ async def lifespan(app: FastAPI):
     else:
         logger.warning("Initial Angel One login failed. Will retry in pollers.")
 
+    # Start all background pollers
+    import stocks
+    stocks.start_stock_price_poller()
     strategy.start_background_threads()
     logger.info("All background services started successfully.")
 

@@ -11,7 +11,8 @@ from models import Trade
 import config
 import trading
 import angel_client
-import strategy  # candle_lock के लिए
+import strategy
+import stocks
 
 router = APIRouter()
 
@@ -93,6 +94,7 @@ async def api_data(db: Session = Depends(get_db)) -> JSONResponse:
         "oi_data": config.oi_data,
         "greeks": config.greeks_data,
         "alerts": config.market_alerts,
+        "stocks": stocks.get_all_stock_data(),
         "active_trade": {
             "direction": current_active["direction"],
             "entry": current_active["entry"],
