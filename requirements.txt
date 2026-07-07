@@ -9,3 +9,6 @@ websocket-client>=1.7
 logzero>=1.7
 requests>=2.31
 yfinance>=0.2.40
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+python-multipart>=0.0.9
