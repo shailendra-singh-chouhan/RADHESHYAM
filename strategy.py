@@ -6,7 +6,9 @@ from logzero import logger
 import config
 import angel_client
 import indicators
+import auto_execute  # Auto-execution integration
 
+# Thread safety for shared variables
 candle_lock = threading.Lock()
 
 def compute_orb_range(candles: list) -> tuple[Optional[float], Optional[float]]:
@@ -91,7 +93,7 @@ def price_poller() -> None:
         time.sleep(15)
 
 def indicator_poller() -> None:
-    """Refreshes technical indicators and signals every 5 minutes."""
+    """Refreshes technical indicators, updates signals, and triggers auto-execution."""
     while True:
         try:
             if config.get_market_status() == "OPEN":
@@ -100,12 +102,19 @@ def indicator_poller() -> None:
                     with candle_lock:
                         config.candle_store.clear()
                         config.candle_store.extend(candles)
+                    
                     closes = [c["close"] for c in candles]
                     config.indicator_data["rsi"] = indicators.calculate_rsi(closes)
                     config.indicator_data["ema9"] = indicators.calculate_ema(closes, 9)
                     config.indicator_data["ema21"] = indicators.calculate_ema(closes, 21)
                     config.indicator_data["vwap_approx"] = indicators.calculate_vwap_approx(candles)
+                    
+                    # Update signal
                     config.signal_data.update(compute_real_signal(candles))
+                    
+                    # Call Auto-Execute
+                    auto_execute.process_and_auto_execute()
+                    
         except Exception as e:
             logger.error(f"indicator_poller error: {e}")
         time.sleep(300)
