@@ -37,6 +37,19 @@ FTSE_SYMBOL      = "^FTSE"
 GAP_THRESHOLD_PERCENT = float(os.getenv("GAP_THRESHOLD_PERCENT", "0.5")) # 0.5% gap threshold
 
 # ────────────────────────────────────────────
+# Auto-Trade Toggle (SAFETY-DEFAULT: OFF)
+# ────────────────────────────────────────────
+# When False: signals are still calculated and shown on dashboard, but NO trades
+# are auto-opened/closed by the bot. User must press buttons manually.
+# When True: the indicator_poller will auto-execute signals from the ORB strategy.
+# Set to True ONLY after:
+#   1. You've verified the dashboard works end-to-end (live data, indicators, signals)
+#   2. You've tested paper trades manually and confirmed PnL is calculated correctly
+#   3. You understand the 5-trades/day and -₹2000 risk limits
+# You can override via env var on Render: AUTO_TRADE_ENABLED=true
+AUTO_TRADE_ENABLED = os.getenv("AUTO_TRADE_ENABLED", "false").lower() == "true"
+
+# ────────────────────────────────────────────
 # Thread-safe State Manager
 # ────────────────────────────────────────────
 class StateManager:
