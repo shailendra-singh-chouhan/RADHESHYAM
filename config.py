@@ -109,6 +109,11 @@ class StateManager:
         self._active_trade_context: Optional[Dict[str, Any]] = None # To store context of active trade for persistence
         self._last_state_save_time: Optional[datetime] = None
         self._last_data_update_time: Optional[datetime] = None # New: Timestamp for last successful data update
+        self._institutional_stats: Dict[str, Any] = {
+            "fii_long": 0, "fii_short": 0, "fii_net": 0,
+            "dii_long": 0, "dii_short": 0, "dii_net": 0,
+            "status": "Initializing",
+        }
 
     def get_state(self, key: str) -> Any:
         with self._lock:
@@ -146,6 +151,11 @@ class StateManager:
     def greeks_data(self) -> Dict[str, Any]:
         with self._lock:
             return self._greeks_data.copy()
+
+    @property
+    def institutional_stats(self) -> Dict[str, Any]:
+        with self._lock:
+            return self._institutional_stats.copy()
 
     @property
     def news_feed(self) -> List[Any]:
