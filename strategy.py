@@ -6,7 +6,7 @@ from logzero import logger
 import config
 import angel_client
 import indicators
-import auto_execute
+import trading
 import database # Import database module for state saving
 
 def compute_orb_range(candles: list) -> tuple[Optional[float], Optional[float]]:
@@ -87,7 +87,7 @@ def price_poller() -> None:
                     vix = angel_client.get_ltp("NFO", config.VIX_SYMBOL)
 
                 today = config.get_ist_now().date().isoformat()
-                
+
                 updates = {}
                 if nifty is not None:
                     updates["nifty"] = nifty
@@ -158,8 +158,19 @@ def indicator_poller() -> None:
                     if signal_update:
                         config.state_manager.update_state("signal_data", signal_update, allow_none_overwrite=False)
                         config.state_manager.last_data_update_time = config.get_ist_now()
-                    
-                    auto_execute.process_and_auto_execute()
+
+                    # --- FIXED: purane auto_execute.py (jisme exit/target/SL logic hi
+                    # nahi tha, sirf placeholder comment tha) ki jagah ab trading.py
+                    # ka ATR-based, DB-backed, safety-switch wala system call hoga ---
+                    if database.SessionLocal:
+                        try:
+                            with database.SessionLocal() as db:
+                                result = trading.process_auto_signal(db)
+                                logger.info(f"Auto-signal result: {result}")
+                        except Exception as e:
+                            logger.error(f"trading.process_auto_signal error: {e}")
+                    else:
+                        logger.warning("Auto-signal skipped: Database not connected.")
 
         except Exception as e:
             logger.error(f"indicator_poller error: {e}")
@@ -172,7 +183,7 @@ def extra_data_poller() -> None:
         try:
             if config.get_market_status() == "OPEN":
                 nifty_px = config.state_manager.latest_prices.get("nifty")
-                
+
                 # 1. Update OI Data (Simulated for now based on market trend)
                 if nifty_px:
                     oi_updates = {}
