@@ -68,23 +68,41 @@ def compute_real_signal(candles: list) -> dict:
                 "note": "Checklist not aligned (need 3-of-4) — no clear setup"}
 
 def price_poller() -> None:
-    """Refreshes live prices every 15 seconds during market hours."""
+    """Refreshes live prices every 15 seconds during market hours.
+
+    Rate-limit safe: 10 LTP calls are split into 2 batches of 5 with a 1-second
+    gap between batches. This keeps us under Angel One's free-plan rate limit
+    (~1 req/sec) and prevents "Access denied because of exceeding access rate".
+    """
+    import time as _time
     while True:
         try:
             if config.get_market_status() in ("OPEN", "PRE_OPEN"):
+                # Batch 1 — core indices (most important)
                 nifty = angel_client.get_ltp("NSE", config.NIFTY_SYMBOL)
+                _time.sleep(0.3)
                 banknifty = angel_client.get_ltp("NSE", config.BANKNIFTY_SYMBOL)
+                _time.sleep(0.3)
                 finnifty = angel_client.get_ltp("NSE", config.FINNIFTY_SYMBOL)
+                _time.sleep(0.3)
                 sensex = angel_client.get_ltp("BSE", config.SENSEX_SYMBOL)
-                crude = angel_client.get_ltp("MCX", config.CRUDEOIL_SYMBOL)
-                gold = angel_client.get_ltp("MCX", config.GOLD_SYMBOL)
-                silver = angel_client.get_ltp("MCX", config.SILVER_SYMBOL)
-                usdinr = angel_client.get_ltp("CDS", config.USDINR_SYMBOL)
-                midcap = angel_client.get_ltp("NSE", config.MIDCAP_SYMBOL)
-
+                _time.sleep(0.3)
                 vix = angel_client.get_ltp("NSE", config.VIX_SYMBOL)
                 if vix is None:
+                    _time.sleep(0.3)
                     vix = angel_client.get_ltp("NFO", config.VIX_SYMBOL)
+                # Short pause between batches
+                _time.sleep(1.0)
+                # Batch 2 — commodities + USDINR + midcap (less critical)
+                crude = angel_client.get_ltp("MCX", config.CRUDEOIL_SYMBOL)
+                _time.sleep(0.3)
+                gold = angel_client.get_ltp("MCX", config.GOLD_SYMBOL)
+                _time.sleep(0.3)
+                silver = angel_client.get_ltp("MCX", config.SILVER_SYMBOL)
+                _time.sleep(0.3)
+                usdinr = angel_client.get_ltp("CDS", config.USDINR_SYMBOL)
+                _time.sleep(0.3)
+                midcap = angel_client.get_ltp("NSE", config.MIDCAP_SYMBOL)
 
                 today = config.get_ist_now().date().isoformat()
 
@@ -174,7 +192,9 @@ def indicator_poller() -> None:
 
         except Exception as e:
             logger.error(f"indicator_poller error: {e}")
-        time.sleep(300)
+        # Poll every 180 seconds (3 min). RSI/EMA/VWAP don't need sub-minute updates,
+        # and a slower cycle reduces Angel One rate-limit risk on candle fetches.
+        time.sleep(180)
 
 _started = False
 def extra_data_poller() -> None:
