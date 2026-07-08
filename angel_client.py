@@ -50,16 +50,21 @@ def refresh_scrip_master() -> bool:
         return False
 
 def get_token(exchange: str, symbol: str) -> Optional[str]:
-    """Looks up symbol token from cached scrip master with precise matching."""
+    """Looks up symbol token from cached scrip master with precise matching.
+
+    Special handling:
+      - For CDS/MCX segments where contracts are futures-style (e.g. USDINR24AUGFUT),
+        falls back to a prefix match and picks the first available contract.
+      - For NIFTY/BANKNIFTY/VIX indices, uses friendly name lookup.
+    """
     global _scrip_master_df
     if _scrip_master_df is None or _scrip_master_df.empty:
         if not refresh_scrip_master():
             return None
     try:
-        # Normalize symbol names for better matching (e.g., SBIN-EQ vs SBIN)
         # 1. Try exact match on name
         match = _scrip_master_df[
-            (_scrip_master_df["exch_seg"] == exchange) & 
+            (_scrip_master_df["exch_seg"] == exchange) &
             (_scrip_master_df["name"].str.upper() == symbol.upper())
         ]
         if not match.empty:
@@ -67,24 +72,72 @@ def get_token(exchange: str, symbol: str) -> Optional[str]:
 
         # 2. Try exact match on symbol
         match = _scrip_master_df[
-            (_scrip_master_df["exch_seg"] == exchange) & 
+            (_scrip_master_df["exch_seg"] == exchange) &
             (_scrip_master_df["symbol"].str.upper() == symbol.upper())
         ]
         if not match.empty:
             return str(match.iloc[0]["token"])
 
-        # 3. Special case for NIFTY/BANKNIFTY/VIX
+        # 3. Special case for NIFTY/BANKNIFTY/VIX indices
+        friendly_name = None
         if symbol.upper() == "NIFTY":
-            symbol = "Nifty 50"
+            friendly_name = "Nifty 50"
         elif symbol.upper() == "BANKNIFTY":
-            symbol = "Nifty Bank"
-        
+            friendly_name = "Nifty Bank"
+
+        if friendly_name:
+            match = _scrip_master_df[
+                (_scrip_master_df["exch_seg"] == exchange) &
+                (_scrip_master_df["name"].str.contains(friendly_name, case=False, na=False))
+            ]
+            if not match.empty:
+                return str(match.iloc[0]["token"])
+
+        # 4. Name-contains fallback (general case)
         match = _scrip_master_df[
-            (_scrip_master_df["exch_seg"] == exchange) & 
+            (_scrip_master_df["exch_seg"] == exchange) &
             (_scrip_master_df["name"].str.contains(symbol, case=False, na=False))
         ]
         if not match.empty:
             return str(match.iloc[0]["token"])
+
+        # 5. NEW: Prefix match on symbol — for futures contracts in CDS/MCX segments
+        # Example: USDINR -> matches USDINR24AUGFUT, USDINR24SEPFUT etc.
+        # We pick the FIRST match (typically the nearest-expiry contract).
+        match = _scrip_master_df[
+            (_scrip_master_df["exch_seg"] == exchange) &
+            (_scrip_master_df["symbol"].str.upper().str.startswith(symbol.upper()))
+        ]
+        if not match.empty:
+            # Sort by expiry if available; otherwise take first
+            if "expiry" in match.columns:
+                try:
+                    match = match.sort_values("expiry", ascending=True)
+                except Exception:
+                    pass
+            logger.info(f"✓ Resolved {exchange}:{symbol} via prefix match -> "
+                        f"{match.iloc[0].get('symbol', 'unknown')}")
+            return str(match.iloc[0]["token"])
+
+        # 6. NEW: For CDS USDINR — also try a broader name search with prefix
+        # (some Angel One dumps list CDS contracts under name like "USDINR")
+        if exchange == "CDS" and symbol.upper() == "USDINR":
+            match = _scrip_master_df[
+                (_scrip_master_df["exch_seg"] == "CDS") &
+                (
+                    _scrip_master_df["name"].str.upper().str.startswith("USDINR") |
+                    _scrip_master_df["symbol"].str.upper().str.startswith("USDINR")
+                )
+            ]
+            if not match.empty:
+                if "expiry" in match.columns:
+                    try:
+                        match = match.sort_values("expiry", ascending=True)
+                    except Exception:
+                        pass
+                logger.info(f"✓ Resolved USDINR via CDS fallback -> "
+                            f"{match.iloc[0].get('symbol', 'unknown')}")
+                return str(match.iloc[0]["token"])
 
     except Exception as e:
         logger.error(f"get_token error for {symbol}: {e}")
