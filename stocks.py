@@ -54,7 +54,7 @@ def stock_price_poller() -> None:
     while True:
         try:
             if config.get_market_status() in ("OPEN", "PRE_OPEN"):
-                                for stock_name in STOCK_SYMBOLS.keys():
+                for stock_name in STOCK_SYMBOLS.keys():
                     ohlc = fetch_stock_ohlc(stock_name)
                     if ohlc:
                         stock_prices[stock_name]["ltp"] = ohlc.get("ltp")
@@ -97,4 +97,4 @@ def get_stock_data(stock_name: str) -> Dict:
 
 def get_all_stock_data() -> Dict:
     """Get data for all tracked stocks."""
-        return {name: stock_prices[name] for name in STOCK_SYMBOLS.keys()}
+    return {name: stock_prices[name] for name in STOCK_SYMBOLS.keys()}
