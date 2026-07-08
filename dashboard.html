@@ -410,9 +410,23 @@ body::before{content:'';position:fixed;inset:0;
     </div>
 
     <div class="card">
+      <div class="chdr"><div class="ctitle">🤖 AI ANALYST (PRO)</div></div>
+      <div style="padding:15px; font-size:14px; line-height:1.6; color:var(--text)" id="ai-analyst-box">
+        <p id="ai-commentary">Analyzing market dynamics...</p>
+      </div>
+    </div>
+
+    <div class="card">
       <div class="chdr"><div class="ctitle">🚨 SMART ALERTS</div></div>
       <div id="alerts-box">
         <!-- Alerts -->
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="chdr"><div class="ctitle">🏢 STOCKS <span class="live-tag">LIVE</span></div></div>
+      <div id="stock-list">
+        <!-- Stocks -->
       </div>
     </div>
 
@@ -557,6 +571,34 @@ function updateUI(d) {
         lBox.appendChild(row);
     } else {
         lBox.innerHTML = '<div class="footer-text" style="padding:10px 0">NO ACTIVE TRADES</div>';
+    }
+
+    // AI Analyst Commentary Logic
+    if(d.spot && d.day_open){
+      let msg = "";
+      const chg = d.spot - d.day_open;
+      const pct = (chg/d.day_open*100).toFixed(2);
+      if(pct < -0.5) msg = `⚠️ <strong>Nifty is showing sharp weakness (${pct}%).</strong> Main reasons: Profit booking and weak global cues.`;
+      else if(pct > 0.5) msg = `🚀 <strong>Nifty is in a strong bullish rally (+${pct}%).</strong> Buying seen in heavyweights.`;
+      else msg = "⚖️ <strong>Market is in a consolidation phase.</strong> No clear direction yet.";
+      document.getElementById('ai-commentary').innerHTML = msg;
+    }
+
+    // Update Stocks
+    const stockBox = document.getElementById('stock-list');
+    if(d.stocks && stockBox) {
+        stockBox.innerHTML = '';
+        Object.entries(d.stocks).forEach(([name, s]) => {
+            const row = document.createElement('div');
+            row.className = 'ind-row';
+            const color = s.ltp >= s.open ? 'var(--green)' : 'var(--red)';
+            row.innerHTML = `
+                <div class="iname">${name}</div>
+                <div class="ival" style="color:${color}">${s.ltp ? s.ltp.toFixed(2) : '--'}</div>
+                <div class="isig ${s.ltp >= s.open ? 'bull' : 'bear'}">${s.ltp >= s.open ? 'UP' : 'DOWN'}</div>
+            `;
+            stockBox.appendChild(row);
+        });
     }
 
     document.getElementById('last-update').innerText = d.last_update;
