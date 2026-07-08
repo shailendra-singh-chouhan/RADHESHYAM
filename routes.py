@@ -83,7 +83,13 @@ async def api_data(db: Session = Depends(get_db)) -> JSONResponse:
                     "sl": active_row.sl,
                 }
                 if latest_prices.get("nifty") is not None:
-                    live_pnl = round(latest_prices["nifty"] - active_row.entry, 2)
+                    # FIX: Direction-aware PnL calculation
+                    # SHORT: profit when price falls (entry - current)
+                    # LONG:  profit when price rises (current - entry)
+                    if active_row.direction == "SHORT":
+                        live_pnl = round(active_row.entry - latest_prices["nifty"], 2)
+                    else:  # LONG (default)
+                        live_pnl = round(latest_prices["nifty"] - active_row.entry, 2)
             
             # Today's closed trades PnL
             today_closed = db.query(Trade).filter(
