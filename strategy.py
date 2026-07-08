@@ -221,16 +221,58 @@ def extra_data_poller() -> None:
                         config.state_manager.update_state("oi_data", oi_updates, allow_none_overwrite=False)
                         config.state_manager.last_data_update_time = config.get_ist_now()
 
-                # 2. Update Greeks
+                # 2. Update Greeks (IV, delta, theta, gamma, vega)
+                # For an ATM PE (Put) option — standard Black-Scholes approximations:
+                #   - IV    : from India VIX (VIX * 0.95 is a common proxy for ATM IV)
+                #   - delta : ATM Put ≈ -0.50 (negative because Put gains when price falls)
+                #   - gamma : ATM ≈ 1 / (spot * sqrt(IV/100 * T))  — simplified to 0.0045
+                #   - theta : time decay per day (approx -12.5 for ATM NIFTY option)
+                #   - vega  : price change per 1% IV change (approx spot * 0.0004 * sqrt(T_days))
                 vix = config.state_manager.latest_prices.get("vix")
-                if vix:
+                if vix and nifty_px:
                     greeks_updates = {}
                     iv_val = round(vix * 0.95, 2)
-                    if iv_val is not None: greeks_updates["iv"] = iv_val
-                    theta_val = -12.5
-                    if theta_val is not None: greeks_updates["theta"] = theta_val
-                    gamma_val = 0.0045
-                    if gamma_val is not None: greeks_updates["gamma"] = gamma_val
+                    greeks_updates["iv"] = iv_val
+
+                    # Delta for ATM Put: -0.50 (PE side)
+                    # If active trade is CE (call), delta would be +0.50
+                    active_trade_dir = None
+                    if database.SessionLocal:
+                        try:
+                            with database.SessionLocal() as db:
+                                from models import Trade
+                                t = db.query(Trade).filter(Trade.status == "ACTIVE").first()
+                                if t:
+                                    active_trade_dir = t.direction
+                        except Exception:
+                            pass
+                    # Default to PE (Put) delta since dashboard signal is currently SHORT
+                    if active_trade_dir == "LONG":
+                        delta_val = 0.50   # CE (Call) ATM
+                    else:
+                        delta_val = -0.50  # PE (Put) ATM
+                    greeks_updates["delta"] = round(delta_val, 2)
+
+                    # Theta: time decay per calendar day (negative for long options)
+                    # Approximate: -(spot * iv/100) / 365 * 0.5
+                    theta_val = round(-(nifty_px * (iv_val / 100)) / 365 * 0.5, 2)
+                    greeks_updates["theta"] = theta_val
+
+                    # Gamma: rate of change of delta per 1-point spot move
+                    # Approximate ATM gamma: 1 / (spot * sqrt(T_years) * sqrt(2*pi) * iv/100)
+                    # Simplified to a small positive number
+                    gamma_val = round(1 / (nifty_px * 0.20 * (iv_val / 100)), 4)  # ~0.0045 for NIFTY 24000
+                    greeks_updates["gamma"] = gamma_val
+
+                    # Vega: price change per 1% IV change
+                    # Approximate ATM vega: spot * sqrt(T_years) * 0.001
+                    # Assume ~7 days to weekly expiry -> T_years ≈ 7/365 ≈ 0.019
+                    import math
+                    T_years = 7 / 365  # ~7 days to expiry
+                    vega_val = round(nifty_px * math.sqrt(T_years) * 0.001 * (iv_val / 100) * 100, 2)
+                    # Simpler practical estimate for short-term ATM NIFTY option: vega ≈ 8-15
+                    vega_val = max(vega_val, 8.0)
+                    greeks_updates["vega"] = vega_val
 
                     if greeks_updates:
                         config.state_manager.update_state("greeks_data", greeks_updates, allow_none_overwrite=False)
