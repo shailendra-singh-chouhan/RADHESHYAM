@@ -154,7 +154,12 @@ def fetch_option_chain(symbol: str, exchange: str = "NFO") -> Optional[dict]:
         return None
 
 def fetch_todays_candles() -> Optional[list]:
-    """Fetches 1-minute historical candles for NIFTY from 9:15 AM to now."""
+    """Fetches 1-minute historical candles for NIFTY from 9:15 AM to now.
+
+    Handles Angel One rate limit ("Access denied because of exceeding access rate")
+    by returning None gracefully — the poller will retry on its next cycle.
+    Also retries once after a short sleep, since rate limits are transient.
+    """
     global smart_api
     if smart_api is None:
         if not angel_login():
@@ -163,29 +168,57 @@ def fetch_todays_candles() -> Optional[list]:
     if token is None:
         logger.error("Could not resolve NIFTY token for candle fetch")
         return None
-    try:
-        now = config.get_ist_now()
-        from_dt = now.replace(hour=9, minute=15, second=0, microsecond=0)
-        params = {
-            "exchange": "NSE",
-            "symboltoken": token,
-            "interval": "ONE_MINUTE",
-            "fromdate": from_dt.strftime("%Y-%m-%d %H:%M"),
-            "todate": now.strftime("%Y-%m-%d %H:%M"),
-        }
-        with session_lock:
-            resp = smart_api.getCandleData(params)
-        if resp and resp.get("status") and resp.get("data"):
-            candles = []
-            for row in resp["data"]:
-                candles.append({
-                    "time": row[0], "open": row[1], "high": row[2],
-                    "low": row[3], "close": row[4],
-                })
-            return candles
-        logger.error(f"fetch_todays_candles non-success: {resp}")
-        return None
-    except Exception as e:
-        logger.error(f"fetch_todays_candles error: {e}")
-        angel_login()
-        return None
+
+    import time as _time
+    last_exc = None
+    for attempt in range(2):  # 1 retry
+        try:
+            now = config.get_ist_now()
+            from_dt = now.replace(hour=9, minute=15, second=0, microsecond=0)
+            params = {
+                "exchange": "NSE",
+                "symboltoken": token,
+                "interval": "ONE_MINUTE",
+                "fromdate": from_dt.strftime("%Y-%m-%d %H:%M"),
+                "todate": now.strftime("%Y-%m-%d %H:%M"),
+            }
+            with session_lock:
+                resp = smart_api.getCandleData(params)
+            if resp and resp.get("status") and resp.get("data"):
+                candles = []
+                for row in resp["data"]:
+                    candles.append({
+                        "time": row[0], "open": row[1], "high": row[2],
+                        "low": row[3], "close": row[4],
+                    })
+                return candles
+
+            # Detect Angel One rate-limit message (returned as error string, not exception)
+            err_msg = ""
+            if isinstance(resp, dict):
+                err_msg = str(resp.get("message", "")) + str(resp.get("errorcode", ""))
+            if "exceeding access rate" in err_msg.lower() or "access rate" in err_msg.lower():
+                logger.warning(f"⏳ Angel One rate limit on candles (attempt {attempt+1}/2). Will retry next cycle.")
+                if attempt == 0:
+                    _time.sleep(5)  # short backoff before retry
+                    continue
+                return None  # give up this cycle — don't spam
+            logger.error(f"fetch_todays_candles non-success: {resp}")
+            return None
+        except Exception as e:
+            last_exc = e
+            err_str = str(e).lower()
+            if "exceeding access rate" in err_str or "access rate" in err_str:
+                logger.warning(f"⏳ Angel One rate limit on candles (attempt {attempt+1}/2): {e}")
+                if attempt == 0:
+                    _time.sleep(5)
+                    continue
+                return None  # give up this cycle — don't re-login (would make it worse)
+            # Other errors — log + try re-login
+            logger.error(f"fetch_todays_candles error: {e}")
+            angel_login()
+            return None
+    # All attempts exhausted
+    if last_exc:
+        logger.warning(f"fetch_todays_candles gave up after retries: {last_exc}")
+    return None
