@@ -129,6 +129,7 @@ async def api_data(db: Session = Depends(get_db)) -> JSONResponse:
             "kospi": latest_prices.get("kospi"),
             "nasdaq": latest_prices.get("nasdaq"),
             "dji": latest_prices.get("dji"),
+            "source": "YAHOO_FINANCE",  # Real data via yfinance
         },
         "active_trade": {
             "direction": current_active["direction"],
