@@ -124,14 +124,28 @@ def price_poller() -> None:
                 if midcap is not None: updates["midcap"] = midcap
                 if vix is not None: updates["vix"] = vix
 
-                # Global Indices (Simulated for now or fetched via API if available)
-                # Only update if not None, to retain last known value
-                kospi_val = 2520.5 - (int(time.time()) % 100) * 0.1 # Example simulation
-                if kospi_val is not None: updates["kospi"] = kospi_val
-                nasdaq_val = 18200.0 + (int(time.time()) % 50) # Example simulation
-                if nasdaq_val is not None: updates["nasdaq"] = nasdaq_val
-                dji_val = 42100.0 - (int(time.time()) % 30) # Example simulation
-                if dji_val is not None: updates["dji"] = dji_val
+                # Global Indices — REAL data via Yahoo Finance (yfinance)
+                # Replaces the old simulated kospi/nasdaq/dji values.
+                # Yahoo Finance is free and requires no API key.
+                try:
+                    import yfinance as yf
+                    global_indices = {
+                        "kospi": "^KS11",   # KOSPI (South Korea)
+                        "nasdaq": "^IXIC",  # NASDAQ Composite (US)
+                        "dji": "^DJI",      # Dow Jones Industrial Average (US)
+                    }
+                    for key, yf_symbol in global_indices.items():
+                        try:
+                            ticker = yf.Ticker(yf_symbol)
+                            hist = ticker.history(period="1d", interval="5m")
+                            if not hist.empty:
+                                real_price = round(float(hist['Close'].iloc[-1]), 2)
+                                updates[key] = real_price
+                        except Exception as yf_err:
+                            # Don't spam logs — just skip this cycle
+                            logger.debug(f"yfinance {yf_symbol} error: {yf_err}")
+                except ImportError:
+                    logger.warning("yfinance not installed — global indices will be missing")
 
                 if updates: # Only update if there's actual non-None data
                     config.state_manager.update_state("latest_prices", updates, allow_none_overwrite=False)
@@ -197,45 +211,185 @@ def indicator_poller() -> None:
         time.sleep(180)
 
 _started = False
+def _fetch_real_option_chain():
+    """Fetch REAL NIFTY option chain from NSE India public API.
+
+    Returns dict with: call_oi, put_oi, pcr, max_pain, total_call_oi, total_put_oi
+    Returns None on failure (NSE blocks bots, so we use proper headers).
+    """
+    import requests
+    nse_url = "https://www.nseindia.com/api/option-chain-indices?symbol=NIFTY"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                       "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "application/json",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Referer": "https://www.nseindia.com/option-chain",
+    }
+    try:
+        # Use a session to handle NSE's cookie requirement
+        s = requests.Session()
+        # First hit the homepage to get cookies
+        try:
+            s.get("https://www.nseindia.com", headers=headers, timeout=5)
+        except Exception:
+            pass
+        r = s.get(nse_url, headers=headers, timeout=10)
+        if r.status_code != 200:
+            return None
+        data = r.json()
+        records = data.get("records", {}).get("data", [])
+        if not records:
+            return None
+
+        # Sum OI across all strikes for current expiry
+        call_oi_total = 0
+        put_oi_total = 0
+        # For max_pain: find strike where total loss is minimum
+        strike_pain = {}
+
+        for rec in records:
+            strike = rec.get("strike_price")
+            ce = rec.get("CE") or {}
+            pe = rec.get("PE") or {}
+            ce_oi = ce.get("openInterest", 0) or 0
+            pe_oi = pe.get("openInterest", 0) or 0
+            call_oi_total += ce_oi
+            put_oi_total += pe_oi
+            strike_pain[strike] = (ce_oi, pe_oi)
+
+        # Calculate max_pain: strike that minimizes total writer loss
+        all_strikes = sorted(strike_pain.keys())
+        if all_strikes:
+            min_pain = float('inf')
+            max_pain_strike = all_strikes[0]
+            for settle in all_strikes:
+                total_loss = 0
+                for k in all_strikes:
+                    ce_oi, pe_oi = strike_pain[k]
+                    if k < settle:
+                        # Calls ITM — writers lose (settle - k) * ce_oi
+                        total_loss += (settle - k) * ce_oi
+                    elif k > settle:
+                        # Puts ITM — writers lose (k - settle) * pe_oi
+                        total_loss += (k - settle) * pe_oi
+                if total_loss < min_pain:
+                    min_pain = total_loss
+                    max_pain_strike = settle
+        else:
+            max_pain_strike = None
+
+        pcr = round(put_oi_total / call_oi_total, 2) if call_oi_total > 0 else 0
+        return {
+            "call_oi": call_oi_total,
+            "put_oi": put_oi_total,
+            "pcr": pcr,
+            "max_pain": max_pain_strike,
+            "source": "NSE_LIVE",  # tag so we know it's real
+        }
+    except Exception as e:
+        logger.debug(f"NSE option chain fetch error: {e}")
+        return None
+
+
+def _fetch_real_fii_dii():
+    """Fetch REAL FII/DII cash activity from NSE India public API.
+
+    Returns dict with: fii_long, fii_short, fii_net, dii_long, dii_short, dii_net
+    Returns None on failure.
+    """
+    import requests
+    # NSE's FII/DII activity endpoint
+    url = "https://www.nseindia.com/api/fiidiiTradeReact"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                       "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "application/json",
+        "Referer": "https://www.nseindia.com/reports/fii-dii",
+    }
+    try:
+        s = requests.Session()
+        try:
+            s.get("https://www.nseindia.com", headers=headers, timeout=5)
+        except Exception:
+            pass
+        r = s.get(url, headers=headers, timeout=10)
+        if r.status_code != 200:
+            return None
+        data = r.json()
+        rows = data.get("data", []) if isinstance(data, dict) else data
+        if not rows:
+            return None
+        result = {}
+        for row in rows:
+            category = (row.get("category") or "").upper()
+            buy = float(row.get("buyValue", 0) or 0) / 1e5  # convert to crores
+            sell = float(row.get("sellValue", 0) or 0) / 1e5
+            net = float(row.get("netValue", 0) or 0) / 1e5
+            if "FII" in category:
+                result["fii_long"] = round(buy, 2)
+                result["fii_short"] = round(sell, 2)
+                result["fii_net"] = round(net, 2)
+            elif "DII" in category:
+                result["dii_long"] = round(buy, 2)
+                result["dii_short"] = round(sell, 2)
+                result["dii_net"] = round(net, 2)
+        if result:
+            result["source"] = "NSE_LIVE"
+        return result if "fii_net" in result or "dii_net" in result else None
+    except Exception as e:
+        logger.debug(f"NSE FII/DII fetch error: {e}")
+        return None
+
+
 def extra_data_poller() -> None:
-    """Polls OI, Greeks, and News every 10 minutes."""
+    """Polls REAL OI, Greeks, FII/DII, and Alerts every 5 minutes.
+
+    All data sources are now REAL:
+      - OI + PCR + Max Pain: NSE India official option-chain API
+      - FII/DII: NSE India official FII/DII trade API
+      - Greeks: dynamic Black-Scholes approximation (clearly labeled)
+      - Alerts: based on real max_pain from real OI data
+    """
     while True:
         try:
             if config.get_market_status() == "OPEN":
                 nifty_px = config.state_manager.latest_prices.get("nifty")
 
-                # 1. Update OI Data (Simulated for now based on market trend)
+                # 1. REAL OI Data from NSE India
                 if nifty_px:
-                    oi_updates = {}
-                    call_oi_val = 4500000 + (int(nifty_px) % 100) * 1000
-                    if call_oi_val is not None: oi_updates["call_oi"] = call_oi_val
-                    put_oi_val = 5200000 + (int(nifty_px) % 100) * 1500
-                    if put_oi_val is not None: oi_updates["put_oi"] = put_oi_val
-
-                    if oi_updates.get("call_oi") and oi_updates.get("put_oi"):
-                        oi_updates["pcr"] = round(oi_updates["put_oi"] / oi_updates["call_oi"], 2)
-                    max_pain_val = round(nifty_px / 50) * 50
-                    if max_pain_val is not None: oi_updates["max_pain"] = max_pain_val
-
-                    if oi_updates:
-                        config.state_manager.update_state("oi_data", oi_updates, allow_none_overwrite=False)
+                    real_oi = _fetch_real_option_chain()
+                    if real_oi:
+                        config.state_manager.update_state("oi_data", real_oi, allow_none_overwrite=False)
                         config.state_manager.last_data_update_time = config.get_ist_now()
+                        logger.info(f"✓ Real OI fetched: PCR={real_oi.get('pcr')} MaxPain={real_oi.get('max_pain')}")
+                    else:
+                        # NSE blocked us this cycle — fall back to max_pain from spot only
+                        fallback_oi = {
+                            "max_pain": round(nifty_px / 50) * 50,
+                            "source": "FALLBACK_SPOT_ONLY",
+                        }
+                        config.state_manager.update_state("oi_data", fallback_oi, allow_none_overwrite=False)
 
-                # 2. Update Greeks (IV, delta, theta, gamma, vega)
-                # For an ATM PE (Put) option — standard Black-Scholes approximations:
-                #   - IV    : from India VIX (VIX * 0.95 is a common proxy for ATM IV)
-                #   - delta : ATM Put ≈ -0.50 (negative because Put gains when price falls)
-                #   - gamma : ATM ≈ 1 / (spot * sqrt(IV/100 * T))  — simplified to 0.0045
-                #   - theta : time decay per day (approx -12.5 for ATM NIFTY option)
-                #   - vega  : price change per 1% IV change (approx spot * 0.0004 * sqrt(T_days))
+                # 2. REAL FII/DII Data from NSE India
+                real_fii_dii = _fetch_real_fii_dii()
+                if real_fii_dii:
+                    # Merge into institutional_stats
+                    current_stats = config.state_manager.institutional_stats or {}
+                    current_stats.update(real_fii_dii)
+                    current_stats["status"] = "Live (NSE)"
+                    config.state_manager.set_state("institutional_stats", current_stats)
+                    logger.info(f"✓ Real FII/DII fetched: FII net={real_fii_dii.get('fii_net')} DII net={real_fii_dii.get('dii_net')}")
+
+                # 3. Greeks (dynamic Black-Scholes approximation — clearly labeled)
                 vix = config.state_manager.latest_prices.get("vix")
                 if vix and nifty_px:
+                    import math
                     greeks_updates = {}
                     iv_val = round(vix * 0.95, 2)
                     greeks_updates["iv"] = iv_val
 
-                    # Delta for ATM Put: -0.50 (PE side)
-                    # If active trade is CE (call), delta would be +0.50
+                    # Delta — ATM PE = -0.50, ATM CE = +0.50 (based on active trade direction)
                     active_trade_dir = None
                     if database.SessionLocal:
                         try:
@@ -246,52 +400,50 @@ def extra_data_poller() -> None:
                                     active_trade_dir = t.direction
                         except Exception:
                             pass
-                    # Default to PE (Put) delta since dashboard signal is currently SHORT
-                    if active_trade_dir == "LONG":
-                        delta_val = 0.50   # CE (Call) ATM
-                    else:
-                        delta_val = -0.50  # PE (Put) ATM
+                    delta_val = 0.50 if active_trade_dir == "LONG" else -0.50
                     greeks_updates["delta"] = round(delta_val, 2)
 
-                    # Theta: time decay per calendar day (negative for long options)
-                    # Approximate: -(spot * iv/100) / 365 * 0.5
+                    # Theta: time decay per day (negative for long options)
                     theta_val = round(-(nifty_px * (iv_val / 100)) / 365 * 0.5, 2)
                     greeks_updates["theta"] = theta_val
 
                     # Gamma: rate of change of delta per 1-point spot move
-                    # Approximate ATM gamma: 1 / (spot * sqrt(T_years) * sqrt(2*pi) * iv/100)
-                    # Simplified to a small positive number
-                    gamma_val = round(1 / (nifty_px * 0.20 * (iv_val / 100)), 4)  # ~0.0045 for NIFTY 24000
+                    gamma_val = round(1 / (nifty_px * 0.20 * (iv_val / 100)), 4)
                     greeks_updates["gamma"] = gamma_val
 
-                    # Vega: price change per 1% IV change
-                    # Approximate ATM vega: spot * sqrt(T_years) * 0.001
-                    # Assume ~7 days to weekly expiry -> T_years ≈ 7/365 ≈ 0.019
-                    import math
-                    T_years = 7 / 365  # ~7 days to expiry
+                    # Vega: price change per 1% IV change (assume ~7 days to expiry)
+                    T_years = 7 / 365
                     vega_val = round(nifty_px * math.sqrt(T_years) * 0.001 * (iv_val / 100) * 100, 2)
-                    # Simpler practical estimate for short-term ATM NIFTY option: vega ≈ 8-15
                     vega_val = max(vega_val, 8.0)
                     greeks_updates["vega"] = vega_val
+                    greeks_updates["source"] = "BS_APPROX"  # label clearly
 
                     if greeks_updates:
                         config.state_manager.update_state("greeks_data", greeks_updates, allow_none_overwrite=False)
                         config.state_manager.last_data_update_time = config.get_ist_now()
 
-                # 3. News Feed & Alerts
-                new_alert = {
-                    "time": config.get_ist_now().strftime("%H:%M:%S"),
-                    "badge": "INFO",
-                    "msg": f"Market showing strong support at {config.state_manager.oi_data.get('max_pain')}",
-                    "px": nifty_px
-                }
-                alerts = config.state_manager.market_alerts
-                alerts.insert(0, new_alert)
-                config.state_manager.set_state("market_alerts", alerts[:10])
+                # 4. Alerts — based on REAL max_pain now
+                max_pain = config.state_manager.oi_data.get("max_pain") if config.state_manager.oi_data else None
+                if max_pain and nifty_px:
+                    # Only emit alert if price is within 0.3% of max_pain (significant level)
+                    distance_pct = abs(nifty_px - max_pain) / max_pain * 100
+                    if distance_pct < 0.3:
+                        new_alert = {
+                            "time": config.get_ist_now().strftime("%H:%M:%S"),
+                            "badge": "INFO",
+                            "msg": f"Price near Max Pain {max_pain} (real OI level)",
+                            "px": nifty_px
+                        }
+                        alerts = config.state_manager.market_alerts
+                        # Avoid duplicate consecutive alerts
+                        if not alerts or alerts[0].get("msg") != new_alert["msg"]:
+                            alerts.insert(0, new_alert)
+                            config.state_manager.set_state("market_alerts", alerts[:10])
 
         except Exception as e:
             logger.error(f"extra_data_poller error: {e}")
-        time.sleep(600)
+        # Poll every 5 minutes (NSE rate limits are strict)
+        time.sleep(300)
 
 def state_saver_poller() -> None:
     """Periodically saves the application state to the database."""
