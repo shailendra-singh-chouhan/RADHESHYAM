@@ -47,29 +47,37 @@ def get_options_contract(spot_price: float, signal: str, index: str = "NIFTY", s
     step_size = 50 if index == "NIFTY" else 100
     atm_strike = round(spot_price / step_size) * step_size
     selected_strike = atm_strike
-    opt_type = ""
+    option_type = ""
     if signal == "LONG":
-        opt_type = "CE"
+        option_type = "CE"
         if strategy == "ITM": selected_strike = atm_strike - step_size
     elif signal == "SHORT":
-        opt_type = "PE"
+        option_type = "PE"
         if strategy == "ITM": selected_strike = atm_strike + step_size
 
-    contract_symbol = f"{index} {selected_strike} {opt_type}"
-    
-    premium_estimate = "Opens at 9:15 AM"
-    if ANGEL_AVAILABLE and config.get_market_status() == "OPEN":
-        try:
-            search_symbol = f"{index}{selected_strike}{opt_type}"
-            ltp = angel_client.get_ltp("NFO", search_symbol)
-            if ltp and ltp > 0:
-                premium_estimate = f"₹{ltp}"
-        except Exception as e:
-            premium_estimate = "Fetching..."
+    contract_details = None
+    if ANGEL_AVAILABLE:
+        contract_details = angel_client.get_options_contract_details(index, selected_strike, option_type)
+
+    if contract_details is None:
+        # Fallback to old symbol construction if precise contract not found
+        contract_symbol = f"{index} {selected_strike} {option_type}"
+        premium_estimate = "Contract Not Found / Market Closed"
+    else:
+        contract_symbol = contract_details["symbol"]
+        premium_estimate = "Opens at 9:15 AM"
+        if config.get_market_status() == "OPEN":
+            try:
+                ltp = angel_client.get_ltp("NFO", contract_symbol, contract_details["token"])
+                if ltp and ltp > 0:
+                    premium_estimate = f"₹{ltp}"
+            except Exception as e:
+                premium_estimate = "Fetching..."
 
     return {
-        "index": index, "strike": selected_strike, "option_type": opt_type,
-        "symbol": contract_symbol, "premium_estimate": premium_estimate
+        "index": index, "strike": selected_strike, "option_type": option_type,
+        "symbol": contract_symbol, "premium_estimate": premium_estimate,
+        "full_details": contract_details # Include full details for debugging/completeness
     }
 
 def execute_trade(signal: str, spot_price: float) -> dict:
@@ -116,8 +124,31 @@ def get_institutional_stats(db: Session) -> dict:
         total = db.query(Trade).filter(Trade.status == "CLOSED").count()
         wins = db.query(Trade).filter(Trade.status == "CLOSED", Trade.pnl > 0).count()
         win_rate = round((wins / total * 100), 1) if total > 0 else 0.0
-        return {"fii_long": 0, "fii_short": 0, "fii_net": 0, "dii_long": 0, "dii_short": 0, "dii_net": 0, "win_rate": win_rate, "total_trades": total, "status": "Live"}
-    except Exception as e: return {"fii_long": 0, "fii_short": 0, "fii_net": 0, "dii_long": 0, "dii_short": 0, "dii_net": 0, "win_rate": 0.0, "total_trades": 0, "status": f"Error: {e}"}
+        institutional_stats = config.state_manager.institutional_stats
+        return {
+            "fii_long": institutional_stats.get("fii_long", 0),
+            "fii_short": institutional_stats.get("fii_short", 0),
+            "fii_net": institutional_stats.get("fii_net", 0),
+            "dii_long": institutional_stats.get("dii_long", 0),
+            "dii_short": institutional_stats.get("dii_short", 0),
+            "dii_net": institutional_stats.get("dii_net", 0),
+            "win_rate": win_rate,
+            "total_trades": total,
+            "status": institutional_stats.get("status", "Live")
+        }
+    except Exception as e:
+        institutional_stats = config.state_manager.institutional_stats
+        return {
+            "fii_long": institutional_stats.get("fii_long", 0),
+            "fii_short": institutional_stats.get("fii_short", 0),
+            "fii_net": institutional_stats.get("fii_net", 0),
+            "dii_long": institutional_stats.get("dii_long", 0),
+            "dii_short": institutional_stats.get("dii_short", 0),
+            "dii_net": institutional_stats.get("dii_net", 0),
+            "win_rate": 0.0,
+            "total_trades": 0,
+            "status": f"Error: {e}"
+        }
 
 def open_paper_trade(db: Session, signal: str = None, spot: float = None) -> tuple[bool, str]:
     try:

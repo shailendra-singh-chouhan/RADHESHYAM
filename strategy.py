@@ -374,11 +374,8 @@ def extra_data_poller() -> None:
                 # 2. REAL FII/DII Data from NSE India
                 real_fii_dii = _fetch_real_fii_dii()
                 if real_fii_dii:
-                    # Merge into institutional_stats
-                    current_stats = config.state_manager.institutional_stats or {}
-                    current_stats.update(real_fii_dii)
-                    current_stats["status"] = "Live (NSE)"
-                    config.state_manager.set_state("institutional_stats", current_stats)
+                    config.state_manager.update_state("institutional_stats", real_fii_dii)
+                    config.state_manager.update_state("institutional_stats", {"status": "Live (NSE)"})
                     logger.info(f"✓ Real FII/DII fetched: FII net={real_fii_dii.get('fii_net')} DII net={real_fii_dii.get('dii_net')}")
 
                 # 3. Greeks (dynamic Black-Scholes approximation — clearly labeled)

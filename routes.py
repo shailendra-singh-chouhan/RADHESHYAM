@@ -118,12 +118,14 @@ async def api_data(db: Session = Depends(get_db)) -> JSONResponse:
         "session_pnl_rs": session_pnl,
         "win_rate": stats["win_rate"],
         "total_trades": stats["total_trades"],
-        "institutional_stats": stats,
+        "institutional_stats": state.institutional_stats,
         "options_contract": selected_contract,
         "oi_data": state.oi_data,
-        "greeks": state.greeks_data,
+        "greeks_data": state.greeks_data,
         "alerts": list(state.market_alerts)[-10:], # last 10 alerts to save bandwidth
         "stocks": stocks.get_all_stock_data(),
+        "news_feed": state.news_feed,
+        "market_alerts": state.market_alerts,
         "indicators": state.indicator_data,
         "global": {
             "kospi": latest_prices.get("kospi"),

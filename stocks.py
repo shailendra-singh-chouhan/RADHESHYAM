@@ -13,13 +13,7 @@ import angel_client
 
 
 # Stock token mappings (NSE symbols)
-STOCK_TOKENS = {
-    "HDFC": "3500",
-    "SBI": "4963",
-    "PNB": "3456",
-    "YES": "1333",
-    "INFY": "408065",
-}
+
 
 STOCK_SYMBOLS = {
     "HDFC": "HDFCBANK-EQ",
@@ -39,19 +33,19 @@ stock_prices = {
 }
 
 
-def fetch_stock_ltp(stock_name: str) -> Optional[float]:
-    """Fetch live LTP for a stock."""
-    if stock_name not in STOCK_TOKENS:
+def fetch_stock_ohlc(stock_name: str) -> Optional[Dict]:
+    """Fetch live OHLC for a stock."""
+    if stock_name not in STOCK_SYMBOLS:
         logger.warning(f"Unknown stock: {stock_name}")
         return None
     
     try:
-        token = STOCK_TOKENS[stock_name]
         symbol = STOCK_SYMBOLS[stock_name]
-        ltp = angel_client.get_ltp("NSE", symbol, token)
-        return ltp
+        # get_ohlc expects a token, which is resolved dynamically inside angel_client.get_ohlc
+        ohlc_data = angel_client.get_ohlc("NSE", symbol)
+        return ohlc_data
     except Exception as e:
-        logger.error(f"Failed to fetch LTP for {stock_name}: {e}")
+        logger.error(f"Failed to fetch OHLC for {stock_name}: {e}")
         return None
 
 
@@ -60,10 +54,13 @@ def stock_price_poller() -> None:
     while True:
         try:
             if config.get_market_status() in ("OPEN", "PRE_OPEN"):
-                for stock_name in STOCK_TOKENS.keys():
-                    ltp = fetch_stock_ltp(stock_name)
-                    if ltp is not None:
-                        stock_prices[stock_name]["ltp"] = ltp
+                                for stock_name in STOCK_SYMBOLS.keys():
+                    ohlc = fetch_stock_ohlc(stock_name)
+                    if ohlc:
+                        stock_prices[stock_name]["ltp"] = ohlc.get("ltp")
+                        stock_prices[stock_name]["open"] = ohlc.get("open")
+                        stock_prices[stock_name]["high"] = ohlc.get("high")
+                        stock_prices[stock_name]["low"] = ohlc.get("low")
                         stock_prices[stock_name]["last_update"] = config.get_ist_now().isoformat()
         except Exception as e:
             logger.error(f"stock_price_poller error: {e}")
@@ -100,4 +97,4 @@ def get_stock_data(stock_name: str) -> Dict:
 
 def get_all_stock_data() -> Dict:
     """Get data for all tracked stocks."""
-    return {name: stock_prices[name] for name in STOCK_TOKENS.keys()}
+        return {name: stock_prices[name] for name in STOCK_SYMBOLS.keys()}

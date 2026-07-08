@@ -47,27 +47,4 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.head("/")
-async def root_head():
-    return {}
 
-@app.get("/")
-async def root_get():
-    return {
-        "status": "GOAT PRO Institutional Services",
-        "market_status": config.get_market_status(),
-        "time": config.get_ist_now().isoformat()
-    }
-
-@app.get("/api/data")
-async def api_data():
-    return {
-        "latest_prices": config.latest_prices,
-        "indicator_data": config.indicator_data,
-        "signal_data": config.signal_data,
-        "market_status": config.get_market_status(),
-    }
-
-@app.get("/api/candles")
-async def api_candles():
-    return {"candles": config.candle_store}

@@ -143,14 +143,53 @@ def get_token(exchange: str, symbol: str) -> Optional[str]:
         logger.error(f"get_token error for {symbol}: {e}")
     return None
 
+def get_ohlc(exchange: str, symbol: str) -> Optional[dict]:
+    """Fetches OHLC data for a given symbol. Resolves token dynamically."""
+    global smart_api
+    if smart_api is None:
+        if not angel_login():
+            return None
+    
+    token = get_token(exchange, symbol)
+    if token is None:
+        logger.warning(f"Could not resolve token for OHLC fetch: {exchange}:{symbol}")
+        return None
+
+    try:
+        with session_lock:
+            resp = smart_api.ltpData(exchange, symbol, token)
+        if resp and resp.get("status"):
+            data = resp.get("data", {})
+            if isinstance(data, dict):
+                return {
+                    "ltp": data.get("ltp"),
+                    "open": data.get("open"),
+                    "high": data.get("high"),
+                    "low": data.get("low"),
+                }
+            elif isinstance(data, list) and len(data) > 0:
+                return {
+                    "ltp": data[0].get("ltp"),
+                    "open": data[0].get("open"),
+                    "high": data[0].get("high"),
+                    "low": data[0].get("low"),
+                }
+        logger.error(f"get_ohlc non-success response for {symbol}: {resp}")
+        return None
+    except Exception as e:
+        logger.error(f"get_ohlc error for {symbol}: {e}")
+        angel_login()
+        return None
+
 def get_ltp(exchange: str, symbol: str, token: Optional[str] = None) -> Optional[float]:
     """Fetches live Last Traded Price (LTP) for an asset."""
     global smart_api
     if smart_api is None:
         if not angel_login():
             return None
-    # Always re-resolve token if it's not provided to avoid stale token issues
-    token = get_token(exchange, symbol)
+    # If token is not provided, resolve it dynamically
+    if token is None:
+        token = get_token(exchange, symbol)
     if token is None:
         logger.warning(f"Could not resolve token for {exchange}:{symbol}")
         return None
@@ -177,6 +216,51 @@ def get_ltp(exchange: str, symbol: str, token: Optional[str] = None) -> Optional
     except Exception as e:
         logger.error(f"get_ltp error for {symbol}: {e}")
         angel_login()
+        return None
+
+def get_options_contract_details(index: str, strike_price: float, option_type: str) -> Optional[dict]:
+    """Looks up precise options contract details from scrip master using strike, type, and expiry.
+
+    Returns dict with token, symbol, name, expiry, instrumenttype.
+    """
+    global _scrip_master_df
+    if _scrip_master_df is None or _scrip_master_df.empty:
+        if not refresh_scrip_master():
+            return None
+
+    try:
+        # Filter for the correct index, instrument type (CE/PE), and strike price
+        filtered_df = _scrip_master_df[
+            (_scrip_master_df["name"].str.contains(index, case=False, na=False)) &
+            (_scrip_master_df["instrumenttype"] == option_type.upper()) &
+            (_scrip_master_df["strike"] == str(int(strike_price * 100))) # Strike is stored as string, multiplied by 100
+        ]
+
+        if filtered_df.empty:
+            logger.warning(f"No options contract found for {index} {strike_price} {option_type}")
+            return None
+
+        # Sort by expiry to pick the nearest one (or current month)
+        # Assuming 'expiry' column exists and is sortable (e.g., datetime or YYYYMMDD string)
+        if "expiry" in filtered_df.columns:
+            # Convert expiry to datetime for proper sorting if it's not already
+            filtered_df["expiry_dt"] = pd.to_datetime(filtered_df["expiry"], errors='coerce')
+            filtered_df = filtered_df.sort_values(by="expiry_dt", ascending=True).drop(columns=["expiry_dt"])
+        
+        # Pick the first matching contract (nearest expiry)
+        contract = filtered_df.iloc[0]
+        
+        return {
+            "token": str(contract["token"]),
+            "symbol": contract["symbol"],
+            "name": contract["name"],
+            "expiry": contract["expiry"],
+            "instrumenttype": contract["instrumenttype"],
+            "lotsize": contract["lotsize"],
+        }
+
+    except Exception as e:
+        logger.error(f"get_options_contract_details error for {index} {strike_price} {option_type}: {e}")
         return None
 
 def fetch_option_chain(symbol: str, exchange: str = "NFO") -> Optional[dict]:

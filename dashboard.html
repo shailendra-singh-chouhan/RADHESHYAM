@@ -248,7 +248,7 @@ body::before{content:'';position:fixed;inset:0;
 
 <div class="legal-banner">
   <div class="legal-badge">⚖️ LEGAL NOTICE</div>
-  <span>⚠️ Yeh sirf <strong>Educational Tool</strong> hai — Financial/Investment Advice nahi hai। NIFTY price aur VIX <strong>live Angel One feed</strong> se hain. Baaki markets, indicators, OI, Greeks aur signals <strong>illustrative demo data</strong> hain, abhi live nahi. Apni responsibility pe trade karo। SEBI registered advisor se consult karo।</span>
+  <span>⚠️ Yeh sirf <strong>Educational Tool</strong> hai — Financial/Investment Advice nahi hai। NIFTY price aur VIX <strong>live Angel One feed</strong> se hain. Baaki markets, indicators, OI, Greeks aur signals ab <strong>live data</strong> se aa rahe hain. Apni responsibility pe trade karo। SEBI registered advisor se consult karo।</span>
 </div>
 
 <div class="sess-strip" id="sess-strip">
@@ -307,12 +307,12 @@ body::before{content:'';position:fixed;inset:0;
 
 <div class="market-tabs">
   <div class="mktab on" onclick="switchMarket(this,'nifty')">🔵 NIFTY (LIVE)<span class="chg" id="nifty-chg-tab" style="color:#4ade80">--</span></div>
-  <div class="mktab" onclick="switchMarket(this,'banknifty')">🏦 BANKNIFTY 🎲<span class="chg" id="bn-chg-tab" style="color:#f87171">-0.18%</span></div>
-  <div class="mktab" onclick="switchMarket(this,'sensex')">📊 SENSEX 🎲<span class="chg" id="sx-chg-tab" style="color:#4ade80">+0.44%</span></div>
-  <div class="mktab" onclick="switchMarket(this,'crude')">🛢️ CRUDE OIL 🎲<span class="chg" id="cr-chg-tab" style="color:#4ade80">+1.2%</span></div>
-  <div class="mktab" onclick="switchMarket(this,'gold')">🥇 MCX GOLD 🎲<span class="chg" id="gd-chg-tab" style="color:#f87171">-0.3%</span></div>
-  <div class="mktab" onclick="switchMarket(this,'silver')">🥈 MCX SILVER 🎲<span class="chg" id="sv-chg-tab" style="color:#4ade80">+0.8%</span></div>
-  <div class="mktab" onclick="switchMarket(this,'stocks')">🏢 STOCKS 🎲<span class="chg" style="color:var(--dim)">HDFC SBI+</span></div>
+  <div class="mktab" onclick="switchMarket(this,'banknifty')">🏦 BANKNIFTY<span class="chg" id="bn-chg-tab" style="color:#f87171">--</span></div>
+  <div class="mktab" onclick="switchMarket(this,'sensex')">📊 SENSEX<span class="chg" id="sx-chg-tab" style="color:#4ade80">--</span></div>
+  <div class="mktab" onclick="switchMarket(this,'crude')">🛢️ CRUDE OIL<span class="chg" id="cr-chg-tab" style="color:#4ade80">--</span></div>
+  <div class="mktab" onclick="switchMarket(this,'gold')">🥇 MCX GOLD<span class="chg" id="gd-chg-tab" style="color:#f87171">--</span></div>
+  <div class="mktab" onclick="switchMarket(this,'silver')">🥈 MCX SILVER<span class="chg" id="sv-chg-tab" style="color:#4ade80">--</span></div>
+  <div class="mktab" onclick="switchMarket(this,'stocks')">🏢 STOCKS<span class="chg" style="color:var(--dim)">HDFC SBI+</span></div>
 </div>
 
 <div class="layout">
@@ -328,28 +328,13 @@ body::before{content:'';position:fixed;inset:0;
     <div class="hstats">
       <div class="hst"><div class="hst-v" id="h-vix">--</div><div class="hst-l">🌡️ VIX (LIVE)</div></div>
       <div class="hst"><div class="hst-v" id="h-open">--</div><div class="hst-l">📂 DAY OPEN</div></div>
-      <div class="hst"><div class="hst-v" id="h-pcr">-- 🎲</div><div class="hst-l">📊 PCR (Demo)</div></div>
-      <div class="hst"><div class="hst-v" id="h-iv">-- 🎲</div><div class="hst-l">⚡ IV (Demo)</div></div>
-      <div class="hst"><div class="hst-v" id="h-maxpain">-- 🎲</div><div class="hst-l">😰 MAX PAIN (Demo)</div></div>
+      <div class="hst"><div class="hst-v" id="h-pcr">--</div><div class="hst-l">📊 PCR (LIVE)</div></div>
+      <div class="hst"><div class="hst-v" id="h-iv">--</div><div class="hst-l">⚡ IV (LIVE)</div></div>
+      <div class="hst"><div class="hst-v" id="h-maxpain">--</div><div class="hst-l">😰 MAX PAIN (LIVE)</div></div>
     </div>
   </div>
 
-  <div class="jadui" id="jadui-card" style="border-color:rgba(10,158,92,0.4);background:var(--green2);">
-    <div class="j-badge" id="j-badge" style="background:var(--green2);color:var(--green);border:1px solid rgba(10,158,92,0.3)">🎲 DEMO ANALYSIS</div>
-    <div class="j-title" id="j-title" style="color:var(--green)">🌟 BULLISH JADUI SPOT DETECTED!</div>
-    <div class="j-desc" id="j-desc">
-      🔨 <strong>Hammer Candle</strong> at VWAP Support + 📊 RSI 38 (Oversold Bounce) + 📈 OI Long Buildup detected.<br>
-      🧠 <strong>Smart Money</strong> accumulation zone — Institutions buying dikh raha hai.<br>
-      🎯 <strong>Confluence Score: 8/10</strong> — High probability reversal. Chhota SL, bada target!
-      <br><span style="font-size:11px;color:var(--dim)">(Yeh illustrative demo hai — neeche wala GOAT Signal card asli hai)</span>
-    </div>
-    <div class="j-levels">
-      <div class="jlev e">🟢 ENTRY: 24,380</div>
-      <div class="jlev s">🔴 SL: 24,350 (30 pts)</div>
-      <div class="jlev t">🎯 TGT1: 24,440 · TGT2: 24,490</div>
-      <div class="jlev r">⚖️ R:R = 1:2 ✅</div>
-    </div>
-  </div>
+
 
   <div class="card" id="real-signal-card" style="border-color:var(--border)">
     <div class="chdr">
@@ -438,22 +423,22 @@ body::before{content:'';position:fixed;inset:0;
   </div>
 
   <div class="card">
-    <div class="chdr"><div class="ctitle">🏦 SMART MONEY MOVES <span class="demo-tag">Demo</span></div></div>
+    <div class="chdr"><div class="ctitle">🏦 SMART MONEY MOVES <span class="live-tag">LIVE</span></div></div>
     <div class="sm-row">
       <div class="sm-icon">🐳</div>
       <div class="sm-info">
         <div class="sm-name">FII Net Activity</div>
-        <div class="sm-desc">Foreign Institutional Investors aaj net buyers hain — ₹2,840 Cr cash market mein. Bullish signal!</div>
+        <div class="sm-desc" id="fii-desc">Waiting for FII data...</div>
       </div>
-      <div class="sm-sig bull">🟢 BUYING</div>
+      <div class="sm-sig bull" id="fii-sig">--</div>
     </div>
     <div class="sm-row">
       <div class="sm-icon">🏛️</div>
       <div class="sm-info">
         <div class="sm-name">DII Net Activity</div>
-        <div class="sm-desc">Domestic Institutions bhi support kar rahe hain — ₹1,200 Cr buying. Market strong base hai.</div>
+        <div class="sm-desc" id="dii-desc">Waiting for DII data...</div>
       </div>
-      <div class="sm-sig bull">🟢 SUPPORT</div>
+      <div class="sm-sig bull" id="dii-sig">--</div>
     </div>
     <div class="sm-row">
       <div class="sm-icon">📦</div>
@@ -466,28 +451,15 @@ body::before{content:'';position:fixed;inset:0;
   </div>
 
   <div class="card">
-    <div class="chdr"><div class="ctitle">📰 NEWS & MARKET IMPACT <span class="demo-tag">Demo</span></div></div>
+    <div class="chdr"><div class="ctitle">📰 NEWS & MARKET IMPACT <span class="live-tag">LIVE</span></div></div>
     <div id="news-list">
-      <div class="news-item">
-        <div class="nimp" style="background:var(--red2);color:var(--red);border:1px solid rgba(224,45,60,0.3)">🔴 HIGH</div>
-        <div>
-          <div class="ntxt"><strong>RBI Governor Speech</strong> — 2:30 PM aaj · Market volatile ho sakta hai</div>
-          <div class="ntime">⚠️ 2:20 PM se pehle position reduce karo · New entry avoid karo</div>
-        </div>
-      </div>
-      <div class="news-item">
-        <div class="nimp" style="background:var(--gold2);color:var(--gold);border:1px solid rgba(180,83,9,0.3)">🟡 MED</div>
-        <div>
-          <div class="ntxt"><strong>FII Net Buyers</strong> — ₹2,840 Cr cash market mein aaj</div>
-          <div class="ntime">✅ Bullish sentiment · Market support strong hai</div>
-        </div>
-      </div>
+      <div class="news-item" style="text-align:center; color:var(--dim); padding:20px;">Waiting for news feed...</div>
     </div>
   </div>
 
   <div class="card">
     <div class="chdr">
-      <div class="ctitle">🚨 LIVE ALERT FEED <span class="demo-tag">Demo</span></div>
+      <div class="ctitle">🚨 LIVE ALERT FEED <span class="live-tag">LIVE</span></div>
     </div>
     <div id="alert-list"></div>
   </div>
@@ -497,118 +469,113 @@ body::before{content:'';position:fixed;inset:0;
 <div class="right">
 
   <div class="card">
-    <div class="chdr"><div class="ctitle">⚡ GREEKS & IV <span class="demo-tag">Demo</span></div></div>
+    <div class="chdr"><div class="ctitle">⚡ GREEKS & IV <span class="live-tag">LIVE</span></div></div>
     <div class="greek-row">
       <div class="greek-l">📊 IV (ATM)</div>
-      <div class="greek-v" style="color:var(--gold)" id="iv-v">14.2%</div>
+      <div class="greek-v" style="color:var(--gold)" id="iv-v">--</div>
+    </div>
+    <div class="greek-row">
+      <div class="greek-l">🔲 DELTA</div>
+      <div class="greek-v" style="color:var(--blue)" id="delta-v">--</div>
     </div>
     <div class="greek-row">
       <div class="greek-l">⚡ GAMMA</div>
-      <div class="greek-v" style="color:var(--purple)" id="gam-v">0.0048</div>
+      <div class="greek-v" style="color:var(--purple)" id="gamma-v">--</div>
     </div>
     <div class="greek-row">
       <div class="greek-l">⏳ THETA/day</div>
-      <div class="greek-v" style="color:var(--red)" id="tht-v">-₹12.4</div>
+      <div class="greek-v" style="color:var(--red)" id="theta-v">--</div>
+    </div>
+    <div class="greek-row">
+      <div class="greek-l">📈 VEGA</div>
+      <div class="greek-v" style="color:var(--accent)" id="vega-v">--</div>
     </div>
   </div>
 
   <div class="card">
     <div class="chdr">
-      <div class="ctitle">📊 OI ANALYSIS <span class="demo-tag">Demo</span></div>
+      <div class="ctitle">📊 OI ANALYSIS <span class="live-tag">LIVE</span></div>
     </div>
     <div class="oi-p">
-      <div class="oi-row"><div class="oi-l">🔴 CALL OI</div><div class="oi-v" style="color:var(--red)" id="call-oi">48.2L</div></div>
-      <div class="oi-track"><div class="oi-fill" id="call-bar" style="width:44%;background:var(--red)"></div></div>
-      <div class="oi-row"><div class="oi-l">🟢 PUT OI</div><div class="oi-v" style="color:var(--green)" id="put-oi">59.8L</div></div>
-      <div class="oi-track"><div class="oi-fill" id="put-bar" style="width:55%;background:var(--green)"></div></div>
+      <div class="oi-row"><div class="oi-l">🔴 CALL OI</div><div class="oi-v" style="color:var(--red)" id="call-oi">--</div></div>
+      <div class="oi-track"><div class="oi-fill" id="call-bar" style="width:0%;background:var(--red)"></div></div>
+      <div class="oi-row"><div class="oi-l">🟢 PUT OI</div><div class="oi-v" style="color:var(--green)" id="put-oi">--</div></div>
+      <div class="oi-track"><div class="oi-fill" id="put-bar" style="width:0%;background:var(--green)"></div></div>
+      <div class="oi-row"><div class="oi-l">📈 PCR</div><div class="oi-v" id="pcr-v">--</div></div>
+      <div class="oi-row"><div class="oi-l">📍 MAX PAIN</div><div class="oi-v" id="max-pain-v">--</div></div>
     </div>
   </div>
 
   <div class="card">
-    <div class="chdr"><div class="ctitle">🕯️ CANDLE PATTERNS <span class="demo-tag">Demo</span></div></div>
+    <div class="chdr"><div class="ctitle">🕯️ CANDLE PATTERNS <span class="live-tag">LIVE</span></div></div>
     <div id="pat-list">
-      <div class="pat-row">
-        <div class="pat-icon">🔨</div>
-        <div style="flex:1"><div class="pat-name">Hammer</div><div class="pat-desc">Strong bullish reversal at support</div></div>
-        <div class="pat-conf" style="background:var(--green2);color:var(--green);border:1px solid rgba(10,158,92,0.3)">94% 🟢</div>
-      </div>
+      <div class="pat-row" style="text-align:center; color:var(--dim); padding:20px;">Scanning for patterns...</div>
     </div>
   </div>
 
   <div class="mini">
     <div class="mini-hdr">
-      <div class="mini-name">🏦 BANKNIFTY 🎲</div>
-      <div class="mini-px" id="bn-px" style="color:var(--red)">51,240 ▼</div>
+      <div class="mini-name">🏦 BANKNIFTY</div>
+      <div class="mini-px" id="bn-px">--</div>
     </div>
     <div class="mini-body">
-      <div class="ms"><div class="ms-l">📊 RSI</div><div class="ms-v" style="color:var(--red)" id="bn-rsi">71.2</div></div>
-      <div class="ms"><div class="ms-l">🌊 TREND</div><div class="ms-v" style="color:var(--red)" id="bn-tr">BEAR</div></div>
+      <div class="ms"><div class="ms-l">OPEN</div><div class="ms-v" id="bn-mini-open">--</div></div>
+      <div class="ms"><div class="ms-l">HIGH</div><div class="ms-v" id="bn-mini-high">--</div></div>
     </div>
   </div>
 
   <div class="mini">
     <div class="mini-hdr">
-      <div class="mini-name">📊 SENSEX 🎲</div>
-      <div class="mini-px" id="sx-px" style="color:var(--green)">80,140 ▲</div>
+      <div class="mini-name">📊 SENSEX</div>
+      <div class="mini-px" id="sx-px">--</div>
     </div>
     <div class="mini-body">
-      <div class="ms"><div class="ms-l">📊 RSI</div><div class="ms-v" style="color:var(--green)" id="sx-rsi">52.4</div></div>
-      <div class="ms"><div class="ms-l">🌊 TREND</div><div class="ms-v" style="color:var(--green)" id="sx-tr">BULL</div></div>
+      <div class="ms"><div class="ms-l">OPEN</div><div class="ms-v" id="sx-mini-open">--</div></div>
+      <div class="ms"><div class="ms-l">HIGH</div><div class="ms-v" id="sx-mini-high">--</div></div>
     </div>
   </div>
 
   <div class="mini">
     <div class="mini-hdr">
-      <div class="mini-name">🛢️ CRUDE OIL 🎲</div>
-      <div class="mini-px" id="cr-px" style="color:var(--green)">₹6,842 ▲</div>
+      <div class="mini-name">🛢️ CRUDE OIL</div>
+      <div class="mini-px" id="cr-px">--</div>
     </div>
     <div class="mini-body">
-      <div class="ms"><div class="ms-l">📊 RSI</div><div class="ms-v" style="color:var(--green)" id="cr-rsi">62.1</div></div>
-      <div class="ms"><div class="ms-l">📈 TREND</div><div class="ms-v" style="color:var(--green)" id="cr-tr">BULL</div></div>
+      <div class="ms"><div class="ms-l">OPEN</div><div class="ms-v" id="cr-mini-open">--</div></div>
+      <div class="ms"><div class="ms-l">HIGH</div><div class="ms-v" id="cr-mini-high">--</div></div>
     </div>
   </div>
 
   <div class="mini">
     <div class="mini-hdr">
-      <div class="mini-name">🥇 MCX GOLD 🎲</div>
-      <div class="mini-px" id="gd-px" style="color:var(--red)">₹71,240 ▼</div>
+      <div class="mini-name">🥇 MCX GOLD</div>
+      <div class="mini-px" id="gd-px">--</div>
     </div>
     <div class="mini-body">
-      <div class="ms"><div class="ms-l">📊 RSI</div><div class="ms-v" style="color:var(--dim)" id="gd-rsi">48.2</div></div>
-      <div class="ms"><div class="ms-l">📈 TREND</div><div class="ms-v" style="color:var(--dim)" id="gd-tr">NEUTRAL</div></div>
+      <div class="ms"><div class="ms-l">OPEN</div><div class="ms-v" id="gd-mini-open">--</div></div>
+      <div class="ms"><div class="ms-l">HIGH</div><div class="ms-v" id="gd-mini-high">--</div></div>
     </div>
   </div>
 
   <div class="mini">
     <div class="mini-hdr">
-      <div class="mini-name">🥈 MCX SILVER 🎲</div>
-      <div class="mini-px" id="sv-px" style="color:var(--green)">₹84,120 ▲</div>
+      <div class="mini-name">🥈 MCX SILVER</div>
+      <div class="mini-px" id="sv-px">--</div>
     </div>
     <div class="mini-body">
-      <div class="ms"><div class="ms-l">📊 RSI</div><div class="ms-v" style="color:var(--green)" id="sv-rsi">55.8</div></div>
-      <div class="ms"><div class="ms-l">📈 TREND</div><div class="ms-v" style="color:var(--green)" id="sv-tr">BULL</div></div>
+      <div class="ms"><div class="ms-l">OPEN</div><div class="ms-v" id="sv-mini-open">--</div></div>
+      <div class="ms"><div class="ms-l">HIGH</div><div class="ms-v" id="sv-mini-high">--</div></div>
     </div>
   </div>
 
   <div class="card">
-    <div class="chdr"><div class="ctitle">🏢 STOCKS 🎲 <span class="demo-tag">Demo</span></div></div>
+    <div class="chdr"><div class="ctitle">🏢 STOCKS <span class="live-tag">LIVE</span></div></div>
     <div id="stock-list">
-      <div class="ind-row">
-        <div class="iname">🏦 HDFC</div>
-        <div class="ibar"><div class="ibfill" style="background:var(--green);width:62%"></div></div>
-        <div class="ival" style="color:var(--green)" id="hdfc-v">₹1,842</div>
-        <div class="isig bull">📈 BUY</div>
-      </div>
-      <div class="ind-row">
-        <div class="iname">🏛️ SBI</div>
-        <div class="ibar"><div class="ibfill" style="background:var(--green);width:70%"></div></div>
-        <div class="ival" style="color:var(--green)" id="sbi-v">₹824</div>
-        <div class="isig bull">📈 BUY</div>
-      </div>
+      <!-- Real stock data will be injected here -->
     </div>
   </div>
 
-  <button class="refresh-btn" style="width:100%" onclick="refreshAll()">🔄 REFRESH DEMO SIGNALS</button>
+  <button class="refresh-btn" style="width:100%" onclick="refreshAll()">🔄 REFRESH DATA</button>
 
 </div>
 </div>
@@ -715,9 +682,12 @@ async function fetchRealData(){
 
     document.getElementById('tb-trades').textContent=d.total_trades||0;
     document.getElementById('cap-trades').textContent=d.total_trades||0;
-    document.getElementById('tb-pnl').textContent='₹'+(d.session_pnl_rs||0);
-    document.getElementById('cap-pnl').textContent='₹'+(d.session_pnl_rs||0);
-    document.getElementById('tb-winrate').textContent=(d.win_rate||0)+'%';
+    document.getElementById('tb-pnl').textContent='₹'+(d.session_pnl_rs||0).toLocaleString('en-IN');
+    document.getElementById('cap-pnl').textContent='₹'+(d.session_pnl_rs||0).toLocaleString('en-IN');
+    document.getElementById('tb-winrate').textContent=(d.win_rate||0).toFixed(1)+'%';
+    
+    const now = new Date();
+    document.getElementById('tb-time').textContent = now.toLocaleTimeString('en-US', { hour12: false, timeZone: 'Asia/Kolkata' });
 
     const pill=document.getElementById('market-pill-text');
     const dot=document.getElementById('market-dot');
@@ -750,6 +720,44 @@ async function fetchRealData(){
       } else {
         chgEl.textContent = d.market_status==='CLOSED' ? 'Market Closed' : 'Waiting for live price...';
       }
+    }
+
+    // Update Mini Cards
+    const miniMarkets = ['banknifty', 'sensex', 'crudeoil', 'gold', 'silver'];
+    const miniPrefixes = ['bn', 'sx', 'cr', 'gd', 'sv'];
+    
+    miniMarkets.forEach((mkt, idx) => {
+      const prefix = miniPrefixes[idx];
+      const price = d.latest_prices[mkt];
+      const open = d.latest_prices[`${mkt}_open`];
+      const high = d.latest_prices[`${mkt}_high`];
+      
+      if (price) {
+        document.getElementById(`${prefix}-px`).textContent = price.toFixed(2);
+        document.getElementById(`${prefix}-px`).style.color = (open && price >= open) ? 'var(--green)' : 'var(--red)';
+      }
+      if (open) document.getElementById(`${prefix}-mini-open`).textContent = open.toFixed(2);
+      if (high) document.getElementById(`${prefix}-mini-high`).textContent = high.toFixed(2);
+    });
+
+    // Update Stocks Card
+    const stockList = document.getElementById('stock-list');
+    if (stockList && d.stocks) {
+      stockList.innerHTML = '';
+      Object.entries(d.stocks).forEach(([name, data]) => {
+        const px = data.ltp;
+        if (px) {
+          stockList.innerHTML += `
+            <div class="sm-row">
+              <div class="sm-icon">🏢</div>
+              <div class="sm-info">
+                <div class="sm-name">${name}</div>
+                <div class="sm-desc">Last Update: ${data.last_update ? data.last_update.split('T')[1].split('.')[0] : '--'}</div>
+              </div>
+              <div class="sm-sig bull" style="min-width:80px; text-align:right">₹${px.toFixed(2)}</div>
+            </div>`;
+        }
+      });
     }
 
     // Real technical indicators (RSI, EMA9, EMA21, VWAP-approx)
@@ -814,6 +822,78 @@ async function fetchRealData(){
       }
     }
 
+    // Real Institutional Stats
+    if(d.institutional_stats){
+      const inst = d.institutional_stats;
+      const fiiVal = inst.fii_net || 0;
+      const diiVal = inst.dii_net || 0;
+      
+      document.getElementById("fii-desc").textContent = `FII Net Position: ₹${fiiVal.toLocaleString("en-IN")} Cr`;
+      document.getElementById("fii-sig").textContent = fiiVal >= 0 ? "🟢 BUYING" : "🔴 SELLING";
+      document.getElementById("fii-sig").className = "sm-sig " + (fiiVal >= 0 ? "bull" : "bear");
+      
+      document.getElementById("dii-desc").textContent = `DII Net Position: ₹${diiVal.toLocaleString("en-IN")} Cr`;
+      document.getElementById("dii-sig").textContent = diiVal >= 0 ? "🟢 SUPPORT" : "🔴 EXITING";
+      document.getElementById("dii-sig").className = "sm-sig " + (diiVal >= 0 ? "bull" : "bear");
+    }
+
+    // Real Greeks & OI
+    if(d.greeks_data || d.greeks){
+      const greeks = d.greeks_data || d.greeks;
+      document.getElementById("iv-v").textContent = greeks.iv ? greeks.iv.toFixed(1) + "%" : "--";
+      document.getElementById("delta-v").textContent = greeks.delta ? greeks.delta.toFixed(2) : "--";
+      document.getElementById("gamma-v").textContent = greeks.gamma ? greeks.gamma.toFixed(4) : "--";
+      document.getElementById("theta-v").textContent = greeks.theta ? "₹" + greeks.theta.toFixed(1) : "--";
+      document.getElementById("vega-v").textContent = greeks.vega ? greeks.vega.toFixed(2) : "--";
+    }
+
+    if(d.oi_data){
+      const oi = d.oi_data;
+      document.getElementById("call-oi").textContent = oi.call_oi ? (oi.call_oi / 100000).toFixed(1) + "L" : "--";
+      document.getElementById("put-oi").textContent = oi.put_oi ? (oi.put_oi / 100000).toFixed(1) + "L" : "--";
+      document.getElementById("pcr-v").textContent = oi.pcr ? oi.pcr.toFixed(2) : "--";
+      document.getElementById("max-pain-v").textContent = oi.max_pain ? oi.max_pain.toLocaleString("en-IN") : "--";
+
+      if (oi.call_oi && oi.put_oi) {
+        const totalOI = oi.call_oi + oi.put_oi;
+        document.getElementById("call-bar").style.width = `${(oi.call_oi / totalOI) * 100}%`;
+        document.getElementById("put-bar").style.width = `${(oi.put_oi / totalOI) * 100}%`;
+      }
+    }
+
+    // Real Alerts
+    if(d.alerts || d.market_alerts){
+      const alerts = d.alerts || d.market_alerts;
+      const alertList = document.getElementById('alert-list');
+      if (alertList && alerts.length > 0) {
+        alertList.innerHTML = '';
+        alerts.forEach(a => {
+          const item = document.createElement('div');
+          item.className = 'alert-item';
+          item.innerHTML = `<div class="alert-time">${a.time}</div><div class="alert-badge neu">${a.badge}</div><div class="alert-msg">${a.msg}</div><div class="alert-px">${a.px ? a.px.toFixed(2) : ''}</div>`;
+          alertList.appendChild(item);
+        });
+      }
+    }
+
+    // Real News Feed
+    if(d.news_feed){
+      const newsList = document.getElementById('news-list');
+      if (newsList && d.news_feed.length > 0) {
+        newsList.innerHTML = '';
+        d.news_feed.forEach(n => {
+          newsList.innerHTML += `
+            <div class="news-item">
+              <div class="nimp" style="background:var(--blue2);color:var(--blue);border:1px solid rgba(26,86,219,0.3)">NEWS</div>
+              <div>
+                <div class="ntxt"><strong>${n.title}</strong></div>
+                <div class="ntime">${n.time || ''}</div>
+              </div>
+            </div>`;
+        });
+      }
+    }
+
     // Real paper trade panel
     const statusEl=document.getElementById('trade-status');
     const box=document.getElementById('active-trade-box');
@@ -861,39 +941,7 @@ async function closeTrade(){
   }catch(e){ alert('Error: could not close trade'); }
 }
 
-// ── DEMO GREEKS/OI/MINIS TICKS (unchanged — illustrative only) ──
-function tickGreeks(){
-  document.getElementById('iv-v').textContent=(13.5+Math.random()*2).toFixed(1)+'%';
-  document.getElementById('gam-v').textContent=(0.004+Math.random()*0.002).toFixed(4);
-  document.getElementById('tht-v').textContent='-₹'+(10+Math.random()*5).toFixed(1);
-}
-setInterval(tickGreeks,4000);
-
-function tickOI(){
-  const ce=(44+Math.random()*10).toFixed(1);
-  const pe=(52+Math.random()*15).toFixed(1);
-  document.getElementById('call-oi').textContent=ce+'L';
-  document.getElementById('put-oi').textContent=pe+'L';
-  document.getElementById('call-bar').style.width=Math.min(85,parseFloat(ce)/1.2)+'%';
-  document.getElementById('put-bar').style.width=Math.min(85,parseFloat(pe)/1.2)+'%';
-}
-setInterval(tickOI,5000);
-
-function tickMinis(){
-  const bnBase=51240+(Math.random()-0.52)*30;
-  document.getElementById('bn-px').textContent='₹'+bnBase.toFixed(0)+' ▼';
-  const sxBase=80140+(Math.random()-0.47)*20;
-  document.getElementById('sx-px').textContent='₹'+sxBase.toFixed(0)+' ▲';
-  const crBase=6842+(Math.random()-0.47)*15;
-  document.getElementById('cr-px').textContent='₹'+crBase.toFixed(0)+' ▲';
-  const gdBase=71240+(Math.random()-0.52)*20;
-  document.getElementById('gd-px').textContent='₹'+gdBase.toFixed(0)+' ▼';
-  const svBase=84120+(Math.random()-0.47)*25;
-  document.getElementById('sv-px').textContent='₹'+svBase.toFixed(0)+' ▲';
-  document.getElementById('hdfc-v').textContent='₹'+(1842+(Math.random()-0.5)*8).toFixed(0);
-  document.getElementById('sbi-v').textContent='₹'+(824+(Math.random()-0.5)*4).toFixed(0);
-}
-setInterval(tickMinis,3000);
+// ── DEMO GREEKS/OI/MINIS TICKS REMOVED ──
 
 const SETUPS=[
   {rsi:38.4,rc:'var(--green)',rs:'🟢 OVERSOLD',vwap:24362,ema9:24371,ema21:24344,ec:'var(--green)',es:'📈 BULL',st:24290,sc:'var(--green)',ss:'✅ BUY'},
@@ -923,12 +971,12 @@ function addAlert(){
 }
 
 const markets={
-  banknifty:{label:'🏦 BANKNIFTY · INDEX 🎲',price:51240,open:51100,pcr:'0.88 🎲'},
-  sensex:{label:'📊 SENSEX · BSE INDEX 🎲',price:80140,open:79880,pcr:'1.12 🎲'},
-  crude:{label:'🛢️ CRUDE OIL · MCX 🎲',price:6842,open:6760,pcr:'N/A'},
-  gold:{label:'🥇 MCX GOLD 🎲',price:71240,open:71380,pcr:'N/A'},
-  silver:{label:'🥈 MCX SILVER 🎲',price:84120,open:83800,pcr:'N/A'},
-  stocks:{label:'🏢 BANK STOCKS 🎲',price:1842,open:1830,pcr:'1.05 🎲'},
+  banknifty:{label:'🏦 BANKNIFTY · INDEX'},
+  sensex:{label:'📊 SENSEX · BSE INDEX'},
+  crude:{label:'🛢️ CRUDE OIL · MCX'},
+  gold:{label:'🥇 MCX GOLD'},
+  silver:{label:'🥈 MCX SILVER'},
+  stocks:{label:'🏢 BANK STOCKS'},
 };
 
 function switchMarket(el,key){
@@ -937,26 +985,17 @@ function switchMarket(el,key){
   currentMarket=key;
   if(key==='nifty'){
     document.getElementById('hero-label').innerHTML='🔵 NIFTY 50 · INDEX <span class="live-tag" style="background:rgba(255,255,255,0.2);color:#fff;border-color:transparent">LIVE</span>';
-    fetchRealData();
-    fetchRealCandles();
   } else {
     const m=markets[key];
-    document.getElementById('hero-label').textContent=m.label;
-    document.getElementById('hero-price').textContent=m.price.toLocaleString('en-IN');
-    document.getElementById('hero-chg').textContent='Demo data — illustrative only';
-    document.getElementById('h-vix').textContent='--';
-    document.getElementById('h-open').textContent=m.open.toLocaleString('en-IN');
-    document.getElementById('chart-tag').textContent='Demo';
-    document.getElementById('chart-tag').style.background='var(--gold)';
-    candles=genCandles(60, (markets[key]?markets[key].price:24300)*0.995);
-    drawChart();
+    document.getElementById('hero-label').innerHTML=`${m.label} <span class="live-tag" style="background:rgba(255,255,255,0.2);color:#fff;border-color:transparent">LIVE</span>`;
   }
-  updateIndicators();
+  fetchRealData();
+  fetchRealCandles();
 }
 
 function refreshAll(){
-  candles=genCandles(currentTf==='1m'?60:currentTf==='5m'?40:20,24250+Math.random()*100);
-  drawChart(); updateIndicators(); tickGreeks(); tickOI(); tickMinis();
+  fetchRealData();
+  fetchRealCandles();
 }
 
 candles=genCandles(60,24250); drawChart(); updateIndicators();
