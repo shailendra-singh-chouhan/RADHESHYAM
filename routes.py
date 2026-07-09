@@ -1,13 +1,14 @@
+
 """
 routes.py — FastAPI API endpoints for GOAT PRO dashboard
-Phase 3.B1: options_contract now includes live_premium (numeric),
-            live_premium_source, live_premium_expiry, live_premium_lotsize
+Phase 3.B1 fixed: matches actual trading.py signatures
+                  (open_paper_trade / close_paper_trade with real args)
 """
 import logging
 from datetime import datetime, time as dt_time
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -22,7 +23,7 @@ from strategy import (
     fetch_institutional_stats,
     fetch_global_markets,
 )
-from trading import execute_paper_trade, close_paper_trade
+from trading import open_paper_trade, close_paper_trade
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -32,14 +33,12 @@ router = APIRouter()
 # REQUEST / RESPONSE MODELS
 # ════════════════════════════════════════════════════════
 class ExecuteRequest(BaseModel):
-    direction: str  # "LONG" or "SHORT"
-    entry: float
-    target: Optional[float] = None
-    sl: Optional[float] = None
+    direction: Optional[str] = None  # "LONG" or "SHORT" — optional, falls back to signal
+    entry: Optional[float] = None    # optional, falls back to current spot
 
 
 class CloseRequest(BaseModel):
-    trade_id: Optional[int] = None
+    reason: Optional[str] = "Manual Close"
 
 
 # ════════════════════════════════════════════════════════
@@ -95,8 +94,7 @@ def get_dashboard_data(db: Session = Depends(get_db)):
     midcap = client.get_ltp("NSE", "NIFTY MIDCAP 100") or 0
     vix = client.get_ltp("NSE", "INDIA VIX") or 0
 
-    # Day open — first candle or current spot if no data
-    day_open = spot  # default fallback
+    day_open = spot
     candles = client.get_candle_data("NSE", "NIFTY", "FIFTEEN_MINUTE", days=1)
     if candles:
         day_open = candles[0]["open"]
@@ -150,11 +148,10 @@ def get_dashboard_data(db: Session = Depends(get_db)):
         "note": "No candle data",
     }
 
-    # ── OI Data (Phase 3.B2 — now with top_strikes, expiry, strike_count) ──
+    # ── OI Data ──
     oi_data = get_oi_data("NIFTY")
 
-    # ── Options Contract (Phase 3.B1 — now with live_premium numeric) ──
-    # Determine which option to show based on signal
+    # ── Options Contract ──
     sig_direction = real_signal.get("signal", "WAIT")
     max_pain = oi_data.get("max_pain", 0) or int(spot / 50) * 50
     strike = max_pain
@@ -162,7 +159,6 @@ def get_dashboard_data(db: Session = Depends(get_db)):
         "CE" if sig_direction == "LONG" else "PE"
     )
 
-    # Build base contract info
     options_contract = {
         "index": "NIFTY",
         "strike": strike,
@@ -176,7 +172,6 @@ def get_dashboard_data(db: Session = Depends(get_db)):
         "full_details": None,
     }
 
-    # Fetch live premium if market is open
     if status == "OPEN" and spot > 0:
         try:
             ltp_result = client.get_option_ltp("NIFTY", strike, option_type)
@@ -234,7 +229,7 @@ def get_dashboard_data(db: Session = Depends(get_db)):
             if ltp and ltp > 0:
                 stocks[sym] = {
                     "ltp": round(ltp, 2),
-                    "open": round(ltp * 0.998, 2),  # approx if no separate open call
+                    "open": round(ltp * 0.998, 2),
                     "high": round(ltp * 1.002, 2),
                     "low": round(ltp * 0.997, 2),
                     "last_update": datetime.now().isoformat(),
@@ -242,13 +237,13 @@ def get_dashboard_data(db: Session = Depends(get_db)):
         except Exception:
             pass
 
-    # ── Active trade ──
+    # ── Active trade (FIXED: trading.py uses status="ACTIVE", not "OPEN") ──
     active_trade = None
-    open_trades = db.query(Trade).filter(Trade.status == "OPEN").order_by(Trade.id.desc()).first()
+    open_trades = db.query(Trade).filter(Trade.status == "ACTIVE").order_by(Trade.id.desc()).first()
     if open_trades:
         live_pnl = 0
         if open_trades.direction == "LONG":
-            live_pnl = (spot - open_trades.entry) * 75  # 1 lot = 75 qty
+            live_pnl = (spot - open_trades.entry) * 75
         elif open_trades.direction == "SHORT":
             live_pnl = (open_trades.entry - spot) * 75
         active_trade = {
@@ -265,7 +260,6 @@ def get_dashboard_data(db: Session = Depends(get_db)):
     wins = sum(1 for t in all_trades if (t.pnl or 0) > 0)
     win_rate = round((wins / total_trades * 100), 1) if total_trades > 0 else 0
 
-    # Session PnL (today)
     today = datetime.now().date()
     today_trades = db.query(Trade).filter(Trade.trade_date == today).all()
     session_pnl = sum(t.pnl or 0 for t in today_trades)
@@ -338,30 +332,34 @@ def get_dashboard_data(db: Session = Depends(get_db)):
 # EXECUTE / CLOSE TRADE ENDPOINTS
 # ════════════════════════════════════════════════════════
 @router.post("/api/execute")
-def execute_trade(req: ExecuteRequest, db: Session = Depends(get_db)):
-    """Manually execute a paper trade."""
+def execute_trade_endpoint(req: ExecuteRequest, db: Session = Depends(get_db)):
+    """Manually open a paper trade. Uses trading.open_paper_trade()."""
     try:
-        trade = execute_paper_trade(
-            db=db,
-            direction=req.direction,
-            entry=req.entry,
-            target=req.target,
-            sl=req.sl,
-        )
-        return {"success": True, "trade_id": trade.id, "message": "Trade executed"}
+        # trading.open_paper_trade auto-calculates target/sl via ATR
+        # and pulls signal + spot from state_manager if not provided.
+        success, msg = open_paper_trade(db, signal=req.direction, spot=req.entry)
+        if not success:
+            raise HTTPException(status_code=400, detail=msg)
+        return {"success": True, "message": msg}
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.exception("execute_trade failed")
+        logger.exception("execute_trade_endpoint failed")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/api/close")
-def close_trade(req: CloseRequest, db: Session = Depends(get_db)):
-    """Close an open paper trade."""
+def close_trade_endpoint(req: CloseRequest, db: Session = Depends(get_db)):
+    """Close the currently active paper trade."""
     try:
-        result = close_paper_trade(db=db, trade_id=req.trade_id)
-        return {"success": True, **result}
+        success, msg = close_paper_trade(db, reason=req.reason or "Manual Close")
+        if not success:
+            raise HTTPException(status_code=400, detail=msg)
+        return {"success": True, "message": msg}
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.exception("close_trade failed")
+        logger.exception("close_trade_endpoint failed")
         raise HTTPException(status_code=500, detail=str(e))
 
 
