@@ -59,7 +59,6 @@ class AngelClient:
             data = self.smart_api.generateSession(
                 clientCode=config.ANGEL_CLIENT_ID,
                 password=config.ANGEL_MPIN,
-
                 totp=totp,
             )
             if data.get("status") is False:
@@ -126,13 +125,6 @@ class AngelClient:
     def get_token(self, exchange: str, symbol: str) -> Optional[str]:
         """
         Resolve exchange + symbol → Angel One token string.
-
-        Lookup order:
-        1. Exact match (exchange + symbol)
-        2. Symbol contains match
-        3. Name contains match
-        4. BSE SENSEX special handling  ← Phase 3.C (NEW)
-        5. Hardcoded known-token fallback
         """
         if self._scrip_master_df is None or self._scrip_master_df.empty:
             logger.warning("Scrip master not loaded, using known tokens fallback")
@@ -142,31 +134,35 @@ class AngelClient:
         sym = symbol.upper().strip()
         df = self._scrip_master_df
 
+        # Helper: MCX/CDS/NFO के लिए हमेशा nearest future expiry सॉर्ट करें
+        def _get_best_token(match_df):
+            if match_df.empty: return None
+            if exch in ("CDS", "MCX", "NFO") and "expiry" in match_df.columns:
+                temp = match_df.copy()
+                temp["_exp"] = pd.to_datetime(temp["expiry"], errors="coerce")
+                temp = temp.dropna(subset=["_exp"])
+                temp = temp[temp["_exp"] >= pd.Timestamp.today().normalize()]
+                if not temp.empty:
+                    return str(temp.sort_values("_exp").iloc[0]["token"])
+            return str(match_df.iloc[0]["token"])
+
         # 1. Exact match
         match = df[(df["exch_seg"] == exch) & (df["symbol"] == sym)]
-        if not match.empty:
-            return str(match.iloc[0]["token"])
+        tok = _get_best_token(match)
+        if tok: return tok
 
         # 2. Symbol contains
-        match = df[
-            (df["exch_seg"] == exch) & (df["symbol"].str.contains(sym, na=False))
-        ]
-        if not match.empty:
-            return str(match.iloc[0]["token"])
+        match = df[(df["exch_seg"] == exch) & (df["symbol"].str.contains(sym, na=False))]
+        tok = _get_best_token(match)
+        if tok: return tok
 
         # 3. Name contains
-        match = df[
-            (df["exch_seg"] == exch) & (df["name"].str.contains(sym, na=False))
-        ]
-        if not match.empty:
-            return str(match.iloc[0]["token"])
+        match = df[(df["exch_seg"] == exch) & (df["name"].str.contains(sym, na=False))]
+        tok = _get_best_token(match)
+        if tok: return tok
 
-        # ── 4. BSE SENSEX special handling (Phase 3.C — NEW) ──
-        if exch == "BSE" and sym in (
-            "SENSEX",
-            "BSESENSEX",
-            "S&P BSE SENSEX",
-        ):
+        # 4. BSE SENSEX special handling (Phase 3.C)
+        if exch == "BSE" and sym in ("SENSEX", "BSESENSEX", "S&P BSE SENSEX"):
             sensex_match = df[
                 (df["exch_seg"] == "BSE")
                 & (
@@ -176,10 +172,6 @@ class AngelClient:
             ]
             if not sensex_match.empty:
                 return str(sensex_match.iloc[0]["token"])
-            # Hardcoded fallback — BSE Sensex index token is "1"
-            logger.warning(
-                "SENSEX not found in scrip master, using hardcoded token='1'"
-            )
             return "1"
 
         # 5. Known tokens fallback
@@ -332,7 +324,6 @@ class AngelClient:
     ) -> Optional[dict]:
         """
         Find the nearest weekly-expiry option contract for given index/strike/type.
-
         Returns dict: {token, symbol, expiry, lotsize}  or  None.
         """
         if self._scrip_master_df is None or self._scrip_master_df.empty:
@@ -358,10 +349,10 @@ class AngelClient:
             )
             return None
 
-        # Parse & filter to nearest future expiry
+        # Parse & filter to nearest future expiry (Using pd.Timestamp to avoid UTC bugs)
         opts["_expiry_dt"] = pd.to_datetime(opts.get("expiry"), errors="coerce")
         opts = opts.dropna(subset=["_expiry_dt"])
-        opts = opts[opts["_expiry_dt"] >= datetime.now()]
+        opts = opts[opts["_expiry_dt"] >= pd.Timestamp.today().normalize()]
 
         if opts.empty:
             logger.warning(
@@ -392,20 +383,6 @@ class AngelClient:
     def get_option_ltp(self, index: str, strike: int, option_type: str) -> dict:
         """
         Fetch REAL LTP of an option contract from Angel One.
-
-        Returns (on success):
-            {
-                "ltp": 125.45,
-                "token": "12345",
-                "symbol": "NIFTY 24000 PE",
-                "expiry": "10-Jul-2026",
-                "lotsize": 75,
-                "source": "ANGEL_ONE_LIVE"
-            }
-
-        Returns (on failure):
-            {"ltp": None, "source": "UNAVAILABLE"}
-            {"ltp": None, "source": "ERROR: <reason>"}
         """
         error_result = {"ltp": None, "source": "UNAVAILABLE"}
 
@@ -467,8 +444,6 @@ class AngelClient:
     def fetch_nse_option_chain(self, index: str = "NIFTY") -> dict:
         """
         Fetch option chain from NSE India — OI, PCR, Max Pain, top strikes.
-
-        Phase 3.B2: now returns expiry, top_strikes (7), strike_count.
         """
         result = {
             "call_oi": 0,
