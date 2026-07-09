@@ -363,7 +363,7 @@ def close_trade_endpoint(req: CloseRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/health")
+@router.api_route("/health", methods=["GET", "HEAD"])
 def health():
     """Health check endpoint for Render."""
     return {"status": "ok", "time": datetime.now().isoformat()}

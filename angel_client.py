@@ -218,6 +218,54 @@ class AngelClient:
                 logger.error("get_ltp exception %s/%s: %s", exchange, symbol, e)
         return None
 
+    def get_ltp_by_token(self, exchange: str, symbol: str, token: str) -> Optional[float]:
+        """Get LTP when token is already resolved (skip scrip-master lookup)."""
+        if not self._ensure_session():
+            return None
+        try:
+            result = self.smart_api.ltpData(exchange, symbol, token)
+            if result and result.get("status") and result.get("data"):
+                return float(result["data"].get("ltp", 0) or 0)
+            logger.warning("ltpData(by_token) failed for %s/%s: %s", exchange, symbol, result)
+        except Exception as e:
+            err_str = str(e).lower()
+            if "session" in err_str or "token" in err_str or "unauthorized" in err_str:
+                self._login()
+            else:
+                logger.error("get_ltp_by_token exception %s/%s: %s", exchange, symbol, e)
+        return None
+
+    def get_ohlc(self, exchange: str, symbol: str) -> Optional[Dict[str, Any]]:
+        """Get today's OHLC + LTP snapshot for a given instrument."""
+        if not self._ensure_session():
+            return None
+
+        token = self.get_token(exchange, symbol)
+        if not token:
+            return None
+
+        try:
+            result = self.smart_api.ltpData(exchange, symbol, token)
+            if result and result.get("status") and result.get("data"):
+                d = result["data"]
+                return {
+                    "symbol": symbol,
+                    "token": token,
+                    "ltp":   float(d.get("ltp", 0) or 0),
+                    "open":  float(d.get("open", 0) or 0),
+                    "high":  float(d.get("high", 0) or 0),
+                    "low":   float(d.get("low", 0) or 0),
+                    "close": float(d.get("close", 0) or 0),
+                }
+            logger.warning("get_ohlc empty for %s/%s: %s", exchange, symbol, result)
+        except Exception as e:
+            err_str = str(e).lower()
+            if "session" in err_str or "token" in err_str or "unauthorized" in err_str:
+                self._login()
+            else:
+                logger.error("get_ohlc exception %s/%s: %s", exchange, symbol, e)
+        return None
+
     # ────────────────────────────────────────────────────────
     # CANDLE DATA (Historical OHLCV)
     # ────────────────────────────────────────────────────────
@@ -602,3 +650,16 @@ def get_angel_client() -> AngelClient:
     if _angel_client is None:
         _angel_client = AngelClient()
     return _angel_client
+
+
+def get_ohlc(exchange: str, symbol: str) -> Optional[Dict[str, Any]]:
+    """Module-level convenience wrapper — used by stocks.py."""
+    return get_angel_client().get_ohlc(exchange, symbol)
+
+
+def get_ltp(exchange: str, symbol: str) -> Optional[float]:
+    return get_angel_client().get_ltp(exchange, symbol)
+
+
+def get_ltp_by_token(exchange: str, symbol: str, token: str) -> Optional[float]:
+    return get_angel_client().get_ltp_by_token(exchange, symbol, token)

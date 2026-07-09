@@ -68,7 +68,7 @@ def get_options_contract(spot_price: float, signal: str, index: str = "NIFTY", s
         premium_estimate = "Opens at 9:15 AM"
         if config.get_market_status() == "OPEN":
             try:
-                ltp = angel_client.get_ltp("NFO", contract_symbol, contract_details["token"])
+                ltp = angel_client.get_ltp_by_token("NFO", contract_symbol, contract_details["token"])
                 if ltp and ltp > 0:
                     premium_estimate = f"₹{ltp}"
             except Exception as e:
