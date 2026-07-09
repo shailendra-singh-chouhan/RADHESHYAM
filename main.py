@@ -2,6 +2,7 @@ import os
 import datetime
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from fastapi.responses import FileResponse  # नया इम्पोर्ट
 from fastapi.middleware.cors import CORSMiddleware
 from logzero import logger
 
@@ -48,6 +49,16 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="GOAT PRO", lifespan=lifespan)
+
+# ────────────────────────────────────────────────────────
+# DASHBOARD UI ROUTE (Render "Not Found" Fix)
+# ────────────────────────────────────────────────────────
+@app.get("/")
+async def serve_dashboard():
+    """Serves the main frontend UI."""
+    if os.path.exists("dashboard.html"):
+        return FileResponse("dashboard.html")
+    return {"error": "Dashboard UI file missing. Please ensure dashboard.html is in the root directory."}
 
 # Mount the main dashboard router
 app.include_router(routes.router)
