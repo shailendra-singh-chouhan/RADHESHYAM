@@ -728,9 +728,9 @@ async function fetchRealData(){
     
     miniMarkets.forEach((mkt, idx) => {
       const prefix = miniPrefixes[idx];
-      const price = d.latest_prices[mkt];
-      const open = d.latest_prices[`${mkt}_open`];
-      const high = d.latest_prices[`${mkt}_high`];
+      const price = d[mkt];
+      const open = d[`${mkt}_open`];
+      const high = d[`${mkt}_high`];
       
       if (price) {
         document.getElementById(`${prefix}-px`).textContent = price.toFixed(2);
