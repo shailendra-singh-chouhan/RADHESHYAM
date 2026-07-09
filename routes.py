@@ -1,4 +1,3 @@
-```python
 """
 routes.py — FastAPI API endpoints for GOAT PRO dashboard
 Phase 3.B1: options_contract now includes live_premium (numeric),
@@ -370,4 +369,3 @@ def close_trade(req: CloseRequest, db: Session = Depends(get_db)):
 def health():
     """Health check endpoint for Render."""
     return {"status": "ok", "time": datetime.now().isoformat()}
-```
