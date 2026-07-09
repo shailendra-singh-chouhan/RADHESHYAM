@@ -58,7 +58,8 @@ class AngelClient:
             totp = pyotp.TOTP(config.ANGEL_TOTP_SECRET).now()
             data = self.smart_api.generateSession(
                 clientCode=config.ANGEL_CLIENT_ID,
-                password=config.ANGEL_PASSWORD,
+                password=config.ANGEL_MPIN,
+
                 totp=totp,
             )
             if data.get("status") is False:
