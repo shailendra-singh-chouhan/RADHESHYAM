@@ -109,10 +109,15 @@ def get_token(exchange: str, symbol: str) -> Optional[str]:
             (_scrip_master_df["symbol"].str.upper().str.startswith(symbol.upper()))
         ]
         if not match.empty:
-            # Sort by expiry if available; otherwise take first
+            # Sort by expiry (as an actual date, not plain text) so the
+            # nearest contract is picked correctly even across month
+            # boundaries (e.g. "07-JUL-2026" vs "07-AUG-2026" — sorting
+            # as text would wrongly put AUG before JUL alphabetically).
             if "expiry" in match.columns:
                 try:
-                    match = match.sort_values("expiry", ascending=True)
+                    match = match.copy()
+                    match["_expiry_dt"] = pd.to_datetime(match["expiry"], errors="coerce")
+                    match = match.sort_values("_expiry_dt", ascending=True)
                 except Exception:
                     pass
             logger.info(f"✓ Resolved {exchange}:{symbol} via prefix match -> "
@@ -132,7 +137,9 @@ def get_token(exchange: str, symbol: str) -> Optional[str]:
             if not match.empty:
                 if "expiry" in match.columns:
                     try:
-                        match = match.sort_values("expiry", ascending=True)
+                        match = match.copy()
+                        match["_expiry_dt"] = pd.to_datetime(match["expiry"], errors="coerce")
+                        match = match.sort_values("_expiry_dt", ascending=True)
                     except Exception:
                         pass
                 logger.info(f"✓ Resolved USDINR via CDS fallback -> "
