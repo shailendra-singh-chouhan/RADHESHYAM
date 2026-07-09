@@ -10,29 +10,42 @@ import angel_client
 import strategy
 import routes
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("--- Starting GOAT PRO Institutional Services ---")
-    
+
     # Initialize database tables and migrations
     from database import init_db
     init_db()
     logger.info("Database initialized successfully.")
 
-    if angel_client.angel_login():
-        angel_client.refresh_scrip_master()  # Load tokens on startup
-    else:
-        logger.warning("Initial Angel One login failed. Will retry in pollers.")
+    # Initialize Angel One client — login + scrip master happen inside __init__
+    try:
+        client = angel_client.get_angel_client()
+        if client and client.jwt_token:
+            logger.info("Angel One session ready + scrip master loaded.")
+        else:
+            logger.warning("Angel One session not ready. Pollers will retry.")
+    except Exception as e:
+        logger.warning(f"Angel One init failed: {e}. Pollers will retry.")
 
     # Start all background pollers
-    import stocks
-    stocks.start_stock_price_poller()
-    strategy.start_background_threads()
+    try:
+        import stocks
+        stocks.start_stock_price_poller()
+    except Exception as e:
+        logger.warning(f"Stock poller not started: {e}")
+
+    try:
+        strategy.start_background_threads()
+    except Exception as e:
+        logger.warning(f"Strategy threads not started: {e}")
+
     logger.info("All background services started successfully.")
-
     yield
-
     logger.info("--- Shutting down GOAT PRO ---")
+
 
 app = FastAPI(title="GOAT PRO", lifespan=lifespan)
 
@@ -46,5 +59,3 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
