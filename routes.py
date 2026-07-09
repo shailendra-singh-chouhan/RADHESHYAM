@@ -60,12 +60,35 @@ async def api_data(db: Session = Depends(get_db)) -> JSONResponse:
     state = config.state_manager
     latest_prices = state.latest_prices
     signal_data = state.signal_data
-    
-    # Phase 4: Calculate Options Contract dynamically
+
+    # Phase 4: Calculate Options Contract dynamically + fetch LIVE premium
     selected_contract = None
     spot = latest_prices.get("nifty")
     if signal_data and signal_data.get("signal") in ["LONG", "SHORT"] and spot:
         selected_contract = trading.get_options_contract(spot, signal_data["signal"])
+        # NEW: Fetch REAL live premium from Angel One and add as numeric field
+        # (separate from the string `premium_estimate` which is for display only)
+        if selected_contract and selected_contract.get("full_details"):
+            try:
+                live_prem = angel_client.get_option_ltp(
+                    selected_contract["index"],
+                    selected_contract["strike"],
+                    selected_contract["option_type"],
+                )
+                if live_prem and live_prem.get("ltp"):
+                    selected_contract["live_premium"] = live_prem["ltp"]
+                    selected_contract["live_premium_source"] = live_prem.get("source", "ANGEL_ONE_LIVE")
+                    selected_contract["live_premium_expiry"] = live_prem.get("expiry")
+                    selected_contract["live_premium_lotsize"] = live_prem.get("lotsize")
+                    # Also update premium_estimate to show the real ₹ value
+                    selected_contract["premium_estimate"] = f"₹{live_prem['ltp']}"
+                else:
+                    selected_contract["live_premium"] = None
+                    selected_contract["live_premium_source"] = "UNAVAILABLE"
+            except Exception as e:
+                logger.error(f"Live premium fetch error: {e}")
+                selected_contract["live_premium"] = None
+                selected_contract["live_premium_source"] = f"ERROR: {e}"
 
     current_active = None
     session_pnl = 0.0
