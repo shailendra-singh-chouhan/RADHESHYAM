@@ -1,4 +1,3 @@
-
 """
 routes.py — FastAPI API endpoints for GOAT PRO dashboard
 Phase 3.B1 fixed: matches actual trading.py signatures
@@ -59,12 +58,15 @@ def _market_status() -> str:
 
 def _risk_check(db: Session) -> dict:
     """Check if it's safe to trade (daily loss limit, max trades)."""
-    today = datetime.now().date()
-    today_trades = db.query(Trade).filter(Trade.trade_date == today).all()
+    # 🚨 FIX: Convert date to ISO string for PostgreSQL comparison
+    today_str = datetime.now().date().isoformat()
+    today_trades = db.query(Trade).filter(Trade.trade_date == today_str).all()
     total_trades = len(today_trades)
     day_pnl = sum(t.pnl or 0 for t in today_trades)
-    max_loss = config.MAX_DAILY_LOSS if hasattr(config, "MAX_DAILY_LOSS") else -2000
-    max_trades = config.MAX_DAILY_TRADES if hasattr(config, "MAX_DAILY_TRADES") else 5
+    
+    max_loss = getattr(config, "MAX_DAILY_LOSS", -2000)
+    max_trades = getattr(config, "MAX_DAILY_TRADES", 5)
+    
     ok = day_pnl > max_loss and total_trades < max_trades
     msg = f"Risk OK (Day PnL: ₹{day_pnl:.2f})" if ok else (
         f"Risk BLOCKED (Day PnL: ₹{day_pnl:.2f}, Trades: {total_trades})"
@@ -138,8 +140,8 @@ def get_dashboard_data(db: Session = Depends(get_db)):
         },
     }
 
-    # ── Signal ──
-    real_signal = generate_signal(candles, spot) if candles and spot > 0 else {
+    # ── Signal (Defensive Fallback added) ──
+    real_signal = (generate_signal(candles, spot) if candles and spot > 0 else None) or {
         "signal": "WAIT",
         "confidence": 0,
         "checklist": {},
@@ -148,8 +150,8 @@ def get_dashboard_data(db: Session = Depends(get_db)):
         "note": "No candle data",
     }
 
-    # ── OI Data ──
-    oi_data = get_oi_data("NIFTY")
+    # ── OI Data (Defensive Fallback added to prevent .get() crashes) ──
+    oi_data = get_oi_data("NIFTY") or {}
 
     # ── Options Contract ──
     sig_direction = real_signal.get("signal", "WAIT")
@@ -215,10 +217,10 @@ def get_dashboard_data(db: Session = Depends(get_db)):
     )
 
     # ── Institutional stats ──
-    inst_stats = fetch_institutional_stats()
+    inst_stats = fetch_institutional_stats() or {}
 
     # ── Global markets ──
-    global_data = fetch_global_markets()
+    global_data = fetch_global_markets() or {}
 
     # ── Stocks ──
     stock_symbols = ["HDFC", "SBI", "PNB", "YES", "INFY"]
@@ -237,7 +239,7 @@ def get_dashboard_data(db: Session = Depends(get_db)):
         except Exception:
             pass
 
-    # ── Active trade (FIXED: trading.py uses status="ACTIVE", not "OPEN") ──
+    # ── Active trade ──
     active_trade = None
     open_trades = db.query(Trade).filter(Trade.status == "ACTIVE").order_by(Trade.id.desc()).first()
     if open_trades:
@@ -254,14 +256,15 @@ def get_dashboard_data(db: Session = Depends(get_db)):
             "live_pnl": round(live_pnl, 2),
         }
 
-    # ── Trade stats ──
-    all_trades = db.query(Trade).all()
-    total_trades = len(all_trades)
-    wins = sum(1 for t in all_trades if (t.pnl or 0) > 0)
+    # ── Trade stats (🚨 BUG #4 FIXED: Count only CLOSED trades to match trading.py) ──
+    closed_trades = db.query(Trade).filter(Trade.status == "CLOSED").all()
+    total_trades = len(closed_trades)
+    wins = sum(1 for t in closed_trades if (t.pnl or 0) > 0)
     win_rate = round((wins / total_trades * 100), 1) if total_trades > 0 else 0
 
-    today = datetime.now().date()
-    today_trades = db.query(Trade).filter(Trade.trade_date == today).all()
+    # 🚨 FIX: Convert date to ISO string for PostgreSQL comparison
+    today_str = datetime.now().date().isoformat()
+    today_trades = db.query(Trade).filter(Trade.trade_date == today_str).all()
     session_pnl = sum(t.pnl or 0 for t in today_trades)
 
     # ── Auto-trade status ──
@@ -335,8 +338,6 @@ def get_dashboard_data(db: Session = Depends(get_db)):
 def execute_trade_endpoint(req: ExecuteRequest, db: Session = Depends(get_db)):
     """Manually open a paper trade. Uses trading.open_paper_trade()."""
     try:
-        # trading.open_paper_trade auto-calculates target/sl via ATR
-        # and pulls signal + spot from state_manager if not provided.
         success, msg = open_paper_trade(db, signal=req.direction, spot=req.entry)
         if not success:
             raise HTTPException(status_code=400, detail=msg)
