@@ -13,6 +13,7 @@ try:
 except ImportError:
     ANGEL_AVAILABLE = False
 
+
 def calculate_atr(candles: list, period: int = 14) -> float:
     """
     Calculates Average True Range (ATR) based on real 1m candles.
@@ -41,6 +42,7 @@ def calculate_atr(candles: list, period: int = 14) -> float:
     recent_tr = tr_list[-period:]
     return sum(recent_tr) / len(recent_tr)
 
+
 def get_options_contract(spot_price: float, signal: str, index: str = "NIFTY", strategy: str = "ATM") -> dict:
     if spot_price is None or signal not in ["LONG", "SHORT"]:
         return None
@@ -68,10 +70,12 @@ def get_options_contract(spot_price: float, signal: str, index: str = "NIFTY", s
         premium_estimate = "Opens at 9:15 AM"
         if config.get_market_status() == "OPEN":
             try:
+                # Bug Fix: Using the correct 3-parameter function from updated angel_client.py
                 ltp = angel_client.get_ltp_by_token("NFO", contract_symbol, contract_details["token"])
                 if ltp and ltp > 0:
                     premium_estimate = f"₹{ltp}"
             except Exception as e:
+                logger.error(f"Error fetching LTP for {contract_symbol}: {e}")
                 premium_estimate = "Fetching..."
 
     return {
@@ -79,6 +83,7 @@ def get_options_contract(spot_price: float, signal: str, index: str = "NIFTY", s
         "symbol": contract_symbol, "premium_estimate": premium_estimate,
         "full_details": contract_details # Include full details for debugging/completeness
     }
+
 
 def execute_trade(signal: str, spot_price: float) -> dict:
     contract = get_options_contract(spot_price, signal)
@@ -101,6 +106,7 @@ def execute_trade(signal: str, spot_price: float) -> dict:
         
     return {"direction": signal, "entry": entry_price, "target": target, "sl": sl, "contract": contract, "live_pnl": 0.0, "status": "OPEN", "atr": round(atr, 2)}
 
+
 def check_risk_limits(db: Session) -> tuple[bool, str]:
     """REAL RISK MANAGEMENT: अगर आज का नुकसान -2000 से नीचे हो, तो बॉट बंद हो जाएगा।"""
     try:
@@ -111,20 +117,29 @@ def check_risk_limits(db: Session) -> tuple[bool, str]:
                        .scalar() or 0.0
 
         if total_pnl <= -2000.0:
-            logger.warning(f"🛑 DAILY LIMIT HIT! Today\'s PnL is {total_pnl}. Stopping bot.")
+            logger.warning(f"🛑 DAILY LIMIT HIT! Today's PnL is {total_pnl}. Stopping bot.")
             return False, f"🛑 DAILY LIMIT HIT (₹{total_pnl:.2f}). Bot Stopped."
             
         return True, f"Risk OK (Day PnL: ₹{total_pnl:.2f})"
     except Exception as e:
         return True, f"Risk check skipped: {e}"
 
+
 def get_institutional_stats(db: Session) -> dict:
     try:
-        if db is None: return {"fii_long": 0, "fii_short": 0, "fii_net": 0, "dii_long": 0, "dii_short": 0, "dii_net": 0, "win_rate": 0.0, "total_trades": 0, "status": "No DB"}
-        total = db.query(Trade).filter(Trade.status == "CLOSED").count()
+        if db is None: 
+            return {"fii_long": 0, "fii_short": 0, "fii_net": 0, "dii_long": 0, "dii_short": 0, "dii_net": 0, "win_rate": 0.0, "today_closed_trades": 0, "all_time_closed_trades": 0, "status": "No DB"}
+        
+        today = datetime.datetime.now().date().isoformat()
+        
+        # Bug Fix: Disambiguate total_trades to stop UI mismatch between nested payload and top-level payload
+        all_time_total = db.query(Trade).filter(Trade.status == "CLOSED").count()
+        today_total = db.query(Trade).filter(Trade.status == "CLOSED", Trade.trade_date == today).count()
         wins = db.query(Trade).filter(Trade.status == "CLOSED", Trade.pnl > 0).count()
-        win_rate = round((wins / total * 100), 1) if total > 0 else 0.0
+        
+        win_rate = round((wins / all_time_total * 100), 1) if all_time_total > 0 else 0.0
         institutional_stats = config.state_manager.institutional_stats
+        
         return {
             "fii_long": institutional_stats.get("fii_long", 0),
             "fii_short": institutional_stats.get("fii_short", 0),
@@ -133,7 +148,8 @@ def get_institutional_stats(db: Session) -> dict:
             "dii_short": institutional_stats.get("dii_short", 0),
             "dii_net": institutional_stats.get("dii_net", 0),
             "win_rate": win_rate,
-            "total_trades": total,
+            "today_closed_trades": today_total,
+            "all_time_closed_trades": all_time_total,
             "status": institutional_stats.get("status", "Live")
         }
     except Exception as e:
@@ -146,9 +162,11 @@ def get_institutional_stats(db: Session) -> dict:
             "dii_short": institutional_stats.get("dii_short", 0),
             "dii_net": institutional_stats.get("dii_net", 0),
             "win_rate": 0.0,
-            "total_trades": 0,
+            "today_closed_trades": 0,
+            "all_time_closed_trades": 0,
             "status": f"Error: {e}"
         }
+
 
 def open_paper_trade(db: Session, signal: str = None, spot: float = None) -> tuple[bool, str]:
     try:
@@ -197,6 +215,7 @@ def open_paper_trade(db: Session, signal: str = None, spot: float = None) -> tup
         db.rollback()
         return False, f"Error: {e}"
 
+
 def close_paper_trade(db: Session, reason: str = "Manual Close", pnl: float = None) -> tuple[bool, str]:
     try:
         if db is None: return False, "Database not connected"
@@ -219,6 +238,7 @@ def close_paper_trade(db: Session, reason: str = "Manual Close", pnl: float = No
         logger.error(f"close_paper_trade error: {e}")
         db.rollback()
         return False, f"Error: {e}"
+
 
 def check_market_open_gap(db: Session, current_spot_price: float) -> tuple[bool, str]:
     """Checks for significant gaps at market open and closes trade if threshold exceeded."""
@@ -256,15 +276,11 @@ def check_market_open_gap(db: Session, current_spot_price: float) -> tuple[bool,
     
     return True, "Gap check passed or not applicable."
 
+
 def process_auto_signal(db: Session) -> dict:
     """CORE PRO LOGIC: हर पोल पर चलेगा और ऑटो ट्रेड करेगा"""
     try:
-        # ⚠️ SAFETY KILL-SWITCH: Auto-trading is OFF by default. The options
-        # symbol format used below (get_options_contract) has the same
-        # missing-expiry issue that failed before (June 2026), and the user
-        # had explicitly decided to just OBSERVE signals for a few days
-        # before acting on them. Set config.AUTO_TRADE_ENABLED = True only
-        # after real option premiums are verified working.
+        # ⚠️ SAFETY KILL-SWITCH: Auto-trading is OFF by default.
         if not getattr(config, "AUTO_TRADE_ENABLED", False):
             return {"action": "disabled", "reason": "Auto-trade is off (safety default) — set config.AUTO_TRADE_ENABLED=True to turn on"}
 
