@@ -214,8 +214,14 @@ _started = False
 def _fetch_real_option_chain():
     """Fetch REAL NIFTY option chain from NSE India public API.
 
-    Returns dict with: call_oi, put_oi, pcr, max_pain, total_call_oi, total_put_oi
+    Returns dict with: call_oi, put_oi, pcr, max_pain, top_strikes, expiry, source
     Returns None on failure (NSE blocks bots, so we use proper headers).
+
+    New in this version:
+      - `top_strikes`: list of top 7 strikes sorted by combined OI (CE+PE),
+        each with strike, ce_oi, pe_oi, ce_ltp, pe_ltp, ce_chg_oi, pe_chg_oi.
+        This gives the dashboard full option-chain visibility, not just totals.
+      - `expiry`: the current weekly expiry date string (e.g. "10-Jul-2026").
     """
     import requests
     nse_url = "https://www.nseindia.com/api/option-chain-indices?symbol=NIFTY"
@@ -239,14 +245,22 @@ def _fetch_real_option_chain():
             return None
         data = r.json()
         records = data.get("records", {}).get("data", [])
+        expiry_list = data.get("records", {}).get("expiryDates", [])
+        current_expiry = expiry_list[0] if expiry_list else None
         if not records:
             return None
+
+        # Filter records to current expiry only (NSE returns all expiries mixed)
+        if current_expiry:
+            records = [r for r in records if r.get("expiryDate") == current_expiry]
 
         # Sum OI across all strikes for current expiry
         call_oi_total = 0
         put_oi_total = 0
         # For max_pain: find strike where total loss is minimum
         strike_pain = {}
+        # For top_strikes: per-strike detail
+        per_strike = []
 
         for rec in records:
             strike = rec.get("strike_price")
@@ -254,9 +268,23 @@ def _fetch_real_option_chain():
             pe = rec.get("PE") or {}
             ce_oi = ce.get("openInterest", 0) or 0
             pe_oi = pe.get("openInterest", 0) or 0
+            ce_ltp = ce.get("lastPrice", 0) or 0
+            pe_ltp = pe.get("lastPrice", 0) or 0
+            ce_chg_oi = ce.get("changeinOpenInterest", 0) or 0
+            pe_chg_oi = pe.get("changeinOpenInterest", 0) or 0
             call_oi_total += ce_oi
             put_oi_total += pe_oi
             strike_pain[strike] = (ce_oi, pe_oi)
+            per_strike.append({
+                "strike": strike,
+                "ce_oi": ce_oi,
+                "pe_oi": pe_oi,
+                "ce_ltp": ce_ltp,
+                "pe_ltp": pe_ltp,
+                "ce_chg_oi": ce_chg_oi,
+                "pe_chg_oi": pe_chg_oi,
+                "total_oi": ce_oi + pe_oi,
+            })
 
         # Calculate max_pain: strike that minimizes total writer loss
         all_strikes = sorted(strike_pain.keys())
@@ -279,12 +307,20 @@ def _fetch_real_option_chain():
         else:
             max_pain_strike = None
 
+        # Top 7 strikes by total OI (most active strikes)
+        top_strikes = sorted(per_strike, key=lambda x: x["total_oi"], reverse=True)[:7]
+        # Sort top_strikes by strike price for display
+        top_strikes = sorted(top_strikes, key=lambda x: x["strike"])
+
         pcr = round(put_oi_total / call_oi_total, 2) if call_oi_total > 0 else 0
         return {
             "call_oi": call_oi_total,
             "put_oi": put_oi_total,
             "pcr": pcr,
             "max_pain": max_pain_strike,
+            "expiry": current_expiry,
+            "top_strikes": top_strikes,
+            "strike_count": len(per_strike),
             "source": "NSE_LIVE",  # tag so we know it's real
         }
     except Exception as e:
