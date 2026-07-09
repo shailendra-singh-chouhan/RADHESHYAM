@@ -1,10 +1,9 @@
+```python
 """
 routes.py — FastAPI API endpoints for GOAT PRO dashboard
-
 Phase 3.B1: options_contract now includes live_premium (numeric),
             live_premium_source, live_premium_expiry, live_premium_lotsize
 """
-
 import logging
 from datetime import datetime, time as dt_time
 from typing import Optional
@@ -33,7 +32,6 @@ router = APIRouter()
 # ════════════════════════════════════════════════════════
 # REQUEST / RESPONSE MODELS
 # ════════════════════════════════════════════════════════
-
 class ExecuteRequest(BaseModel):
     direction: str  # "LONG" or "SHORT"
     entry: float
@@ -48,7 +46,6 @@ class CloseRequest(BaseModel):
 # ════════════════════════════════════════════════════════
 # HELPERS
 # ════════════════════════════════════════════════════════
-
 def _market_status() -> str:
     """Check if NSE is currently open (9:15 AM – 3:30 PM IST)."""
     now = datetime.now()
@@ -66,12 +63,10 @@ def _risk_check(db: Session) -> dict:
     """Check if it's safe to trade (daily loss limit, max trades)."""
     today = datetime.now().date()
     today_trades = db.query(Trade).filter(Trade.trade_date == today).all()
-
     total_trades = len(today_trades)
     day_pnl = sum(t.pnl or 0 for t in today_trades)
     max_loss = config.MAX_DAILY_LOSS if hasattr(config, "MAX_DAILY_LOSS") else -2000
     max_trades = config.MAX_DAILY_TRADES if hasattr(config, "MAX_DAILY_TRADES") else 5
-
     ok = day_pnl > max_loss and total_trades < max_trades
     msg = f"Risk OK (Day PnL: ₹{day_pnl:.2f})" if ok else (
         f"Risk BLOCKED (Day PnL: ₹{day_pnl:.2f}, Trades: {total_trades})"
@@ -82,7 +77,6 @@ def _risk_check(db: Session) -> dict:
 # ════════════════════════════════════════════════════════
 # MAIN DASHBOARD ENDPOINT
 # ════════════════════════════════════════════════════════
-
 @router.get("/api/data")
 def get_dashboard_data(db: Session = Depends(get_db)):
     """Main dashboard endpoint — returns everything the frontend needs."""
@@ -258,7 +252,6 @@ def get_dashboard_data(db: Session = Depends(get_db)):
             live_pnl = (spot - open_trades.entry) * 75  # 1 lot = 75 qty
         elif open_trades.direction == "SHORT":
             live_pnl = (open_trades.entry - spot) * 75
-
         active_trade = {
             "direction": open_trades.direction,
             "entry": round(open_trades.entry, 2),
@@ -333,4 +326,48 @@ def get_dashboard_data(db: Session = Depends(get_db)):
         "alerts": alerts,
         "stocks": stocks,
         "news_feed": [],
-        "indicators": indicators
+        "indicators": indicators,
+        "global": global_data,
+        "active_trade": active_trade,
+        "real_signal": real_signal,
+        "market_alerts": alerts,
+        "last_update": datetime.now().isoformat() + "+05:30",
+    }
+
+
+# ════════════════════════════════════════════════════════
+# EXECUTE / CLOSE TRADE ENDPOINTS
+# ════════════════════════════════════════════════════════
+@router.post("/api/execute")
+def execute_trade(req: ExecuteRequest, db: Session = Depends(get_db)):
+    """Manually execute a paper trade."""
+    try:
+        trade = execute_paper_trade(
+            db=db,
+            direction=req.direction,
+            entry=req.entry,
+            target=req.target,
+            sl=req.sl,
+        )
+        return {"success": True, "trade_id": trade.id, "message": "Trade executed"}
+    except Exception as e:
+        logger.exception("execute_trade failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/api/close")
+def close_trade(req: CloseRequest, db: Session = Depends(get_db)):
+    """Close an open paper trade."""
+    try:
+        result = close_paper_trade(db=db, trade_id=req.trade_id)
+        return {"success": True, **result}
+    except Exception as e:
+        logger.exception("close_trade failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/health")
+def health():
+    """Health check endpoint for Render."""
+    return {"status": "ok", "time": datetime.now().isoformat()}
+```
