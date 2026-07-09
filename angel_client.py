@@ -1,454 +1,604 @@
-import threading
+"""
+angel_client.py — Angel One SmartAPI wrapper
+Handles: login, token resolution, LTP, candles, option contracts, live option LTP
+
+Phase 3.C  : Sensex token fallback in get_token()
+Phase 3.B1 : NEW get_option_ltp() function
+"""
+
+import os
+import logging
+import time
+from datetime import datetime, timedelta
+from typing import Optional, Dict, Any, List
+
+import pandas as pd
 import requests
 import pyotp
-import pandas as pd
-from typing import Optional
 from SmartApi import SmartConnect
-from logzero import logger
+
 import config
 
-smart_api: Optional[SmartConnect] = None
-session_lock = threading.Lock()
-_scrip_master_df: Optional[pd.DataFrame] = None
+logger = logging.getLogger(__name__)
 
-def angel_login() -> bool:
-    """Logs into Angel One SmartAPI using pyotp."""
-    global smart_api
-    if not all([config.ANGEL_API_KEY, config.ANGEL_CLIENT_ID, config.ANGEL_MPIN, config.ANGEL_TOTP_SECRET]):
-        logger.error("Angel One credentials missing in env. Login skipped.")
-        return False
-    try:
-        totp = pyotp.TOTP(config.ANGEL_TOTP_SECRET).now()
-        obj = SmartConnect(api_key=config.ANGEL_API_KEY)
-        data = obj.generateSession(config.ANGEL_CLIENT_ID, config.ANGEL_MPIN, totp)
-        if data and data.get("status"):
-            smart_api = obj
+
+class AngelClient:
+    """Wrapper around Angel One SmartAPI for market data."""
+
+    # Well-known tokens — fallback if scrip master lookup fails
+    _KNOWN_TOKENS = {
+        ("NSE", "NIFTY 50"): "26000",
+        ("NSE", "NIFTY"): "26000",
+        ("NFO", "NIFTY"): "26000",
+        ("NSE", "BANKNIFTY"): "26009",
+        ("NFO", "BANKNIFTY"): "26009",
+        ("NSE", "FINNIFTY"): "26037",
+        ("NFO", "FINNIFTY"): "26037",
+        ("BSE", "SENSEX"): "1",
+    }
+
+    def __init__(self):
+        self.smart_api: Optional[SmartConnect] = None
+        self.jwt_token: Optional[str] = None
+        self.refresh_token: Optional[str] = None
+        self.feed_token: Optional[str] = None
+        self._scrip_master_df: Optional[pd.DataFrame] = None
+        self._last_login_time: float = 0
+        self._login()
+        self._load_scrip_master()
+
+    # ────────────────────────────────────────────────────────
+    # LOGIN / SESSION MANAGEMENT
+    # ────────────────────────────────────────────────────────
+
+    def _login(self) -> bool:
+        """Login to Angel One SmartAPI using client credentials + TOTP."""
+        try:
+            self.smart_api = SmartConnect(api_key=config.ANGEL_API_KEY)
+            totp = pyotp.TOTP(config.ANGEL_TOTP_SECRET).now()
+            data = self.smart_api.generateSession(
+                clientCode=config.ANGEL_CLIENT_ID,
+                password=config.ANGEL_PASSWORD,
+                totp=totp,
+            )
+            if data.get("status") is False:
+                logger.error("Angel One login failed: %s", data.get("message", "unknown"))
+                return False
+
+            self.jwt_token = data["data"]["jwtToken"]
+            self.refresh_token = data["data"]["refreshToken"]
+            self.feed_token = data["data"]["feedToken"]
+            self._last_login_time = time.time()
             logger.info("Angel One login successful")
             return True
-        logger.error(f"Angel One login failed: {data}")
-        return False
-    except Exception as e:
-        logger.error(f"Angel One login exception: {e}")
-        return False
 
-def refresh_scrip_master() -> bool:
-    """Downloads scrip master from public Angel One URL."""
-    global _scrip_master_df
-    try:
-        url = "https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json"
-        resp = requests.get(url, timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
-        if data and isinstance(data, list) and len(data) > 0:
-            _scrip_master_df = pd.DataFrame(data)
-            logger.info(f"Scrip master loaded: {len(data)} instruments")
-            return True
-        logger.error("Scrip master returned empty data")
-        return False
-    except Exception as e:
-        logger.error(f"refresh_scrip_master error: {e}")
-        return False
+        except Exception as e:
+            logger.error("Angel One login exception: %s", e)
+            return False
 
-def get_token(exchange: str, symbol: str) -> Optional[str]:
-    """Looks up symbol token from cached scrip master with precise matching.
+    def _ensure_session(self) -> bool:
+        """Re-login if session is older than ~30 minutes."""
+        if time.time() - self._last_login_time > 1800:
+            logger.info("Session expired, re-logging in...")
+            return self._login()
+        return self.smart_api is not None
 
-    Special handling:
-      - For CDS/MCX segments where contracts are futures-style (e.g. USDINR24AUGFUT),
-        falls back to a prefix match and picks the first available contract.
-      - For NIFTY/BANKNIFTY/VIX indices, uses friendly name lookup.
-      - For BSE SENSEX (index), tries scrip master first, then hardcoded fallback.
-    """
-    global _scrip_master_df
-    if _scrip_master_df is None or _scrip_master_df.empty:
-        if not refresh_scrip_master():
-            # Even if scrip master fails, allow Sensex hardcoded fallback below
-            if exchange == "BSE" and symbol.upper() in ("SENSEX", "BSESENSEX"):
-                logger.info("✓ Resolved SENSEX via hardcoded fallback (token=1) — scrip master unavailable")
-                return "1"
-            return None
-    try:
-        # 1. Try exact match on name
-        match = _scrip_master_df[
-            (_scrip_master_df["exch_seg"] == exchange) &
-            (_scrip_master_df["name"].str.upper() == symbol.upper())
+    # ────────────────────────────────────────────────────────
+    # SCRIP MASTER (instrument lookup table)
+    # ────────────────────────────────────────────────────────
+
+    def _load_scrip_master(self):
+        """Download and parse Angel One scrip master JSON."""
+        try:
+            url = (
+                "https://margincalculator.angelbroking.com/"
+                "OpenAPI_File/files/OpenAPIScripMaster.json"
+            )
+            resp = requests.get(url, timeout=15)
+            resp.raise_for_status()
+            data = resp.json()
+            self._scrip_master_df = pd.DataFrame(data)
+
+            # Normalize string columns
+            for col in ("symbol", "name", "exch_seg"):
+                if col in self._scrip_master_df.columns:
+                    self._scrip_master_df[col] = (
+                        self._scrip_master_df[col]
+                        .astype(str)
+                        .str.upper()
+                        .str.strip()
+                    )
+            if "token" in self._scrip_master_df.columns:
+                self._scrip_master_df["token"] = self._scrip_master_df["token"].astype(str)
+
+            logger.info(
+                "Scrip master loaded: %d instruments", len(self._scrip_master_df)
+            )
+        except Exception as e:
+            logger.error("Failed to load scrip master: %s", e)
+            self._scrip_master_df = pd.DataFrame()
+
+    # ────────────────────────────────────────────────────────
+    # TOKEN RESOLUTION
+    # ────────────────────────────────────────────────────────
+
+    def get_token(self, exchange: str, symbol: str) -> Optional[str]:
+        """
+        Resolve exchange + symbol → Angel One token string.
+
+        Lookup order:
+        1. Exact match (exchange + symbol)
+        2. Symbol contains match
+        3. Name contains match
+        4. BSE SENSEX special handling  ← Phase 3.C (NEW)
+        5. Hardcoded known-token fallback
+        """
+        if self._scrip_master_df is None or self._scrip_master_df.empty:
+            logger.warning("Scrip master not loaded, using known tokens fallback")
+            return self._KNOWN_TOKENS.get((exchange.upper(), symbol.upper()))
+
+        exch = exchange.upper()
+        sym = symbol.upper().strip()
+        df = self._scrip_master_df
+
+        # 1. Exact match
+        match = df[(df["exch_seg"] == exch) & (df["symbol"] == sym)]
+        if not match.empty:
+            return str(match.iloc[0]["token"])
+
+        # 2. Symbol contains
+        match = df[
+            (df["exch_seg"] == exch) & (df["symbol"].str.contains(sym, na=False))
         ]
         if not match.empty:
             return str(match.iloc[0]["token"])
 
-        # 2. Try exact match on symbol
-        match = _scrip_master_df[
-            (_scrip_master_df["exch_seg"] == exchange) &
-            (_scrip_master_df["symbol"].str.upper() == symbol.upper())
+        # 3. Name contains
+        match = df[
+            (df["exch_seg"] == exch) & (df["name"].str.contains(sym, na=False))
         ]
         if not match.empty:
             return str(match.iloc[0]["token"])
 
-        # 3. Special case for NIFTY/BANKNIFTY indices (friendly name lookup)
-        friendly_name = None
-        if symbol.upper() == "NIFTY":
-            friendly_name = "Nifty 50"
-        elif symbol.upper() == "BANKNIFTY":
-            friendly_name = "Nifty Bank"
-        elif symbol.upper() == "FINNIFTY":
-            friendly_name = "Nifty Fin"
-
-        if friendly_name:
-            match = _scrip_master_df[
-                (_scrip_master_df["exch_seg"] == exchange) &
-                (_scrip_master_df["name"].str.contains(friendly_name, case=False, na=False))
-            ]
-            if not match.empty:
-                return str(match.iloc[0]["token"])
-
-        # 4. NEW: BSE SENSEX special handling
-        # Sensex is an INDEX (not a stock) — Angel One's scrip master sometimes
-        # lists it under "S&P BSE SENSEX" or "BSESENSEX", but not always.
-        # We try multiple patterns, then fall back to the hardcoded BSE Sensex
-        # index token "1" (well-known Angel One / BSE identifier).
-        if exchange == "BSE" and symbol.upper() in ("SENSEX", "BSESENSEX", "S&P BSE SENSEX"):
-            sensex_match = _scrip_master_df[
-                (_scrip_master_df["exch_seg"] == "BSE") &
-                (
-                    _scrip_master_df["name"].str.upper().str.contains("SENSEX", na=False) |
-                    _scrip_master_df["symbol"].str.upper().str.contains("SENSEX", na=False)
+        # ── 4. BSE SENSEX special handling (Phase 3.C — NEW) ──
+        if exch == "BSE" and sym in (
+            "SENSEX",
+            "BSESENSEX",
+            "S&P BSE SENSEX",
+        ):
+            sensex_match = df[
+                (df["exch_seg"] == "BSE")
+                & (
+                    df["name"].str.upper().str.contains("SENSEX", na=False)
+                    | df["symbol"].str.upper().str.contains("SENSEX", na=False)
                 )
             ]
             if not sensex_match.empty:
-                logger.info(f"✓ Resolved SENSEX via scrip master -> token={sensex_match.iloc[0]['token']}")
                 return str(sensex_match.iloc[0]["token"])
             # Hardcoded fallback — BSE Sensex index token is "1"
-            logger.info("✓ Resolved SENSEX via hardcoded fallback (token=1)")
+            logger.warning(
+                "SENSEX not found in scrip master, using hardcoded token='1'"
+            )
             return "1"
 
-        # 5. Name-contains fallback (general case)
-        match = _scrip_master_df[
-            (_scrip_master_df["exch_seg"] == exchange) &
-            (_scrip_master_df["name"].str.contains(symbol, case=False, na=False))
-        ]
-        if not match.empty:
-            return str(match.iloc[0]["token"])
+        # 5. Known tokens fallback
+        known = self._KNOWN_TOKENS.get((exch, sym))
+        if known:
+            logger.info("Token from known fallback: %s/%s → %s", exch, sym, known)
+            return known
 
-        # 6. Prefix match on symbol — for futures contracts in CDS/MCX segments
-        # Example: USDINR -> matches USDINR24AUGFUT, USDINR24SEPFUT etc.
-        # We pick the FIRST match (typically the nearest-expiry contract).
-        match = _scrip_master_df[
-            (_scrip_master_df["exch_seg"] == exchange) &
-            (_scrip_master_df["symbol"].str.upper().str.startswith(symbol.upper()))
-        ]
-        if not match.empty:
-            # Sort by expiry (as an actual date, not plain text) so the
-            # nearest contract is picked correctly even across month
-            # boundaries (e.g. "07-JUL-2026" vs "07-AUG-2026" — sorting
-            # as text would wrongly put AUG before JUL alphabetically).
-            if "expiry" in match.columns:
-                try:
-                    match = match.copy()
-                    match["_expiry_dt"] = pd.to_datetime(match["expiry"], errors="coerce")
-                    match = match.sort_values("_expiry_dt", ascending=True)
-                except Exception:
-                    pass
-            logger.info(f"✓ Resolved {exchange}:{symbol} via prefix match -> "
-                        f"{match.iloc[0].get('symbol', 'unknown')}")
-            return str(match.iloc[0]["token"])
-
-        # 7. For CDS USDINR — also try a broader name search with prefix
-        # (some Angel One dumps list CDS contracts under name like "USDINR")
-        if exchange == "CDS" and symbol.upper() == "USDINR":
-            match = _scrip_master_df[
-                (_scrip_master_df["exch_seg"] == "CDS") &
-                (
-                    _scrip_master_df["name"].str.upper().str.startswith("USDINR") |
-                    _scrip_master_df["symbol"].str.upper().str.startswith("USDINR")
-                )
-            ]
-            if not match.empty:
-                if "expiry" in match.columns:
-                    try:
-                        match = match.copy()
-                        match["_expiry_dt"] = pd.to_datetime(match["expiry"], errors="coerce")
-                        match = match.sort_values("_expiry_dt", ascending=True)
-                    except Exception:
-                        pass
-                logger.info(f"✓ Resolved USDINR via CDS fallback -> "
-                            f"{match.iloc[0].get('symbol', 'unknown')}")
-                return str(match.iloc[0]["token"])
-
-    except Exception as e:
-        logger.error(f"get_token error for {symbol}: {e}")
-    return None
-
-def get_ohlc(exchange: str, symbol: str) -> Optional[dict]:
-    """Fetches OHLC data for a given symbol. Resolves token dynamically."""
-    global smart_api
-    if smart_api is None:
-        if not angel_login():
-            return None
-    
-    token = get_token(exchange, symbol)
-    if token is None:
-        logger.warning(f"Could not resolve token for OHLC fetch: {exchange}:{symbol}")
+        logger.warning("Token not found: %s/%s", exchange, symbol)
         return None
 
-    try:
-        with session_lock:
-            resp = smart_api.ltpData(exchange, symbol, token)
-        if resp and resp.get("status"):
-            data = resp.get("data", {})
-            if isinstance(data, dict):
-                return {
-                    "ltp": data.get("ltp"),
-                    "open": data.get("open"),
-                    "high": data.get("high"),
-                    "low": data.get("low"),
-                }
-            elif isinstance(data, list) and len(data) > 0:
-                return {
-                    "ltp": data[0].get("ltp"),
-                    "open": data[0].get("open"),
-                    "high": data[0].get("high"),
-                    "low": data[0].get("low"),
-                }
-        logger.error(f"get_ohlc non-success response for {symbol}: {resp}")
-        return None
-    except Exception as e:
-        logger.error(f"get_ohlc error for {symbol}: {e}")
-        angel_login()
-        return None
+    # ────────────────────────────────────────────────────────
+    # LTP (Last Traded Price)
+    # ────────────────────────────────────────────────────────
 
-def get_ltp(exchange: str, symbol: str, token: Optional[str] = None) -> Optional[float]:
-    """Fetches live Last Traded Price (LTP) for an asset."""
-    global smart_api
-    if smart_api is None:
-        if not angel_login():
-            return None
-    # If token is not provided, resolve it dynamically
-    if token is None:
-        token = get_token(exchange, symbol)
-    if token is None:
-        logger.warning(f"Could not resolve token for {exchange}:{symbol}")
-        return None
-    
-    # Precise trading symbol from scrip master for the API call
-    trading_symbol = symbol
-    try:
-        match = _scrip_master_df[_scrip_master_df["token"] == token]
-        if not match.empty:
-            trading_symbol = match.iloc[0]["symbol"]
-    except: pass
-
-    try:
-        with session_lock:
-            resp = smart_api.ltpData(exchange, trading_symbol, token)
-        if resp and resp.get("status"):
-            data = resp.get("data", {})
-            if isinstance(data, dict):
-                return data.get("ltp")
-            elif isinstance(data, list) and len(data) > 0:
-                return data[0].get("ltp")
-        logger.error(f"get_ltp non-success response for {symbol}: {resp}")
-        return None
-    except Exception as e:
-        logger.error(f"get_ltp error for {symbol}: {e}")
-        angel_login()
-        return None
-
-def get_options_contract_details(index: str, strike_price: float, option_type: str) -> Optional[dict]:
-    """Looks up precise options contract details from scrip master using strike, type, and expiry.
-
-    Returns dict with token, symbol, name, expiry, instrumenttype.
-    """
-    global _scrip_master_df
-    if _scrip_master_df is None or _scrip_master_df.empty:
-        if not refresh_scrip_master():
+    def get_ltp(self, exchange: str, symbol: str) -> Optional[float]:
+        """Get last traded price for a given instrument."""
+        if not self._ensure_session():
             return None
 
-    try:
-        # Filter for the correct index, instrument type (CE/PE), and strike price
-        filtered_df = _scrip_master_df[
-            (_scrip_master_df["name"].str.contains(index, case=False, na=False)) &
-            (_scrip_master_df["instrumenttype"] == option_type.upper()) &
-            (_scrip_master_df["strike"] == str(int(strike_price * 100))) # Strike is stored as string, multiplied by 100
-        ]
-
-        if filtered_df.empty:
-            logger.warning(f"No options contract found for {index} {strike_price} {option_type}")
+        token = self.get_token(exchange, symbol)
+        if not token:
             return None
 
-        # Sort by expiry to pick the nearest one (or current month)
-        # Assuming 'expiry' column exists and is sortable (e.g., datetime or YYYYMMDD string)
-        if "expiry" in filtered_df.columns:
-            # Convert expiry to datetime for proper sorting if it's not already
-            filtered_df["expiry_dt"] = pd.to_datetime(filtered_df["expiry"], errors='coerce')
-            filtered_df = filtered_df.sort_values(by="expiry_dt", ascending=True).drop(columns=["expiry_dt"])
-        
-        # Pick the first matching contract (nearest expiry)
-        contract = filtered_df.iloc[0]
-        
-        return {
-            "token": str(contract["token"]),
-            "symbol": contract["symbol"],
-            "name": contract["name"],
-            "expiry": contract["expiry"],
-            "instrumenttype": contract["instrumenttype"],
-            "lotsize": contract["lotsize"],
-        }
-
-    except Exception as e:
-        logger.error(f"get_options_contract_details error for {index} {strike_price} {option_type}: {e}")
-        return None
-
-def fetch_option_chain(symbol: str, exchange: str = "NFO") -> Optional[dict]:
-    """Fetches full option chain data for a symbol."""
-    global smart_api
-    if smart_api is None:
-        if not angel_login():
-            return None
-    try:
-        # In a real SmartAPI scenario, you'd use getOptionChain or similar
-        # For now, we simulate with a more generic approach if specific method is missing
-        params = {
-            "trading_symbol": symbol,
-            "exchange": exchange
-        }
-        # Note: SmartAPI has specific methods for option chain, this is a placeholder
-        # that would be replaced with actual obj.searchScrip or obj.getOptionChain
-        with session_lock:
-            # This is a conceptual call; real SmartAPI might use different method
-            # We'll use a try-except to handle specific API variations
-            try:
-                data = smart_api.searchScrip(exchange, symbol)
-                return data
-            except:
-                return None
-    except Exception as e:
-        logger.error(f"fetch_option_chain error: {e}")
-        return None
-
-def fetch_todays_candles() -> Optional[list]:
-    """Fetches 1-minute historical candles for NIFTY from 9:15 AM to now.
-
-    Handles Angel One rate limit ("Access denied because of exceeding access rate")
-    by returning None gracefully — the poller will retry on its next cycle.
-    Also retries once after a short sleep, since rate limits are transient.
-    """
-    global smart_api
-    if smart_api is None:
-        if not angel_login():
-            return None
-    token = get_token("NSE", config.NIFTY_SYMBOL)
-    if token is None:
-        logger.error("Could not resolve NIFTY token for candle fetch")
-        return None
-
-    import time as _time
-    last_exc = None
-    for attempt in range(2):  # 1 retry
         try:
-            now = config.get_ist_now()
-            from_dt = now.replace(hour=9, minute=15, second=0, microsecond=0)
-            params = {
-                "exchange": "NSE",
-                "symboltoken": token,
-                "interval": "ONE_MINUTE",
-                "fromdate": from_dt.strftime("%Y-%m-%d %H:%M"),
-                "todate": now.strftime("%Y-%m-%d %H:%M"),
-            }
-            with session_lock:
-                resp = smart_api.getCandleData(params)
-            if resp and resp.get("status") and resp.get("data"):
-                candles = []
-                for row in resp["data"]:
-                    candles.append({
-                        "time": row[0], "open": row[1], "high": row[2],
-                        "low": row[3], "close": row[4],
-                    })
-                return candles
-
-            # Detect Angel One rate-limit message (returned as error string, not exception)
-            err_msg = ""
-            if isinstance(resp, dict):
-                err_msg = str(resp.get("message", "")) + str(resp.get("errorcode", ""))
-            if "exceeding access rate" in err_msg.lower() or "access rate" in err_msg.lower():
-                logger.warning(f"⏳ Angel One rate limit on candles (attempt {attempt+1}/2). Will retry next cycle.")
-                if attempt == 0:
-                    _time.sleep(5)  # short backoff before retry
-                    continue
-                return None  # give up this cycle — don't spam
-            logger.error(f"fetch_todays_candles non-success: {resp}")
-            return None
+            result = self.smart_api.ltpData(exchange, symbol, token)
+            if result and result.get("status"):
+                return float(result["data"]["ltp"])
+            logger.warning(
+                "ltpData failed for %s/%s: %s", exchange, symbol, result
+            )
         except Exception as e:
-            last_exc = e
             err_str = str(e).lower()
-            if "exceeding access rate" in err_str or "access rate" in err_str:
-                logger.warning(f"⏳ Angel One rate limit on candles (attempt {attempt+1}/2): {e}")
-                if attempt == 0:
-                    _time.sleep(5)
-                    continue
-                return None  # give up this cycle — don't re-login (would make it worse)
-            # Other errors — log + try re-login
-            logger.error(f"fetch_todays_candles error: {e}")
-            angel_login()
+            if "session" in err_str or "token" in err_str or "unauthorized" in err_str:
+                self._login()
+            else:
+                logger.error("get_ltp exception %s/%s: %s", exchange, symbol, e)
+        return None
+
+    # ────────────────────────────────────────────────────────
+    # CANDLE DATA (Historical OHLCV)
+    # ────────────────────────────────────────────────────────
+
+    def get_candle_data(
+        self,
+        exchange: str,
+        symbol: str,
+        interval: str = "FIFTEEN_MINUTE",
+        days: int = 5,
+    ) -> List[dict]:
+        """Get historical OHLCV candle data."""
+        if not self._ensure_session():
+            return []
+
+        token = self.get_token(exchange, symbol)
+        if not token:
+            return []
+
+        try:
+            to_dt = datetime.now()
+            from_dt = to_dt - timedelta(days=days)
+
+            params = {
+                "exchange": exchange,
+                "symbol": symbol,
+                "token": token,
+                "interval": interval,
+                "from": from_dt.strftime("%Y-%m-%d %H:%M"),
+                "to": to_dt.strftime("%Y-%m-%d %H:%M"),
+            }
+
+            result = self.smart_api.getCandleData(params)
+            if result and result.get("status") and result.get("data"):
+                candles = []
+                for c in result["data"]:
+                    candles.append(
+                        {
+                            "time": int(c[0]) if len(c) > 0 else 0,
+                            "open": float(c[1]) if len(c) > 1 else 0,
+                            "high": float(c[2]) if len(c) > 2 else 0,
+                            "low": float(c[3]) if len(c) > 3 else 0,
+                            "close": float(c[4]) if len(c) > 4 else 0,
+                            "volume": int(c[5]) if len(c) > 5 else 0,
+                        }
+                    )
+                return candles
+            logger.warning("getCandleData failed for %s/%s", exchange, symbol)
+        except Exception as e:
+            err_str = str(e).lower()
+            if "session" in err_str or "token" in err_str or "unauthorized" in err_str:
+                self._login()
+            else:
+                logger.error("get_candle_data exception: %s", e)
+        return []
+
+    # ────────────────────────────────────────────────────────
+    # OPTION CONTRACT RESOLUTION
+    # ────────────────────────────────────────────────────────
+
+    def get_options_contract_details(
+        self, index: str, strike: int, option_type: str
+    ) -> Optional[dict]:
+        """
+        Find the nearest weekly-expiry option contract for given index/strike/type.
+
+        Returns dict: {token, symbol, expiry, lotsize}  or  None.
+        """
+        if self._scrip_master_df is None or self._scrip_master_df.empty:
+            logger.warning("Cannot resolve option: scrip master not loaded")
             return None
-    # All attempts exhausted
-    if last_exc:
-        logger.warning(f"fetch_todays_candles gave up after retries: {last_exc}")
-    return None
 
+        ot = option_type.upper().strip()
+        if ot not in ("CE", "PE"):
+            ot = "CE"
 
-def get_option_ltp(index: str, strike: float, option_type: str) -> Optional[dict]:
-    """Fetches LIVE option premium (LTP) for a specific strike + option type.
+        strike_str = str(strike)
 
-    This is the REAL premium from Angel One's ltpData API — not an estimate.
-    Used to populate the `live_premium` field in /api/data response.
+        opts = self._scrip_master_df[
+            (self._scrip_master_df["exch_seg"] == "NFO")
+            & (self._scrip_master_df["symbol"].str.upper().str.contains(index.upper(), na=False))
+            & (self._scrip_master_df["symbol"].str.contains(strike_str, na=False))
+            & (self._scrip_master_df["symbol"].str.upper().str.contains(ot, na=False))
+        ].copy()
 
-    Args:
-        index: "NIFTY", "BANKNIFTY", or "FINNIFTY"
-        strike: Strike price (e.g. 24250)
-        option_type: "CE" (Call) or "PE" (Put)
-
-    Returns:
-        dict with: ltp, token, symbol, expiry, lotsize, source
-        None on failure.
-    """
-    global smart_api
-    if smart_api is None:
-        if not angel_login():
+        if opts.empty:
+            logger.warning(
+                "No option contract found: %s %s %s", index, strike, option_type
+            )
             return None
 
-    # Step 1: Resolve the option contract from scrip master
-    contract = get_options_contract_details(index, strike, option_type)
-    if contract is None:
-        logger.warning(f"get_option_ltp: contract not found for {index} {strike} {option_type}")
-        return None
+        # Parse & filter to nearest future expiry
+        opts["_expiry_dt"] = pd.to_datetime(opts.get("expiry"), errors="coerce")
+        opts = opts.dropna(subset=["_expiry_dt"])
+        opts = opts[opts["_expiry_dt"] >= datetime.now()]
 
-    # Step 2: Fetch live LTP for this contract via ltpData
-    try:
-        with session_lock:
-            resp = smart_api.ltpData("NFO", contract["symbol"], contract["token"])
-        if resp and resp.get("status"):
-            data = resp.get("data", {})
-            ltp = None
-            if isinstance(data, dict):
-                ltp = data.get("ltp")
-            elif isinstance(data, list) and len(data) > 0:
-                ltp = data[0].get("ltp")
+        if opts.empty:
+            logger.warning(
+                "No future expiry for %s %s %s", index, strike, option_type
+            )
+            return None
 
-            if ltp is not None and ltp > 0:
-                logger.info(f"✓ Live option premium: {contract['symbol']} = ₹{ltp}")
-                return {
-                    "ltp": float(ltp),
-                    "token": contract["token"],
-                    "symbol": contract["symbol"],
-                    "expiry": contract.get("expiry"),
-                    "lotsize": contract.get("lotsize"),
-                    "source": "ANGEL_ONE_LIVE",
-                }
-        logger.warning(f"get_option_ltp non-success for {contract['symbol']}: {resp}")
-        return None
-    except Exception as e:
-        err_str = str(e).lower()
-        if "exceeding access rate" in err_str or "access rate" in err_str:
-            logger.warning(f"⏳ Rate limit on option LTP for {contract['symbol']}: {e}")
-        else:
-            logger.error(f"get_option_ltp error for {contract['symbol']}: {e}")
-        return None
+        opts = opts.sort_values("_expiry_dt")
+        best = opts.iloc[0]
+
+        result = {
+            "token": str(best["token"]),
+            "symbol": str(best["symbol"]),
+            "expiry": best["_expiry_dt"].strftime("%d-%b-%Y"),
+            "lotsize": int(best.get("lotsize", 0) or 0),
+        }
+
+        logger.info(
+            "Resolved option: %s %s%s → token=%s expiry=%s lotsize=%s",
+            index, strike, ot, result["token"], result["expiry"], result["lotsize"],
+        )
+        return result
+
+    # ────────────────────────────────────────────────────────
+    # LIVE OPTION LTP  (Phase 3.B1 — NEW FUNCTION)
+    # ────────────────────────────────────────────────────────
+
+    def get_option_ltp(self, index: str, strike: int, option_type: str) -> dict:
+        """
+        Fetch REAL LTP of an option contract from Angel One.
+
+        Returns (on success):
+            {
+                "ltp": 125.45,
+                "token": "12345",
+                "symbol": "NIFTY 24000 PE",
+                "expiry": "10-Jul-2026",
+                "lotsize": 75,
+                "source": "ANGEL_ONE_LIVE"
+            }
+
+        Returns (on failure):
+            {"ltp": None, "source": "UNAVAILABLE"}
+            {"ltp": None, "source": "ERROR: <reason>"}
+        """
+        error_result = {"ltp": None, "source": "UNAVAILABLE"}
+
+        # Step 1 — resolve contract
+        contract = self.get_options_contract_details(index, strike, option_type)
+        if not contract:
+            error_result["source"] = "ERROR: Contract not found in scrip master"
+            logger.warning(
+                "get_option_ltp: contract not resolved for %s %s %s",
+                index, strike, option_type,
+            )
+            return error_result
+
+        # Step 2 — fetch LTP
+        if not self._ensure_session():
+            error_result["source"] = "ERROR: Session expired, re-login failed"
+            return error_result
+
+        try:
+            result = self.smart_api.ltpData(
+                "NFO", contract["symbol"], contract["token"]
+            )
+            if result and result.get("status") and result.get("data"):
+                ltp = float(result["data"]["ltp"])
+                if ltp > 0:
+                    return {
+                        "ltp": ltp,
+                        "token": contract["token"],
+                        "symbol": contract["symbol"],
+                        "expiry": contract["expiry"],
+                        "lotsize": contract["lotsize"],
+                        "source": "ANGEL_ONE_LIVE",
+                    }
+                else:
+                    error_result["source"] = (
+                        "ERROR: LTP returned 0 (market closed or illiquid)"
+                    )
+                    return error_result
+            else:
+                msg = result.get("message", "unknown") if result else "empty response"
+                error_result["source"] = f"ERROR: ltpData failed — {msg}"
+                logger.warning("get_option_ltp ltpData failed: %s", msg)
+                return error_result
+
+        except Exception as e:
+            err_str = str(e).lower()
+            if "session" in err_str or "token" in err_str or "unauthorized" in err_str:
+                self._login()
+                error_result["source"] = "ERROR: Session error, will retry next cycle"
+            else:
+                error_result["source"] = f"ERROR: {type(e).__name__}: {e}"
+                logger.error("get_option_ltp exception: %s", e)
+            return error_result
+
+    # ────────────────────────────────────────────────────────
+    # NSE OPTION CHAIN (direct from NSE India website)
+    # ────────────────────────────────────────────────────────
+
+    def fetch_nse_option_chain(self, index: str = "NIFTY") -> dict:
+        """
+        Fetch option chain from NSE India — OI, PCR, Max Pain, top strikes.
+
+        Phase 3.B2: now returns expiry, top_strikes (7), strike_count.
+        """
+        result = {
+            "call_oi": 0,
+            "put_oi": 0,
+            "pcr": 0.0,
+            "max_pain": 0,
+            "expiry": None,
+            "top_strikes": [],
+            "strike_count": 0,
+            "source": "FALLBACK_SPOT_ONLY",
+        }
+
+        try:
+            session = requests.Session()
+            session.get(
+                "https://www.nseindia.com",
+                headers={
+                    "User-Agent": (
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/120.0.0.0 Safari/537.36"
+                    ),
+                    "Accept-Language": "en-US,en;q=0.9",
+                    "Accept-Encoding": "gzip, deflate, br",
+                },
+                timeout=10,
+            )
+
+            url = (
+                f"https://www.nseindia.com/api/optionchain-indices"
+                f"?symbol={index}"
+            )
+            resp = session.get(
+                url,
+                headers={
+                    "User-Agent": (
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/120.0.0.0 Safari/537.36"
+                    ),
+                    "Accept-Language": "en-US,en;q=0.9",
+                    "Accept": "application/json",
+                    "Referer": "https://www.nseindia.com/",
+                },
+                timeout=10,
+            )
+
+            if resp.status_code != 200:
+                logger.warning("NSE option chain HTTP %d", resp.status_code)
+                return result
+
+            data = resp.json()
+            records = data.get("records", {})
+            all_strikes = records.get("data", [])
+
+            if not all_strikes:
+                logger.warning("NSE option chain: empty data")
+                return result
+
+            # ── Current weekly expiry ──
+            expiry_dates = records.get("expiryDates", [])
+            current_expiry = expiry_dates[0] if expiry_dates else None
+
+            # Filter to current weekly expiry only
+            if current_expiry:
+                filtered = [
+                    s for s in all_strikes
+                    if s.get("expiryDate") == current_expiry
+                ]
+            else:
+                filtered = all_strikes
+                current_expiry = (
+                    filtered[0].get("expiryDate", "") if filtered else ""
+                )
+
+            if not filtered:
+                filtered = all_strikes
+                current_expiry = (
+                    filtered[0].get("expiryDate", "") if filtered else ""
+                )
+
+            # ── Aggregate OI ──
+            total_call_oi = 0
+            total_put_oi = 0
+            strike_data = []
+
+            for s in filtered:
+                ce = s.get("CE") or {}
+                pe = s.get("PE") or {}
+                strike_price = s.get("strikePrice", 0)
+
+                ce_oi = int(ce.get("openInterest", 0) or 0)
+                pe_oi = int(pe.get("openInterest", 0) or 0)
+                ce_ltp = float(ce.get("lastPrice", 0) or 0)
+                pe_ltp = float(pe.get("lastPrice", 0) or 0)
+                ce_chg = int(ce.get("changeinOpenInterest", 0) or 0)
+                pe_chg = int(pe.get("changeinOpenInterest", 0) or 0)
+
+                total_call_oi += ce_oi
+                total_put_oi += pe_oi
+
+                strike_data.append(
+                    {
+                        "strike": strike_price,
+                        "ce_oi": ce_oi,
+                        "pe_oi": pe_oi,
+                        "ce_ltp": ce_ltp,
+                        "pe_ltp": pe_ltp,
+                        "ce_chg_oi": ce_chg,
+                        "pe_chg_oi": pe_chg,
+                        "total_oi": ce_oi + pe_oi,
+                    }
+                )
+
+            # PCR
+            pcr = (
+                round(total_put_oi / total_call_oi, 2)
+                if total_call_oi > 0
+                else 0.0
+            )
+
+            # Max Pain — strike with highest total OI
+            max_pain = 0
+            max_total = 0
+            for sd in strike_data:
+                if sd["total_oi"] > max_total:
+                    max_total = sd["total_oi"]
+                    max_pain = sd["strike"]
+
+            # Top 7 strikes by total OI (descending)
+            top_sorted = sorted(
+                strike_data, key=lambda x: x["total_oi"], reverse=True
+            )
+            top_strikes = top_sorted[:7]
+
+            # Format expiry
+            formatted_expiry = None
+            if current_expiry:
+                try:
+                    dt = datetime.strptime(current_expiry, "%d-%b-%Y")
+                    formatted_expiry = dt.strftime("%d-%b-%Y")
+                except Exception:
+                    formatted_expiry = current_expiry
+
+            result = {
+                "call_oi": total_call_oi,
+                "put_oi": total_put_oi,
+                "pcr": pcr,
+                "max_pain": max_pain,
+                "expiry": formatted_expiry,
+                "top_strikes": top_strikes,
+                "strike_count": len(strike_data),
+                "source": "NSE_LIVE",
+            }
+
+            logger.info(
+                "NSE chain OK: %d strikes, PCR=%.2f, MaxPain=%d, expiry=%s",
+                len(strike_data), pcr, max_pain, formatted_expiry,
+            )
+            return result
+
+        except requests.exceptions.Timeout:
+            logger.warning("NSE option chain: timeout")
+            return result
+        except Exception as e:
+            logger.error("NSE option chain exception: %s", e)
+            return result
+
+
+# ────────────────────────────────────────────────────────
+# SINGLETON
+# ────────────────────────────────────────────────────────
+
+_angel_client: Optional[AngelClient] = None
+
+
+def get_angel_client() -> AngelClient:
+    """Get or create the singleton AngelClient instance."""
+    global _angel_client
+    if _angel_client is None:
+        _angel_client = AngelClient()
+    return _angel_client
