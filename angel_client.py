@@ -56,10 +56,15 @@ def get_token(exchange: str, symbol: str) -> Optional[str]:
       - For CDS/MCX segments where contracts are futures-style (e.g. USDINR24AUGFUT),
         falls back to a prefix match and picks the first available contract.
       - For NIFTY/BANKNIFTY/VIX indices, uses friendly name lookup.
+      - For BSE SENSEX (index), tries scrip master first, then hardcoded fallback.
     """
     global _scrip_master_df
     if _scrip_master_df is None or _scrip_master_df.empty:
         if not refresh_scrip_master():
+            # Even if scrip master fails, allow Sensex hardcoded fallback below
+            if exchange == "BSE" and symbol.upper() in ("SENSEX", "BSESENSEX"):
+                logger.info("✓ Resolved SENSEX via hardcoded fallback (token=1) — scrip master unavailable")
+                return "1"
             return None
     try:
         # 1. Try exact match on name
@@ -78,12 +83,14 @@ def get_token(exchange: str, symbol: str) -> Optional[str]:
         if not match.empty:
             return str(match.iloc[0]["token"])
 
-        # 3. Special case for NIFTY/BANKNIFTY/VIX indices
+        # 3. Special case for NIFTY/BANKNIFTY indices (friendly name lookup)
         friendly_name = None
         if symbol.upper() == "NIFTY":
             friendly_name = "Nifty 50"
         elif symbol.upper() == "BANKNIFTY":
             friendly_name = "Nifty Bank"
+        elif symbol.upper() == "FINNIFTY":
+            friendly_name = "Nifty Fin"
 
         if friendly_name:
             match = _scrip_master_df[
@@ -93,7 +100,27 @@ def get_token(exchange: str, symbol: str) -> Optional[str]:
             if not match.empty:
                 return str(match.iloc[0]["token"])
 
-        # 4. Name-contains fallback (general case)
+        # 4. NEW: BSE SENSEX special handling
+        # Sensex is an INDEX (not a stock) — Angel One's scrip master sometimes
+        # lists it under "S&P BSE SENSEX" or "BSESENSEX", but not always.
+        # We try multiple patterns, then fall back to the hardcoded BSE Sensex
+        # index token "1" (well-known Angel One / BSE identifier).
+        if exchange == "BSE" and symbol.upper() in ("SENSEX", "BSESENSEX", "S&P BSE SENSEX"):
+            sensex_match = _scrip_master_df[
+                (_scrip_master_df["exch_seg"] == "BSE") &
+                (
+                    _scrip_master_df["name"].str.upper().str.contains("SENSEX", na=False) |
+                    _scrip_master_df["symbol"].str.upper().str.contains("SENSEX", na=False)
+                )
+            ]
+            if not sensex_match.empty:
+                logger.info(f"✓ Resolved SENSEX via scrip master -> token={sensex_match.iloc[0]['token']}")
+                return str(sensex_match.iloc[0]["token"])
+            # Hardcoded fallback — BSE Sensex index token is "1"
+            logger.info("✓ Resolved SENSEX via hardcoded fallback (token=1)")
+            return "1"
+
+        # 5. Name-contains fallback (general case)
         match = _scrip_master_df[
             (_scrip_master_df["exch_seg"] == exchange) &
             (_scrip_master_df["name"].str.contains(symbol, case=False, na=False))
@@ -101,7 +128,7 @@ def get_token(exchange: str, symbol: str) -> Optional[str]:
         if not match.empty:
             return str(match.iloc[0]["token"])
 
-        # 5. NEW: Prefix match on symbol — for futures contracts in CDS/MCX segments
+        # 6. Prefix match on symbol — for futures contracts in CDS/MCX segments
         # Example: USDINR -> matches USDINR24AUGFUT, USDINR24SEPFUT etc.
         # We pick the FIRST match (typically the nearest-expiry contract).
         match = _scrip_master_df[
@@ -124,7 +151,7 @@ def get_token(exchange: str, symbol: str) -> Optional[str]:
                         f"{match.iloc[0].get('symbol', 'unknown')}")
             return str(match.iloc[0]["token"])
 
-        # 6. NEW: For CDS USDINR — also try a broader name search with prefix
+        # 7. For CDS USDINR — also try a broader name search with prefix
         # (some Angel One dumps list CDS contracts under name like "USDINR")
         if exchange == "CDS" and symbol.upper() == "USDINR":
             match = _scrip_master_df[
@@ -366,3 +393,62 @@ def fetch_todays_candles() -> Optional[list]:
     if last_exc:
         logger.warning(f"fetch_todays_candles gave up after retries: {last_exc}")
     return None
+
+
+def get_option_ltp(index: str, strike: float, option_type: str) -> Optional[dict]:
+    """Fetches LIVE option premium (LTP) for a specific strike + option type.
+
+    This is the REAL premium from Angel One's ltpData API — not an estimate.
+    Used to populate the `live_premium` field in /api/data response.
+
+    Args:
+        index: "NIFTY", "BANKNIFTY", or "FINNIFTY"
+        strike: Strike price (e.g. 24250)
+        option_type: "CE" (Call) or "PE" (Put)
+
+    Returns:
+        dict with: ltp, token, symbol, expiry, lotsize, source
+        None on failure.
+    """
+    global smart_api
+    if smart_api is None:
+        if not angel_login():
+            return None
+
+    # Step 1: Resolve the option contract from scrip master
+    contract = get_options_contract_details(index, strike, option_type)
+    if contract is None:
+        logger.warning(f"get_option_ltp: contract not found for {index} {strike} {option_type}")
+        return None
+
+    # Step 2: Fetch live LTP for this contract via ltpData
+    try:
+        with session_lock:
+            resp = smart_api.ltpData("NFO", contract["symbol"], contract["token"])
+        if resp and resp.get("status"):
+            data = resp.get("data", {})
+            ltp = None
+            if isinstance(data, dict):
+                ltp = data.get("ltp")
+            elif isinstance(data, list) and len(data) > 0:
+                ltp = data[0].get("ltp")
+
+            if ltp is not None and ltp > 0:
+                logger.info(f"✓ Live option premium: {contract['symbol']} = ₹{ltp}")
+                return {
+                    "ltp": float(ltp),
+                    "token": contract["token"],
+                    "symbol": contract["symbol"],
+                    "expiry": contract.get("expiry"),
+                    "lotsize": contract.get("lotsize"),
+                    "source": "ANGEL_ONE_LIVE",
+                }
+        logger.warning(f"get_option_ltp non-success for {contract['symbol']}: {resp}")
+        return None
+    except Exception as e:
+        err_str = str(e).lower()
+        if "exceeding access rate" in err_str or "access rate" in err_str:
+            logger.warning(f"⏳ Rate limit on option LTP for {contract['symbol']}: {e}")
+        else:
+            logger.error(f"get_option_ltp error for {contract['symbol']}: {e}")
+        return None
