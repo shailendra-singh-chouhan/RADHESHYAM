@@ -1,7 +1,8 @@
-"\"\"\"
+"""
 indicators.py — technical-indicator helpers (RSI, EMA, VWAP, MACD, Supertrend)
 All functions accept plain lists / candle dicts; safe on short inputs.
-\"\"\"
+"""
+
 import pandas as pd
 from typing import List, Dict, Any, Optional
 
@@ -18,62 +19,79 @@ def calculate_rsi(closes: List[float], period: int = 14) -> Optional[float]:
     return round(float(rsi.iloc[-1]), 2)
 
 
-def calculate_ema(closes: List[float], period: int) -> Optional[float]:
+def calculate_ema(closes: List[float], period: int = 9) -> Optional[float]:
     if not closes or len(closes) < period:
-        return round(float(closes[-1]), 2) if closes else None
-    ema = pd.Series(closes).ewm(span=period, adjust=False).mean().iloc[-1]
-    return round(float(ema), 2)
-
-
-def calculate_vwap_approx(candles: List[Dict[str, Any]]) -> Optional[float]:
-    \"\"\"Volume-weighted where possible; falls back to typical-price mean for indices.\"\"\"
-    if not candles:
         return None
-    tp = [(c[\"high\"] + c[\"low\"] + c[\"close\"]) / 3 for c in candles]
-    vol = [c.get(\"volume\", 0) for c in candles]
-    if sum(vol) > 0:
-        return round(sum(t * v for t, v in zip(tp, vol)) / sum(vol), 2)
-    return round(sum(tp) / len(tp), 2)
-
-
-def calculate_macd(closes: List[float]) -> Optional[Dict[str, float]]:
-    if not closes or len(closes) < 26:
-        return {\"macd\": 0.0, \"signal\": 0.0}
     s = pd.Series(closes)
-    macd_line = s.ewm(span=12, adjust=False).mean() - s.ewm(span=26, adjust=False).mean()
-    sig_line = macd_line.ewm(span=9, adjust=False).mean()
+    ema = s.ewm(span=period, adjust=False).mean()
+    return round(float(ema.iloc[-1]), 2)
+
+
+def calculate_vwap(candles: List[Dict[str, Any]]) -> Optional[float]:
+    if not candles or len(candles) < 1:
+        return None
+    total_vol = 0.0
+    total_pv = 0.0
+    for c in candles:
+        if c.get("volume", 0) > 0:
+            typical = (c.get("high", 0) + c.get("low", 0) + c.get("close", 0)) / 3.0
+            total_pv += typical * c["volume"]
+            total_vol += c["volume"]
+    if total_vol == 0:
+        return None
+    return round(total_pv / total_vol, 2)
+
+
+def calculate_macd(closes: List[float], fast: int = 12, slow: int = 26, signal: int = 9) -> Optional[Dict[str, Any]]:
+    if not closes or len(closes) < slow + signal:
+        return None
+    s = pd.Series(closes)
+    ema_fast = s.ewm(span=fast, adjust=False).mean()
+    ema_slow = s.ewm(span=slow, adjust=False).mean()
+    macd_line = ema_fast - ema_slow
+    signal_line = macd_line.ewm(span=signal, adjust=False).mean()
+    histogram = macd_line - signal_line
     return {
-        \"macd\": round(float(macd_line.iloc[-1]), 2),
-        \"signal\": round(float(sig_line.iloc[-1]), 2),
+        "macd": round(float(macd_line.iloc[-1]), 4),
+        "signal": round(float(signal_line.iloc[-1]), 4),
+        "histogram": round(float(histogram.iloc[-1]), 4),
     }
 
 
-def calculate_supertrend(candles: List[Dict[str, Any]], period: int = 10,
-                         multiplier: float = 3.0) -> Dict[str, Any]:
-    \"\"\"Real Supertrend using ATR.\"\"\"
-    if not candles or len(candles) < period + 1:
-        return {\"trend\": \"WAIT\", \"value\": 0.0}
-    df = pd.DataFrame(candles)
-    hl2 = (df[\"high\"] + df[\"low\"]) / 2
-    tr = pd.concat([
-        (df[\"high\"] - df[\"low\"]).abs(),
-        (df[\"high\"] - df[\"close\"].shift()).abs(),
-        (df[\"low\"] - df[\"close\"].shift()).abs(),
-    ], axis=1).max(axis=1)
-    atr = tr.rolling(period).mean()
-    upper = hl2 + multiplier * atr
-    lower = hl2 - multiplier * atr
+def calculate_supertrend(highs: List[float], lows: List[float], closes: List[float], period: int = 10, multiplier: float = 3.0) -> Optional[Dict[str, Any]]:
+    if not closes or len(closes) < period + 1:
+        return None
+    df = pd.DataFrame({"high": highs, "low": lows, "close": closes})
+    df["atr"] = pd.concat([
+        df["high"] - df["low"],
+        abs(df["high"] - df["close"].shift(1)),
+        abs(df["low"] - df["close"].shift(1))
+    ], axis=1).max(axis=1).rolling(window=period).mean()
 
-    trend = [\"BUY\"] * len(df)
-    st = lower.copy()
-    for i in range(1, len(df)):
-        if df[\"close\"].iloc[i] > upper.iloc[i - 1]:
-            trend[i] = \"BUY\"
-        elif df[\"close\"].iloc[i] < lower.iloc[i - 1]:
-            trend[i] = \"SELL\"
+    df["upper_band"] = ((df["high"] + df["low"]) / 2) + (multiplier * df["atr"])
+    df["lower_band"] = ((df["high"] + df["low"]) / 2) - (multiplier * df["atr"])
+
+    st = []
+    trend = []
+    for i in range(len(df)):
+        if i == 0:
+            st.append(df["upper_band"].iloc[i])
+            trend.append("BUY")
         else:
-            trend[i] = trend[i - 1]
-        st.iloc[i] = lower.iloc[i] if trend[i] == \"BUY\" else upper.iloc[i]
-    return {\"trend\": trend[-1], \"value\": round(float(st.iloc[-1]), 2)}
-"
-Observation: Overwrite successful: /app/radheshyam/indicators.py
+            if trend[-1] == "BUY":
+                st.append(max(df["lower_band"].iloc[i], st[-1]))
+                if df["close"].iloc[i] < st[-1]:
+                    trend.append("SELL")
+                else:
+                    trend.append("BUY")
+            else:
+                st.append(min(df["upper_band"].iloc[i], st[-1]))
+                if df["close"].iloc[i] > st[-1]:
+                    trend.append("BUY")
+                else:
+                    trend.append("SELL")
+
+    return {
+        "supertrend": round(float(st[-1]), 2),
+        "trend": trend[-1],
+    }
