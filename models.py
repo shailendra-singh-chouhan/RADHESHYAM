@@ -12,6 +12,7 @@ class Trade(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     direction = Column(String(16), nullable=False, index=True)
+    symbol = Column(String(64), nullable=True)
     entry = Column(Float, nullable=False)
     target = Column(Float, nullable=True)
     sl = Column(Float, nullable=True)
@@ -26,6 +27,7 @@ class Trade(Base):
         return {
             "id": self.id,
             "direction": self.direction,
+            "symbol": self.symbol,
             "entry": self.entry,
             "target": self.target,
             "sl": self.sl,
@@ -44,7 +46,7 @@ class AppState(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     state_key = Column(String(255), unique=True, nullable=False)
-    state_value = Column(Text, nullable=False) # Storing JSON serialized state
+    state_value = Column(Text, nullable=False)  # Storing JSON serialized state
     last_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     def to_dict(self) -> dict:
