@@ -36,9 +36,7 @@ def _get_nse_session() -> requests.Session:
     """Get or create NSE session with proper headers and cookies."""
     global _nse_session, _nse_session_time
 
-    if _nse_session is not None and (time.time() - _nse_session_time < 300):
-        return _nse_session
-
+    # Always create fresh session (NSE blocks old sessions)
     session = requests.Session()
     session.headers.update({
         "User-Agent": (
@@ -53,21 +51,20 @@ def _get_nse_session() -> requests.Session:
     })
 
     try:
-        # Visit homepage to get cookies
+        # Step 1: Visit homepage to get initial cookies
         resp = session.get("https://www.nseindia.com", timeout=10)
-        logger.info(f"NSE session initialized: {resp.status_code}")
+        logger.info(f"NSE homepage: {resp.status_code}")
+
+        # Step 2: Visit market data page to get more cookies
+        resp2 = session.get("https://www.nseindia.com/market-data/live-equity-market", timeout=10)
+        logger.info(f"NSE market data page: {resp2.status_code}")
+
     except Exception as e:
         logger.warning(f"NSE session init warning: {e}")
 
     _nse_session = session
     _nse_session_time = time.time()
     return session
-
-
-# ─────────────────────────────────────────────────────────────────
-# 1. SPOT PRICES (Angel One — already working)
-# ─────────────────────────────────────────────────────────────────
-
 def fetch_nifty_spot() -> Dict[str, Any]:
     """Fetch NIFTY 50 spot from Angel One."""
     try:
@@ -116,13 +113,22 @@ def fetch_nse_option_chain(index: str = "NIFTY") -> Dict[str, Any]:
     try:
         session = _get_nse_session()
         url = f"https://www.nseindia.com/api/option-chain-indices?symbol={index}"
+
         resp = session.get(url, timeout=15)
+        logger.info(f"NSE option chain status: {resp.status_code}")
 
         if resp.status_code != 200:
             logger.warning(f"NSE option chain HTTP {resp.status_code}")
             return _fallback_oi_data()
 
-        data = resp.json()
+        # Check if response is valid JSON
+        try:
+            data = resp.json()
+        except Exception as e:
+            logger.error(f"NSE option chain JSON parse error: {e}")
+            logger.error(f"Response text (first 200 chars): {resp.text[:200]}")
+            return _fallback_oi_data()
+
         records = data.get("records", {})
         underlying = records.get("underlyingValue", 0)
         expiry_dates = records.get("expiryDates", [])
@@ -133,27 +139,27 @@ def fetch_nse_option_chain(index: str = "NIFTY") -> Dict[str, Any]:
         strikes_data = []
 
         for item in records.get("data", []):
-            ce = item.get("CE", {})
-            pe = item.get("PE", {})
+            ce = item.get("CE", {}) or {}
+            pe = item.get("PE", {}) or {}
 
-            ce_oi += ce.get("openInterest", 0)
-            pe_oi += pe.get("openInterest", 0)
+            ce_oi += ce.get("openInterest", 0) or 0
+            pe_oi += pe.get("openInterest", 0) or 0
 
             strike = item.get("strikePrice", 0)
-            total_oi = ce.get("openInterest", 0) + pe.get("openInterest", 0)
+            total_oi = (ce.get("openInterest", 0) or 0) + (pe.get("openInterest", 0) or 0)
 
             if total_oi > 0:
                 strikes_data.append({
                     "strike": strike,
                     "oi": total_oi,
-                    "ce_oi": ce.get("openInterest", 0),
-                    "pe_oi": pe.get("openInterest", 0),
-                    "ce_ltp": ce.get("lastPrice", 0),
-                    "pe_ltp": pe.get("lastPrice", 0),
-                    "ce_iv": ce.get("impliedVolatility", 0),
-                    "pe_iv": pe.get("impliedVolatility", 0),
-                    "ce_change_oi": ce.get("changeinOpenInterest", 0),
-                    "pe_change_oi": pe.get("changeinOpenInterest", 0),
+                    "ce_oi": ce.get("openInterest", 0) or 0,
+                    "pe_oi": pe.get("openInterest", 0) or 0,
+                    "ce_ltp": ce.get("lastPrice", 0) or 0,
+                    "pe_ltp": pe.get("lastPrice", 0) or 0,
+                    "ce_iv": ce.get("impliedVolatility", 0) or 0,
+                    "pe_iv": pe.get("impliedVolatility", 0) or 0,
+                    "ce_change_oi": ce.get("changeinOpenInterest", 0) or 0,
+                    "pe_change_oi": pe.get("changeinOpenInterest", 0) or 0,
                 })
 
         strikes_data.sort(key=lambda x: x["oi"], reverse=True)
@@ -182,8 +188,6 @@ def fetch_nse_option_chain(index: str = "NIFTY") -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"NSE option chain error: {e}")
         return _fallback_oi_data()
-
-
 def _fallback_oi_data() -> Dict[str, Any]:
     """Return fallback OI data when NSE is unreachable."""
     return {
@@ -211,17 +215,22 @@ def fetch_india_vix() -> Dict[str, Any]:
         session = _get_nse_session()
         url = "https://www.nseindia.com/api/allIndices"
         resp = session.get(url, timeout=10)
+        logger.info(f"NSE allIndices status: {resp.status_code}")
+
         if resp.status_code == 200:
-            data = resp.json()
-            for item in data.get("data", []):
-                if item.get("index") == "INDIA VIX":
-                    return {
-                        "value": float(item.get("last", 0)),
-                        "change": float(item.get("variation", 0)),
-                        "change_percent": float(item.get("percentChange", 0)),
-                        "source": "NSE_LIVE",
-                        "time": datetime.now().isoformat(),
-                    }
+            try:
+                data = resp.json()
+                for item in data.get("data", []):
+                    if item.get("index") == "INDIA VIX":
+                        return {
+                            "value": float(item.get("last", 0) or 0),
+                            "change": float(item.get("variation", 0) or 0),
+                            "change_percent": float(item.get("percentChange", 0) or 0),
+                            "source": "NSE_LIVE",
+                            "time": datetime.now().isoformat(),
+                        }
+            except Exception as e:
+                logger.warning(f"NSE VIX JSON parse error: {e}")
     except Exception as e:
         logger.warning(f"NSE VIX error: {e}")
 
@@ -242,12 +251,6 @@ def fetch_india_vix() -> Dict[str, Any]:
         logger.warning(f"Yahoo VIX error: {e}")
 
     return {"value": 0, "change": 0, "change_percent": 0, "source": "UNAVAILABLE", "time": datetime.now().isoformat()}
-
-
-# ─────────────────────────────────────────────────────────────────
-# 4. GLOBAL MARKETS (Yahoo Finance)
-# ─────────────────────────────────────────────────────────────────
-
 def fetch_global_markets() -> Dict[str, Any]:
     """Fetch NASDAQ, DOW, KOSPI, SGX Nifty from Yahoo Finance."""
     result = {
@@ -314,51 +317,40 @@ def fetch_fii_dii() -> Dict[str, Any]:
         session = _get_nse_session()
         url = "https://www.nseindia.com/api/fii-dii"
         resp = session.get(url, timeout=10)
+        logger.info(f"NSE FII/DII status: {resp.status_code}")
 
         if resp.status_code == 200:
-            data = resp.json()
+            try:
+                data = resp.json()
 
-            # Parse FII data
-            fii_data = data.get("FII", []) or data.get("fii", [])
-            if fii_data and isinstance(fii_data, list) and len(fii_data) > 0:
-                latest = fii_data[0]
-                result["fii"] = {
-                    "buy": float(latest.get("buyValue", 0) or 0),
-                    "sell": float(latest.get("sellValue", 0) or 0),
-                    "net": float(latest.get("netValue", 0) or 0),
-                }
+                # Parse FII data
+                fii_data = data.get("FII", []) or data.get("fii", [])
+                if fii_data and isinstance(fii_data, list) and len(fii_data) > 0:
+                    latest = fii_data[0]
+                    result["fii"] = {
+                        "buy": float(latest.get("buyValue", 0) or 0),
+                        "sell": float(latest.get("sellValue", 0) or 0),
+                        "net": float(latest.get("netValue", 0) or 0),
+                    }
 
-            # Parse DII data
-            dii_data = data.get("DII", []) or data.get("dii", [])
-            if dii_data and isinstance(dii_data, list) and len(dii_data) > 0:
-                latest = dii_data[0]
-                result["dii"] = {
-                    "buy": float(latest.get("buyValue", 0) or 0),
-                    "sell": float(latest.get("sellValue", 0) or 0),
-                    "net": float(latest.get("netValue", 0) or 0),
-                }
+                # Parse DII data
+                dii_data = data.get("DII", []) or data.get("dii", [])
+                if dii_data and isinstance(dii_data, list) and len(dii_data) > 0:
+                    latest = dii_data[0]
+                    result["dii"] = {
+                        "buy": float(latest.get("buyValue", 0) or 0),
+                        "sell": float(latest.get("sellValue", 0) or 0),
+                        "net": float(latest.get("netValue", 0) or 0),
+                    }
 
-            result["source"] = "NSE_LIVE"
+                result["source"] = "NSE_LIVE"
+            except Exception as e:
+                logger.warning(f"FII/DII JSON parse error: {e}")
 
     except Exception as e:
         logger.error(f"FII/DII error: {e}")
 
     return result
-
-
-# ─────────────────────────────────────────────────────────────────
-# 6. STOCK PRICES (Angel One)
-# ─────────────────────────────────────────────────────────────────
-
-STOCK_SYMBOLS = {
-    "HDFC": "HDFCBANK-EQ",
-    "SBI": "SBIN-EQ",
-    "PNB": "PNB-EQ",
-    "YES": "YESBANK-EQ",
-    "INFY": "INFY-EQ",
-}
-
-
 def fetch_stock_price(stock_name: str) -> Dict[str, Any]:
     """Fetch live price for a stock via Angel One."""
     if stock_name not in STOCK_SYMBOLS:
