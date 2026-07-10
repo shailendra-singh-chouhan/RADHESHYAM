@@ -194,7 +194,11 @@ def open_paper_trade(db: Session, signal: str = None, spot: float = None) -> tup
             
         logger.info(f"🧠 ATR: {atr:.2f} | SL Points: {sl_points} | TGT Points: {target_points}")
             
-        new_trade = Trade(direction=signal, entry=entry, target=target, sl=sl, status="ACTIVE", trade_date=config.get_ist_now().date().isoformat())
+        new_trade = Trade(
+            direction=signal, entry=entry, target=target, sl=sl,
+            symbol="NIFTY",
+            status="ACTIVE", trade_date=config.get_ist_now().date().isoformat()
+        )
         db.add(new_trade)
         db.commit()
         
