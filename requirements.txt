@@ -1,9 +1,10 @@
-fastapi
+"fastapi
 uvicorn[standard]
 gunicorn
 SQLAlchemy
 psycopg2-binary
 smartapi-python
+websocket-client
 pyotp
 requests
 pandas
@@ -12,3 +13,7 @@ python-multipart
 python-jose[cryptography]
 bcrypt
 yfinance
+logzero
+pytz
+python-dotenv
+"
