@@ -2,8 +2,7 @@
 angel_client.py — Angel One SmartAPI wrapper
 Handles: login, token resolution, LTP, candles, option contracts, live option LTP
 
-Phase 3.C  : Sensex token fallback in get_token()
-Phase 3.B1 : NEW get_option_ltp() function
+FIXED: getCandleData params — symboltoken (not token), fromdate/todate (not from/to)
 """
 
 import os
@@ -111,6 +110,12 @@ class AngelClient:
             if "token" in self._scrip_master_df.columns:
                 self._scrip_master_df["token"] = self._scrip_master_df["token"].astype(str)
 
+            # Also normalize strike if present
+            if "strike" in self._scrip_master_df.columns:
+                self._scrip_master_df["strike"] = pd.to_numeric(
+                    self._scrip_master_df["strike"], errors="coerce"
+                )
+
             logger.info(
                 "Scrip master loaded: %d instruments", len(self._scrip_master_df)
             )
@@ -136,10 +141,11 @@ class AngelClient:
 
         # Helper: MCX/CDS/NFO के लिए हमेशा nearest future expiry सॉर्ट करें
         def _get_best_token(match_df):
-            if match_df.empty: return None
+            if match_df.empty:
+                return None
             if exch in ("CDS", "MCX", "NFO") and "expiry" in match_df.columns:
                 temp = match_df.copy()
-                temp["_exp"] = pd.to_datetime(temp["expiry"], errors="coerce")
+                temp["_exp"] = pd.to_datetime(temp["expiry"], errors="coerce", dayfirst=True)
                 temp = temp.dropna(subset=["_exp"])
                 temp = temp[temp["_exp"] >= pd.Timestamp.today().normalize()]
                 if not temp.empty:
@@ -149,19 +155,22 @@ class AngelClient:
         # 1. Exact match
         match = df[(df["exch_seg"] == exch) & (df["symbol"] == sym)]
         tok = _get_best_token(match)
-        if tok: return tok
+        if tok:
+            return tok
 
         # 2. Symbol contains
         match = df[(df["exch_seg"] == exch) & (df["symbol"].str.contains(sym, na=False))]
         tok = _get_best_token(match)
-        if tok: return tok
+        if tok:
+            return tok
 
         # 3. Name contains
         match = df[(df["exch_seg"] == exch) & (df["name"].str.contains(sym, na=False))]
         tok = _get_best_token(match)
-        if tok: return tok
+        if tok:
+            return tok
 
-        # 4. BSE SENSEX special handling (Phase 3.C)
+        # 4. BSE SENSEX special handling
         if exch == "BSE" and sym in ("SENSEX", "BSESENSEX", "S&P BSE SENSEX"):
             sensex_match = df[
                 (df["exch_seg"] == "BSE")
@@ -260,7 +269,7 @@ class AngelClient:
         return None
 
     # ────────────────────────────────────────────────────────
-    # CANDLE DATA (Historical OHLCV)
+    # CANDLE DATA (Historical OHLCV) — FIXED PARAMS
     # ────────────────────────────────────────────────────────
 
     def get_candle_data(
@@ -276,43 +285,62 @@ class AngelClient:
 
         token = self.get_token(exchange, symbol)
         if not token:
+            logger.error("No token for %s/%s, cannot fetch candles", exchange, symbol)
             return []
 
         try:
             to_dt = datetime.now()
             from_dt = to_dt - timedelta(days=days)
 
+            # FIXED: SmartAPI expects symboltoken, fromdate, todate
             params = {
                 "exchange": exchange,
-                "symbol": symbol,
-                "token": token,
+                "symboltoken": token,
                 "interval": interval,
-                "from": from_dt.strftime("%Y-%m-%d %H:%M"),
-                "to": to_dt.strftime("%Y-%m-%d %H:%M"),
+                "fromdate": from_dt.strftime("%Y-%m-%d %H:%M"),
+                "todate": to_dt.strftime("%Y-%m-%d %H:%M"),
             }
 
             result = self.smart_api.getCandleData(params)
-            if result and result.get("status") and result.get("data"):
-                candles = []
-                for c in result["data"]:
-                    candles.append(
-                        {
-                            "time": int(c[0]) if len(c) > 0 else 0,
-                            "open": float(c[1]) if len(c) > 1 else 0,
-                            "high": float(c[2]) if len(c) > 2 else 0,
-                            "low": float(c[3]) if len(c) > 3 else 0,
-                            "close": float(c[4]) if len(c) > 4 else 0,
-                            "volume": int(c[5]) if len(c) > 5 else 0,
-                        }
-                    )
-                return candles
-            logger.warning("getCandleData failed for %s/%s", exchange, symbol)
+
+            # Handle empty response gracefully
+            if not result:
+                logger.warning("getCandleData returned empty/None for %s/%s", exchange, symbol)
+                return []
+
+            if not result.get("status"):
+                logger.warning("getCandleData status=False for %s/%s: %s", exchange, symbol, result.get("message", "unknown"))
+                return []
+
+            if not result.get("data"):
+                logger.warning("getCandleData no data for %s/%s", exchange, symbol)
+                return []
+
+            candles = []
+            for c in result["data"]:
+                if not isinstance(c, (list, tuple)) or len(c) < 5:
+                    continue
+                candles.append(
+                    {
+                        "time": int(c[0]) if len(c) > 0 else 0,
+                        "open": float(c[1]) if len(c) > 1 else 0,
+                        "high": float(c[2]) if len(c) > 2 else 0,
+                        "low": float(c[3]) if len(c) > 3 else 0,
+                        "close": float(c[4]) if len(c) > 4 else 0,
+                        "volume": int(c[5]) if len(c) > 5 else 0,
+                    }
+                )
+
+            logger.info("Fetched %d candles for %s/%s (%s)", len(candles), exchange, symbol, interval)
+            return candles
+
         except Exception as e:
             err_str = str(e).lower()
             if "session" in err_str or "token" in err_str or "unauthorized" in err_str:
+                logger.warning("Session error in getCandleData, re-logging in...")
                 self._login()
             else:
-                logger.error("get_candle_data exception: %s", e)
+                logger.error("get_candle_data exception for %s/%s: %s", exchange, symbol, e)
         return []
 
     # ────────────────────────────────────────────────────────
@@ -349,8 +377,8 @@ class AngelClient:
             )
             return None
 
-        # Parse & filter to nearest future expiry (Using pd.Timestamp to avoid UTC bugs)
-        opts["_expiry_dt"] = pd.to_datetime(opts.get("expiry"), errors="coerce")
+        # Parse & filter to nearest future expiry
+        opts["_expiry_dt"] = pd.to_datetime(opts.get("expiry"), errors="coerce", dayfirst=True)
         opts = opts.dropna(subset=["_expiry_dt"])
         opts = opts[opts["_expiry_dt"] >= pd.Timestamp.today().normalize()]
 
@@ -377,7 +405,7 @@ class AngelClient:
         return result
 
     # ────────────────────────────────────────────────────────
-    # LIVE OPTION LTP  (Phase 3.B1 — NEW FUNCTION)
+    # LIVE OPTION LTP
     # ────────────────────────────────────────────────────────
 
     def get_option_ltp(self, index: str, strike: int, option_type: str) -> dict:
@@ -432,7 +460,7 @@ class AngelClient:
 
 
 # ────────────────────────────────────────────────────────
-# MODULE-LEVEL HELPER (for strategy.py import)
+# MODULE-LEVEL HELPER (singleton)
 # ────────────────────────────────────────────────────────
 
 _angel_client_instance: Optional[AngelClient] = None
