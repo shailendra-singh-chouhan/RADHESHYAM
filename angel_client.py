@@ -409,4 +409,38 @@ class AngelClient:
                 ltp = float(result["data"]["ltp"])
                 if ltp > 0:
                     return {
-                        "ltp":
+                        "ltp": ltp,
+                        "symbol": contract["symbol"],
+                        "token": contract["token"],
+                        "expiry": contract["expiry"],
+                        "lotsize": contract["lotsize"],
+                        "source": "ANGEL_ONE",
+                    }
+            error_result["source"] = "ERROR: ltpData returned empty/invalid"
+            logger.warning(
+                "get_option_ltp: ltpData failed for %s %s %s → %s",
+                index, strike, option_type, result,
+            )
+        except Exception as e:
+            error_result["source"] = f"ERROR: {str(e)}"
+            logger.error(
+                "get_option_ltp exception for %s %s %s: %s",
+                index, strike, option_type, e,
+            )
+
+        return error_result
+
+
+# ────────────────────────────────────────────────────────
+# MODULE-LEVEL HELPER (for strategy.py import)
+# ────────────────────────────────────────────────────────
+
+_angel_client_instance: Optional[AngelClient] = None
+
+
+def get_angel_client() -> AngelClient:
+    """Return a singleton AngelClient instance."""
+    global _angel_client_instance
+    if _angel_client_instance is None:
+        _angel_client_instance = AngelClient()
+    return _angel_client_instance
