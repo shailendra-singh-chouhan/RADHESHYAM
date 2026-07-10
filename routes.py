@@ -31,6 +31,28 @@ def health():
     return {"status": "ok"}
 
 
+
+
+@router.get("/api/market")
+def market_status():
+    """
+    Returns detailed market status, timing, and session info.
+    Dashboard uses this to show market open/closed state.
+    """
+    from config import get_market_info
+    info = get_market_info()
+    return {
+        "status": info["status"],
+        "session": info["session"],
+        "current_time": info["current_time"],
+        "current_date": info["current_date"],
+        "day": info["day"],
+        "is_weekend": info["is_weekend"],
+        "next_open": info["next_open"],
+        "time_until_open": info["time_until_open"],
+        "time_until_close": info["time_until_close"],
+        "market_message": info["market_message"],
+    }
 @router.api_route("/api/data", methods=["GET", "HEAD"])
 def get_dashboard_data(request: Request, db: Session = Depends(get_db)):
     data = dict(shared_state)
