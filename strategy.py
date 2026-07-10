@@ -80,8 +80,8 @@ def generate_signal(candles: List[dict], spot: float) -> dict:
         "note": "",
     }
 
-    if not candles or len(candles) < 21:
-        signal["note"] = "Not enough candles for signal"
+    if not candles or len(candles) < 5:
+        signal["note"] = f"Not enough candles for signal (got {len(candles)})"
         return signal
 
     closes = [c["close"] for c in candles]
@@ -107,29 +107,43 @@ def generate_signal(candles: List[dict], spot: float) -> dict:
 
     # ── ORB (Opening Range Breakout) ──
     # Assuming market opens at 09:15 AM
-    # We need to find candles within the first 15 minutes of the market session
     from datetime import datetime, time as dt_time
     
-    market_open_time = None
+    # 1. Identify today's candles
+    today = datetime.now().date()
+    today_candles = []
     for c in candles:
-        # Check if candle time is around 09:15
         dt = datetime.fromtimestamp(c["time"] / 1000) if c["time"] > 1e11 else datetime.fromtimestamp(c["time"])
-        if dt.time() >= dt_time(9, 15) and dt.time() <= dt_time(9, 30):
-            if market_open_time is None or c["time"] < market_open_time:
-                market_open_time = c["time"]
+        if dt.date() == today:
+            today_candles.append(c)
     
-    if market_open_time:
-        orb_candles = [c for c in candles if c["time"] >= market_open_time and c["time"] <= market_open_time + 900]
-    else:
-        # Fallback to first 15 mins of data if we can't find 09:15 specifically
-        first_time = candles[0]["time"]
-        orb_candles = [c for c in candles if c["time"] <= first_time + 900]
-
-    if orb_candles:
-        orb_high = max(c["high"] for c in orb_candles)
-        orb_low = min(c["low"] for c in orb_candles)
+    # 2. Find the 09:15 AM candle (start of market)
+    market_open_candle = None
+    for c in today_candles:
+        dt = datetime.fromtimestamp(c["time"] / 1000) if c["time"] > 1e11 else datetime.fromtimestamp(c["time"])
+        if dt.time() == dt_time(9, 15):
+            market_open_candle = c
+            break
+            
+    if market_open_candle:
+        # ORB is the range of the first 15-min candle (if using 15m interval)
+        # or the range of all candles within the first 15 mins
+        orb_high = market_open_candle["high"]
+        orb_low = market_open_candle["low"]
         signal["orb_high"] = round(orb_high, 2)
         signal["orb_low"] = round(orb_low, 2)
+    elif today_candles:
+        # If 09:15 exact not found, use the first candle of today
+        first_c = today_candles[0]
+        signal["orb_high"] = round(first_c["high"], 2)
+        signal["orb_low"] = round(first_c["low"], 2)
+    else:
+        # Fallback to absolute first candle if no today's data (e.g. testing)
+        first_c = candles[0]
+        signal["orb_high"] = round(first_c["high"], 2)
+        signal["orb_low"] = round(first_c["low"], 2)
+
+
 
     # ── Evaluate 6 bearish checks ──
     bear_checks = {

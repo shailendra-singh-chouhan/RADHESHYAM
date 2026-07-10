@@ -120,9 +120,16 @@ def fetch_nse_option_chain(index: str = "NIFTY") -> Dict[str, Any]:
                 ltp = client.get_ltp_by_token("NFO", symbol, token)
 
                 # Extract strike from symbol (e.g., "NIFTY24JUL24000CE" -> 24000)
+                # We need to find the strike price which is usually the last 5 digits before CE/PE
                 import re
-                strike_match = re.search(r'(\d{5})', symbol)
-                strike = int(strike_match.group(1)) if strike_match else 0
+                # Match 5 digits that are followed by CE or PE
+                strike_match = re.search(r'(\d{5})(?:CE|PE)$', symbol.upper())
+                if strike_match:
+                    strike = int(strike_match.group(1))
+                else:
+                    # Fallback: find any 5 digit number
+                    strike_match = re.search(r'(\d{5})', symbol)
+                    strike = int(strike_match.group(1)) if strike_match else 0
 
                 is_ce = "CE" in symbol.upper()
 
@@ -237,21 +244,18 @@ def fetch_global_markets() -> Dict[str, Any]:
         for key, ticker in tickers.items():
             try:
                 t = yf.Ticker(ticker)
-                # Try 1d period with 1m interval for most recent price
-                hist = t.history(period="1d")
-                if hist.empty:
-                    hist = t.history(period="5d")
+                # Use period="2d" to ensure we have at least two days of data for change calculation
+                hist = t.history(period="2d")
                 
                 if not hist.empty:
                     close = float(hist["Close"].iloc[-1])
-                    # Get previous close for change calculation
-                    prev = t.info.get("previousClose")
-                    if not prev and len(hist) >= 2:
+                    # For change, use previous day's close if available
+                    if len(hist) >= 2:
                         prev = float(hist["Close"].iloc[-2])
+                    else:
+                        # Fallback to info if only one day returned
+                        prev = t.info.get("previousClose", close)
                     
-                    if not prev:
-                        prev = close
-                        
                     change = close - prev
                     change_pct = (change / prev * 100) if prev > 0 else 0
 
