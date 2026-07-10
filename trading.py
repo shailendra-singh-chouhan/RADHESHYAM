@@ -4,6 +4,7 @@ from logzero import logger
 from sqlalchemy import func
 from models import Trade
 import config
+import strategy  # sync active_trade with shared_state
 from sqlalchemy.orm import Session
 
 # Phase 4 Prep: Angel Client import for premium fetching
@@ -212,6 +213,9 @@ def open_paper_trade(db: Session, signal: str = None, spot: float = None) -> tup
             "trade_date": new_trade.trade_date,
         }
 
+        # Sync with shared_state for routes.py
+        strategy.shared_state["active_trade"] = config.state_manager.active_trade_context
+
         logger.info(f"✅ TRADE OPENED: {signal} @ {entry} | T: {target} | SL: {sl}")
         return True, f"Opened {signal} @ {entry}"
     except Exception as e:
@@ -235,6 +239,9 @@ def close_paper_trade(db: Session, reason: str = "Manual Close", pnl: float = No
         
         # Clear active trade context from StateManager
         config.state_manager.active_trade_context = None
+
+        # Sync with shared_state for routes.py
+        strategy.shared_state["active_trade"] = None
 
         logger.info(f"🔴 TRADE CLOSED: {reason} | PnL: {pnl}")
         return True, f"Closed: {reason} | PnL: {pnl}"
