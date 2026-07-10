@@ -106,8 +106,25 @@ def generate_signal(candles: List[dict], spot: float) -> dict:
     st_data = calculate_supertrend(highs, lows, closes, period=10, multiplier=3)
 
     # ── ORB (Opening Range Breakout) ──
-    first_time = candles[0]["time"]
-    orb_candles = [c for c in candles if c["time"] <= first_time + 900]  # 15 min
+    # Assuming market opens at 09:15 AM
+    # We need to find candles within the first 15 minutes of the market session
+    from datetime import datetime, time as dt_time
+    
+    market_open_time = None
+    for c in candles:
+        # Check if candle time is around 09:15
+        dt = datetime.fromtimestamp(c["time"] / 1000) if c["time"] > 1e11 else datetime.fromtimestamp(c["time"])
+        if dt.time() >= dt_time(9, 15) and dt.time() <= dt_time(9, 30):
+            if market_open_time is None or c["time"] < market_open_time:
+                market_open_time = c["time"]
+    
+    if market_open_time:
+        orb_candles = [c for c in candles if c["time"] >= market_open_time and c["time"] <= market_open_time + 900]
+    else:
+        # Fallback to first 15 mins of data if we can't find 09:15 specifically
+        first_time = candles[0]["time"]
+        orb_candles = [c for c in candles if c["time"] <= first_time + 900]
+
     if orb_candles:
         orb_high = max(c["high"] for c in orb_candles)
         orb_low = min(c["low"] for c in orb_candles)

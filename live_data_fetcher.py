@@ -119,13 +119,10 @@ def fetch_nse_option_chain(index: str = "NIFTY") -> Dict[str, Any]:
                 symbol = str(row["symbol"])
                 ltp = client.get_ltp_by_token("NFO", symbol, token)
 
-                # Extract strike from symbol
-                parts = symbol.split()
-                strike = 0
-                for p in parts:
-                    if p.isdigit():
-                        strike = int(p)
-                        break
+                # Extract strike from symbol (e.g., "NIFTY24JUL24000CE" -> 24000)
+                import re
+                strike_match = re.search(r'(\d{5})', symbol)
+                strike = int(strike_match.group(1)) if strike_match else 0
 
                 is_ce = "CE" in symbol.upper()
 
@@ -240,10 +237,21 @@ def fetch_global_markets() -> Dict[str, Any]:
         for key, ticker in tickers.items():
             try:
                 t = yf.Ticker(ticker)
-                hist = t.history(period="5d")
-                if not hist.empty and len(hist) >= 2:
+                # Try 1d period with 1m interval for most recent price
+                hist = t.history(period="1d")
+                if hist.empty:
+                    hist = t.history(period="5d")
+                
+                if not hist.empty:
                     close = float(hist["Close"].iloc[-1])
-                    prev = float(hist["Close"].iloc[-2])
+                    # Get previous close for change calculation
+                    prev = t.info.get("previousClose")
+                    if not prev and len(hist) >= 2:
+                        prev = float(hist["Close"].iloc[-2])
+                    
+                    if not prev:
+                        prev = close
+                        
                     change = close - prev
                     change_pct = (change / prev * 100) if prev > 0 else 0
 
