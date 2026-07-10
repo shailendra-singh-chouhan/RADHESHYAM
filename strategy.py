@@ -9,7 +9,7 @@ import logging
 import math
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timedelta, time as dt_time, timezone
 from typing import Optional, Dict, Any, List
 
 import requests
@@ -75,13 +75,13 @@ def generate_signal(candles: List[dict], spot: float) -> dict:
             "macd_bearish": False,
             "supertrend_sell": False,
         },
-        "orb_high": 0,
-        "orb_low": 0,
+        "orb_high": None,
+        "orb_low": None,
         "note": "",
     }
 
     if not candles or len(candles) < 5:
-        signal["note"] = f"Not enough candles for signal (got {len(candles)})"
+        signal["note"] = f"Not enough candles for signal (got {len(candles) if candles else 0})"
         return signal
 
     closes = [c["close"] for c in candles]
@@ -105,49 +105,53 @@ def generate_signal(candles: List[dict], spot: float) -> dict:
     macd_data = calculate_macd(closes)
     st_data = calculate_supertrend(highs, lows, closes, period=10, multiplier=3)
 
-    # ── ORB (Opening Range Breakout) ──
-    # Assuming market opens at 09:15 AM
-    from datetime import datetime, time as dt_time
+    # ── ORB (Opening Range Breakout) — FIXED ──
+    # IST = UTC+5:30
+    IST = timezone(timedelta(hours=5, minutes=30))
+    today = datetime.now(IST).date()
     
-    # 1. Identify today's candles
-    today = datetime.now().date()
     today_candles = []
     for c in candles:
-        dt = datetime.fromtimestamp(c["time"] / 1000) if c["time"] > 1e11 else datetime.fromtimestamp(c["time"])
+        ts = c.get("time", 0)
+        # Handle both epoch seconds and milliseconds
+        if ts > 1e11:
+            ts = ts / 1000
+        dt = datetime.fromtimestamp(ts, tz=timezone.utc).astimezone(IST)
         if dt.date() == today:
-            today_candles.append(c)
+            today_candles.append((dt, c))
     
-    # 2. Find the 09:15 AM candle (start of market)
-    market_open_candle = None
-    for c in today_candles:
-        dt = datetime.fromtimestamp(c["time"] / 1000) if c["time"] > 1e11 else datetime.fromtimestamp(c["time"])
-        if dt.time() == dt_time(9, 15):
-            market_open_candle = c
+    # Sort by time
+    today_candles.sort(key=lambda x: x[0])
+    
+    # Find 09:15 candle using time range (09:14:00 to 09:16:59)
+    market_open = None
+    for dt, c in today_candles:
+        if dt_time(9, 14) <= dt.time() <= dt_time(9, 16, 59):
+            market_open = c
             break
-            
-    if market_open_candle:
-        # ORB is the range of the first 15-min candle (if using 15m interval)
-        # or the range of all candles within the first 15 mins
-        orb_high = market_open_candle["high"]
-        orb_low = market_open_candle["low"]
-        signal["orb_high"] = round(orb_high, 2)
-        signal["orb_low"] = round(orb_low, 2)
+    
+    # Fallback: use first candle of today if exact 09:15 not found
+    if market_open:
+        signal["orb_high"] = round(market_open["high"], 2)
+        signal["orb_low"] = round(market_open["low"], 2)
     elif today_candles:
-        # If 09:15 exact not found, use the first candle of today
-        first_c = today_candles[0]
+        first_c = today_candles[0][1]
         signal["orb_high"] = round(first_c["high"], 2)
         signal["orb_low"] = round(first_c["low"], 2)
+        signal["note"] = f"ORB approximated from first candle ({today_candles[0][0].strftime('%H:%M')})"
     else:
-        # Fallback to absolute first candle if no today's data (e.g. testing)
+        # Last resort: use earliest candle in buffer
         first_c = candles[0]
         signal["orb_high"] = round(first_c["high"], 2)
         signal["orb_low"] = round(first_c["low"], 2)
-
-
+        signal["note"] = "ORB from historical buffer (no today's data)"
 
     # ── Evaluate 6 bearish checks ──
+    orb_high = signal["orb_high"] or 0
+    orb_low = signal["orb_low"] or 0
+
     bear_checks = {
-        "orb_breakdown": (signal["orb_low"] > 0 and spot < signal["orb_low"]),
+        "orb_breakdown": (orb_low > 0 and spot < orb_low),
         "below_vwap": (vwap_val is not None and spot < vwap_val),
         "ema_bearish": (ema9 is not None and ema21 is not None and ema9 < ema21),
         "rsi_not_oversold": (rsi_val is not None and rsi_val > 30),
@@ -164,7 +168,7 @@ def generate_signal(candles: List[dict], spot: float) -> dict:
 
     # ── Evaluate 6 bullish checks ──
     bull_checks = {
-        "orb_breakout": (signal["orb_high"] > 0 and spot > signal["orb_high"]),
+        "orb_breakout": (orb_high > 0 and spot > orb_high),
         "above_vwap": (vwap_val is not None and spot > vwap_val),
         "ema_bullish": (ema9 is not None and ema21 is not None and ema9 > ema21),
         "rsi_not_overbought": (rsi_val is not None and rsi_val < 70),
@@ -478,43 +482,17 @@ def fetch_institutional_stats() -> dict:
 
 
 # ════════════════════════════════════════════════════════
-# GLOBAL MARKETS (Yahoo Finance)
+# GLOBAL MARKETS (Yahoo Finance) — DEPRECATED, use live_data_fetcher
 # ════════════════════════════════════════════════════════
 
 def fetch_global_markets() -> dict:
     """Fetch NASDAQ, DOW, KOSPI from Yahoo Finance."""
-    result = {
+    return {
         "kospi": 0.0,
         "nasdaq": 0.0,
         "dji": 0.0,
-        "source": "YAHOO_FINANCE",
+        "source": "DEPRECATED",
     }
-
-    tickers = {
-        "nasdaq": "^IXIC",
-        "dji": "^DJI",
-        "kospi": "^KS11",
-    }
-
-    try:
-        import yfinance as yf
-
-        for key, ticker in tickers.items():
-            try:
-                t = yf.Ticker(ticker)
-                info = t.fast_info
-                price = info.get("last_price", 0)
-                if price and price > 0:
-                    result[key] = round(float(price), 2)
-            except Exception:
-                pass
-
-    except ImportError:
-        logger.warning("yfinance not installed, global markets will be 0")
-    except Exception as e:
-        logger.error("Global markets error: %s", e)
-
-    return result
 
 
 # ════════════════════════════════════════════════════════
@@ -555,19 +533,19 @@ def _live_data_poller() -> None:
                 "note": "Not enough candles" if not candles else "Insufficient data",
             }
 
-            # 4. Fetch OI from NSE India (real)
+            # 4. Fetch OI from Angel One (real, proxied)
             oi_data = fetch_nse_option_chain("NIFTY")
 
             # 5. Calculate Greeks (real Black-Scholes)
             greeks_data = get_atm_greeks(spot, "NIFTY")
 
-            # 6. Fetch VIX (real NSE/Yahoo)
+            # 6. Fetch VIX (real Yahoo — cached)
             vix_data = fetch_india_vix()
 
-            # 7. Fetch Global Markets (real Yahoo)
+            # 7. Fetch Global Markets (real Yahoo — cached)
             global_data = fetch_global_markets()
 
-            # 8. Fetch FII/DII (real NSE)
+            # 8. Fetch FII/DII (real NSE — blocked on cloud)
             fii_dii = fetch_fii_dii()
 
             # 9. Update shared_state
@@ -577,8 +555,8 @@ def _live_data_poller() -> None:
                 "signal": signal_data.get("signal", "WAIT"),
                 "confidence": signal_data.get("confidence", 0),
                 "checklist": signal_data.get("checklist", {}),
-                "orb_high": signal_data.get("orb_high", 0),
-                "orb_low": signal_data.get("orb_low", 0),
+                "orb_high": signal_data.get("orb_high"),
+                "orb_low": signal_data.get("orb_low"),
                 "signal_note": signal_data.get("note", ""),
                 "greeks": greeks_data,
                 "oi_data": oi_data,
@@ -592,6 +570,7 @@ def _live_data_poller() -> None:
                     "dii_sell": fii_dii["dii"]["sell"],
                     "dii_net": fii_dii["dii"]["net"],
                     "source": fii_dii["source"],
+                    "status": "Unavailable on Cloud" if "BLOCKED" in fii_dii.get("source", "") else "Live",
                 },
                 "last_updated": datetime.now().isoformat(),
             })
@@ -622,6 +601,8 @@ def _live_data_poller() -> None:
         time.sleep(15)
 
     logger.info("Live data poller stopped")
+
+
 def start_background_threads() -> None:
     """Start the live data poller background thread."""
     global _poller_running
