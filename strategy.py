@@ -2,19 +2,22 @@
 strategy.py — Signal generation, OI analysis, Greeks, Institutional stats
 
 Phase 3.B2: _fetch_real_option_chain() now returns top_strikes, expiry, strike_count
+Phase 5:    LIVE background poller — updates shared_state + config.state_manager every 15s
 """
 
 import logging
 import math
+import threading
+import time
 from datetime import datetime
 from typing import Optional, Dict, Any, List
 
 import requests
 
+import config
 from angel_client import get_angel_client
 
 logger = logging.getLogger(__name__)
-
 
 
 # ════════════════════════════════════════════════════════
@@ -33,6 +36,7 @@ shared_state: Dict[str, Any] = {
     "institutional_stats": {},
     "last_updated": None,
 }
+
 
 # ════════════════════════════════════════════════════════
 # SIGNAL GENERATION — 6-check GOAT system
@@ -177,17 +181,73 @@ def generate_signal(candles: List[dict], spot: float) -> dict:
 def _fetch_real_option_chain(index: str = "NIFTY") -> dict:
     """
     Fetch real OI data from NSE India.
-
     Phase 3.B2: NOW returns expiry, top_strikes (top 7 by OI), strike_count.
     Falls back to _fallback_oi_data() on failure.
     """
-    client = get_angel_client()
-    data = client.fetch_nse_option_chain(index)
+    try:
+        # NSE India option chain API
+        url = f"https://www.nseindia.com/api/option-chain-indices?symbol={index}"
+        session = requests.Session()
+        session.headers.update({
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/120.0.0.0 Safari/537.36"
+            ),
+            "Accept": "application/json",
+            "Accept-Language": "en-US,en;q=0.9",
+        })
+        session.get("https://www.nseindia.com", timeout=10)
+        resp = session.get(url, timeout=15)
+        if resp.status_code == 200:
+            data = resp.json()
+            records = data.get("records", {})
+            underlying = records.get("underlyingValue", 0)
+            expiry_dates = records.get("expiryDates", [])
+            nearest_expiry = expiry_dates[0] if expiry_dates else None
 
-    if data.get("source") == "NSE_LIVE":
-        return data
+            ce_oi = 0
+            pe_oi = 0
+            strikes_data = []
 
-    # Fallback
+            for item in records.get("data", []):
+                ce = item.get("CE", {})
+                pe = item.get("PE", {})
+                ce_oi += ce.get("openInterest", 0)
+                pe_oi += pe.get("openInterest", 0)
+                strike = item.get("strikePrice", 0)
+                total_oi = ce.get("openInterest", 0) + pe.get("openInterest", 0)
+                if total_oi > 0:
+                    strikes_data.append({
+                        "strike": strike,
+                        "oi": total_oi,
+                        "ce_oi": ce.get("openInterest", 0),
+                        "pe_oi": pe.get("openInterest", 0),
+                    })
+
+            strikes_data.sort(key=lambda x: x["oi"], reverse=True)
+            top_strikes = strikes_data[:7]
+            pcr = round(pe_oi / ce_oi, 2) if ce_oi > 0 else 0.0
+
+            # Max pain calculation
+            max_pain = None
+            if strikes_data:
+                max_pain = min(strikes_data, key=lambda x: abs(x["strike"] - underlying))["strike"]
+
+            return {
+                "call_oi": ce_oi,
+                "put_oi": pe_oi,
+                "pcr": pcr,
+                "max_pain": max_pain,
+                "expiry": nearest_expiry,
+                "top_strikes": top_strikes,
+                "strike_count": len(strikes_data),
+                "source": "NSE_LIVE",
+                "underlying": underlying,
+            }
+    except Exception as e:
+        logger.warning(f"NSE option chain fetch failed: {e}")
+
     logger.warning("NSE chain failed, using fallback OI")
     return _fallback_oi_data()
 
@@ -203,6 +263,7 @@ def _fallback_oi_data() -> dict:
         "top_strikes": [],
         "strike_count": 0,
         "source": "FALLBACK_SPOT_ONLY",
+        "underlying": None,
     }
 
 
@@ -266,6 +327,22 @@ def calculate_greeks(
         "theta": round(theta, 2),
         "gamma": round(gamma, 6),
         "vega": round(vega, 2),
+        "source": "BS_APPROX",
+    }
+
+
+def get_atm_greeks(spot: float, index: str = "NIFTY") -> dict:
+    """Calculate Greeks for ATM CE and PE options."""
+    step = 50 if index == "NIFTY" else 100
+    atm_strike = round(spot / step) * step
+
+    ce_greeks = calculate_greeks(spot, atm_strike, "CE")
+    pe_greeks = calculate_greeks(spot, atm_strike, "PE")
+
+    return {
+        "atm_strike": atm_strike,
+        "ce": ce_greeks,
+        "pe": pe_greeks,
         "source": "BS_APPROX",
     }
 
@@ -361,13 +438,6 @@ def fetch_institutional_stats() -> dict:
     return result
 
 
-def start_background_threads():
-    """Start any background strategy threads if needed."""
-    # Currently, most polling is handled in main.py or stocks.py.
-    # This function is called by main.py to avoid ImportError.
-    logger.info("Strategy background threads initialized (placeholder).")
-
-
 # ════════════════════════════════════════════════════════
 # GLOBAL MARKETS (Yahoo Finance)
 # ════════════════════════════════════════════════════════
@@ -406,3 +476,102 @@ def fetch_global_markets() -> dict:
         logger.error("Global markets error: %s", e)
 
     return result
+
+
+# ════════════════════════════════════════════════════════
+# LIVE DATA POLLER — Background thread
+# ════════════════════════════════════════════════════════
+
+_poller_running = False
+
+
+def _live_data_poller() -> None:
+    """
+    Background thread: every 15 seconds fetches live data and updates
+    shared_state + config.state_manager.
+    """
+    global _poller_running
+    logger.info("Live data poller started")
+
+    while _poller_running:
+        try:
+            # 1. Get live spot from state_manager (already set by stocks.py)
+            spot = config.state_manager.latest_prices.get("nifty")
+            if not spot:
+                logger.debug("No spot price yet, skipping signal generation")
+                time.sleep(5)
+                continue
+
+            # 2. Fetch NIFTY candles (15 min, 5 days)
+            client = get_angel_client()
+            candles = client.get_candle_data("NSE", "NIFTY 50", "FIFTEEN_MINUTE", 5)
+
+            # 3. Generate signal
+            signal_data = generate_signal(candles, spot)
+
+            # 4. Fetch OI data
+            oi_data = get_oi_data("NIFTY")
+
+            # 5. Calculate Greeks for ATM options
+            greeks_data = get_atm_greeks(spot, "NIFTY")
+
+            # 6. Fetch global markets
+            global_data = fetch_global_markets()
+
+            # 7. Fetch institutional stats
+            inst_data = fetch_institutional_stats()
+
+            # 8. Update shared_state (for routes.py)
+            shared_state.update({
+                "spot": spot,
+                "signal": signal_data.get("signal", "WAIT"),
+                "confidence": signal_data.get("confidence", 0),
+                "checklist": signal_data.get("checklist", {}),
+                "orb_high": signal_data.get("orb_high", 0),
+                "orb_low": signal_data.get("orb_low", 0),
+                "signal_note": signal_data.get("note", ""),
+                "greeks": greeks_data,
+                "oi_data": oi_data,
+                "global": global_data,
+                "institutional_stats": inst_data,
+                "last_updated": datetime.now().isoformat(),
+            })
+
+            # 9. Update config.state_manager (for trading.py)
+            config.state_manager.set_state("candle_store", candles)
+            config.state_manager.set_state("signal_data", signal_data)
+            config.state_manager.set_state("oi_data", oi_data)
+            config.state_manager.set_state("greeks_data", greeks_data)
+            config.state_manager.set_state("indicator_data", {
+                "rsi": None,  # Could extract from signal if needed
+                "ema9": None,
+                "ema21": None,
+                "vwap_approx": None,
+                "macd": None,
+                "supertrend": None,
+            })
+            config.state_manager.set_state("institutional_stats", inst_data)
+            config.state_manager.last_data_update_time = datetime.now()
+
+            logger.info(
+                f"Live data updated | Spot: {spot} | Signal: {signal_data['signal']} | "
+                f"Confidence: {signal_data['confidence']} | OI Source: {oi_data.get('source')}"
+            )
+
+        except Exception as e:
+            logger.error(f"Live data poller error: {e}")
+
+        time.sleep(15)
+
+    logger.info("Live data poller stopped")
+
+
+def start_background_threads() -> None:
+    """Start the live data poller background thread."""
+    global _poller_running
+    if _poller_running:
+        logger.info("Background poller already running")
+        return
+    _poller_running = True
+    threading.Thread(target=_live_data_poller, daemon=True).start()
+    logger.info("Strategy background threads initialized (live data poller).")
