@@ -1,4 +1,6 @@
+import os
 from fastapi import APIRouter, Request, Depends
+from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 from database import get_db
 from models import Trade
@@ -7,6 +9,26 @@ import trading
 from config import AUTO_TRADE_ENABLED
 
 router = APIRouter()
+
+DASHBOARD_FILE = os.path.join(os.path.dirname(__file__), "dashboard.html")
+
+
+def load_dashboard_html():
+    try:
+        with open(DASHBOARD_FILE, "r", encoding="utf-8") as f:
+            return f.read()
+    except Exception:
+        return "<h1>dashboard.html not found</h1>"
+
+
+@router.get("/", response_class=HTMLResponse)
+def serve_dashboard():
+    return load_dashboard_html()
+
+
+@router.api_route("/health", methods=["GET", "HEAD"])
+def health():
+    return {"status": "ok"}
 
 
 @router.api_route("/api/data", methods=["GET", "HEAD"])
@@ -122,8 +144,3 @@ def close_trade(request: Request, db: Session = Depends(get_db)):
     if trade:
         return {"status": "ok", "pnl": trade.pnl, "exit": trade.exit_price}
     return {"error": "No active trade to close"}
-
-
-@router.get("/health")
-def health():
-    return {"status": "ok"}
