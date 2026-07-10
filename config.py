@@ -227,21 +227,137 @@ def get_ist_now() -> datetime:
     return datetime.now(IST)
 
 def get_market_status() -> str:
-    """Returns OPEN / PRE_OPEN / CLOSED based on IST time."""
+    """
+    Returns market status based on IST time.
+
+    NSE Equity: 9:15 AM - 3:30 PM (Mon-Fri)
+    NSE F&O:   9:15 AM - 3:30 PM (Mon-Fri)
+    MCX:       9:00 AM - 11:30 PM (Mon-Fri) — extended for commodities
+
+    Pre-open:  9:00 AM - 9:15 AM
+    Closed:    All other times + Weekends + NSE holidays
+    """
     now = get_ist_now()
     t = now.time()
     weekday = now.weekday()
-    
+    date_str = now.strftime("%Y-%m-%d")
+
     # Saturday = 5, Sunday = 6
     if weekday >= 5:
         return "CLOSED"
-    
+
+    # NSE Trading Holidays 2026 (major ones)
+    # Add more as needed — ideally fetch from NSE API
+    trading_holidays_2026 = [
+        "2026-01-26",  # Republic Day
+        "2026-03-17",  # Holi
+        "2026-04-03",  # Good Friday
+        "2026-04-14",  # Dr. Baba Saheb Ambedkar Jayanti
+        "2026-05-01",  # Maharashtra Day
+        "2026-08-15",  # Independence Day
+        "2026-08-28",  # Ganesh Chaturthi
+        "2026-10-02",  # Gandhi Jayanti
+        "2026-10-20",  # Diwali (Laxmi Pujan)
+        "2026-10-21",  # Diwali Balipratipada
+        "2026-11-16",  # Gurunanak Jayanti
+        "2026-12-25",  # Christmas
+    ]
+
+    if date_str in trading_holidays_2026:
+        return "CLOSED_HOLIDAY"
+
     # Pre-open: 9:00 - 9:15
     if time(9, 0) <= t < time(9, 15):
         return "PRE_OPEN"
-    
-    # Market hours (Equity + Commodity): 9:15 - 23:55
-    if time(9, 15) <= t <= time(23, 55):
+
+    # Market hours: 9:15 - 15:30 (NSE Equity + F&O)
+    if time(9, 15) <= t <= time(15, 30):
         return "OPEN"
-    
+
+    # Post-market: 15:40 - 16:00 (for reference, still CLOSED for trading)
+    if time(15, 40) <= t <= time(16, 0):
+        return "POST_CLOSE"
+
     return "CLOSED"
+
+
+def get_market_info() -> dict:
+    """
+    Returns detailed market info for dashboard display.
+    Includes: status, next_open, time_until_open, time_until_close, session
+    """
+    now = get_ist_now()
+    t = now.time()
+    weekday = now.weekday()
+    status = get_market_status()
+
+    result = {
+        "status": status,
+        "current_time": now.strftime("%H:%M:%S"),
+        "current_date": now.strftime("%Y-%m-%d"),
+        "day": now.strftime("%A"),
+        "is_weekend": weekday >= 5,
+        "session": "—",
+        "next_open": None,
+        "time_until_open": None,
+        "time_until_close": None,
+        "market_message": "",
+    }
+
+    if status == "OPEN":
+        result["session"] = "Regular"
+        market_close = datetime.combine(now.date(), time(15, 30))
+        time_left = market_close - now
+        hours, remainder = divmod(int(time_left.total_seconds()), 3600)
+        minutes = remainder // 60
+        result["time_until_close"] = f"{hours}h {minutes}m"
+        result["market_message"] = f"✅ Market OPEN — Closes in {hours}h {minutes}m"
+
+    elif status == "PRE_OPEN":
+        result["session"] = "Pre-Open"
+        market_open = datetime.combine(now.date(), time(9, 15))
+        time_left = market_open - now
+        minutes = int(time_left.total_seconds() // 60)
+        result["time_until_open"] = f"{minutes}m"
+        result["market_message"] = f"⏳ Pre-Open — Market opens in {minutes}m"
+
+    elif status == "POST_CLOSE":
+        result["session"] = "Post-Close"
+        result["market_message"] = "📊 Post-Close Session — No new orders"
+
+    elif status == "CLOSED_HOLIDAY":
+        result["market_message"] = "🏖️ Market Closed — Trading Holiday"
+        # Find next trading day
+        next_day = now + timedelta(days=1)
+        while next_day.weekday() >= 5 or next_day.strftime("%Y-%m-%d") in [
+            "2026-01-26", "2026-03-17", "2026-04-03", "2026-04-14",
+            "2026-05-01", "2026-08-15", "2026-08-28", "2026-10-02",
+            "2026-10-20", "2026-10-21", "2026-11-16", "2026-12-25"
+        ]:
+            next_day += timedelta(days=1)
+        result["next_open"] = next_day.strftime("%Y-%m-%d (%A) 09:15 AM")
+
+    elif status == "CLOSED":
+        if weekday >= 5:
+            # Weekend
+            days_until_monday = 7 - weekday
+            next_open = now + timedelta(days=days_until_monday)
+            result["next_open"] = next_open.strftime("%Y-%m-%d (%A) 09:15 AM")
+            result["market_message"] = f"🌴 Weekend — Opens {result['next_open']}"
+        else:
+            # After hours on weekday
+            next_open = now + timedelta(days=1)
+            # Skip weekend
+            while next_open.weekday() >= 5:
+                next_open += timedelta(days=1)
+            result["next_open"] = next_open.strftime("%Y-%m-%d (%A) 09:15 AM")
+
+            # Time until next open
+            next_open_dt = datetime.combine(next_open.date(), time(9, 15))
+            time_left = next_open_dt - now
+            hours, remainder = divmod(int(time_left.total_seconds()), 3600)
+            minutes = remainder // 60
+            result["time_until_open"] = f"{hours}h {minutes}m"
+            result["market_message"] = f"🔒 Market Closed — Opens in {hours}h {minutes}m ({result['next_open']})"
+
+    return result
