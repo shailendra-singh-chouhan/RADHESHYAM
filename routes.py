@@ -193,7 +193,7 @@ def get_stats(db: Session = Depends(get_db)):
 def get_history(limit: int = 25, db: Session = Depends(get_db)):
     trades = db.query(Trade).order_by(Trade.id.desc()).limit(limit).all()
     return [{
-        "id": t.id, "date": t.trade_date, "symbol": t.symbol, "direction": t.direction,
+        "id": t.id, "date": t.trade_date, "symbol": "NIFTY", "direction": t.direction,
         "entry": t.entry, "exit": t.exit_price, "pnl": t.pnl, "status": t.status
     } for t in trades]
 
