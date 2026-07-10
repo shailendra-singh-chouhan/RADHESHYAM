@@ -7,3 +7,4 @@ pyotp
 yfinance
 requests
 gunicorn
+logzero
