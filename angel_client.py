@@ -206,3 +206,9 @@ class AngelClient:
             logger.error(f"fetch_nse_option_chain error: {e}")
         
         return {"source": "FALLBACK"}
+_client_instance = None
+def get_angel_client():
+    global _client_instance
+    if _client_instance is None:
+        _client_instance = AngelClient()
+    return _client_instance
