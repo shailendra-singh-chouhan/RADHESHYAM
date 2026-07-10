@@ -3,7 +3,6 @@ live_data_fetcher.py — Fetches ALL real market data
 
 FIXED:
 - Strike extraction uses scrip master 'strike' column directly
-- Candle fetching uses correct SmartAPI params (token, fromdate, todate)
 - VIX & Global markets cached (5-min TTL) to avoid Yahoo rate limits
 - Global markets return None instead of 0.0 on failure
 - Better error handling and logging
@@ -158,7 +157,6 @@ def fetch_nse_option_chain(index: str = "NIFTY") -> Dict[str, Any]:
         # Parse expiry and filter for nearest
         expiry_col = "expiry" if "expiry" in opts.columns else "expiry_date"
         if expiry_col in opts.columns:
-            # Try common formats: "24-JUL-2026", "24-Jul-2026", "2026-07-24"
             opts["_expiry_dt"] = pd.to_datetime(opts[expiry_col], errors="coerce", dayfirst=True)
         else:
             opts["_expiry_dt"] = pd.NaT
@@ -204,7 +202,6 @@ def fetch_nse_option_chain(index: str = "NIFTY") -> Dict[str, Any]:
                 if strike <= 0:
                     continue
 
-                # Use token-based LTP fetch for accuracy
                 ltp = client.get_ltp_by_token("NFO", symbol, token)
                 
                 if not ltp or ltp <= 0:
@@ -464,72 +461,19 @@ def fetch_stock_price(stock_name: str) -> Dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────
-# 7. CANDLE DATA (Angel One — FIXED)
+# 7. CANDLE DATA (Angel One — works on cloud)
 # ─────────────────────────────────────────────────────────────────
 
 def fetch_candles(symbol: str = "NIFTY 50", exchange: str = "NSE",
                   interval: str = "FIFTEEN_MINUTE", days: int = 5) -> List[Dict]:
-    """
-    Fetch historical candle data from Angel One.
-    FIXED: Looks up token from scrip master and uses correct date params.
-    """
+    """Fetch historical candle data from Angel One."""
     try:
         client = get_angel_client()
-        
-        # Look up token from scrip master
-        df = client._scrip_master_df
-        if df is None or df.empty:
-            logger.error("Scrip master not loaded, cannot fetch candles")
-            return []
-        
-        # Find token for the symbol
-        mask = (df["exch_seg"] == exchange) & (
-            df.get("symbol", "").str.strip().str.upper() == symbol.upper()
-            if "symbol" in df.columns
-            else df.get("name", "").str.strip().str.upper() == symbol.upper()
-        )
-        matches = df[mask]
-        
-        if matches.empty:
-            logger.error(f"Token not found for {exchange}:{symbol}")
-            return []
-        
-        token = str(matches.iloc[0]["token"])
-        
-        # Calculate fromdate and todate
-        to_date = datetime.now()
-        from_date = to_date - timedelta(days=days)
-        
-        # SmartAPI expects format: "YYYY-MM-DD HH:MM"
-        from_str = from_date.strftime("%Y-%m-%d %H:%M")
-        to_str = to_date.strftime("%Y-%m-%d %H:%M")
-        
-        # Call with correct params: exchange, token, interval, fromdate, todate
-        candles = client.get_candle_data(exchange, token, interval, from_str, to_str)
-        
-        if candles and isinstance(candles, list) and len(candles) > 0:
-            # Validate candle structure
-            valid_candles = []
-            for c in candles:
-                if isinstance(c, dict) and all(k in c for k in ["open", "high", "low", "close"]):
-                    valid_candles.append(c)
-                elif isinstance(c, (list, tuple)) and len(c) >= 5:
-                    # Some APIs return [timestamp, open, high, low, close, volume]
-                    valid_candles.append({
-                        "time": c[0],
-                        "open": float(c[1]),
-                        "high": float(c[2]),
-                        "low": float(c[3]),
-                        "close": float(c[4]),
-                        "volume": int(c[5]) if len(c) > 5 else 0,
-                    })
-            return valid_candles
-        else:
-            logger.warning(f"Empty candle response for {exchange}:{symbol}")
-            
+        candles = client.get_candle_data(exchange, symbol, interval, days)
+        if candles and len(candles) > 0:
+            return candles
     except Exception as e:
-        logger.error(f"Candle fetch error: {e}", exc_info=True)
-    
+        logger.error(f"Candle fetch error: {e}")
     return []
 
 
