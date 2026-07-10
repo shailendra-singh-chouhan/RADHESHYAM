@@ -343,6 +343,13 @@ def fetch_institutional_stats() -> dict:
     return result
 
 
+def start_background_threads():
+    """Start any background strategy threads if needed."""
+    # Currently, most polling is handled in main.py or stocks.py.
+    # This function is called by main.py to avoid ImportError.
+    logger.info("Strategy background threads initialized (placeholder).")
+
+
 # ════════════════════════════════════════════════════════
 # GLOBAL MARKETS (Yahoo Finance)
 # ════════════════════════════════════════════════════════

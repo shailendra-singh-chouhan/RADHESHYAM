@@ -105,7 +105,7 @@ def get_dashboard_data(db: Session = Depends(get_db)):
     from indicators import (
         calculate_rsi,
         calculate_ema,
-        calculate_vwap,
+        calculate_vwap_approx,
         calculate_macd,
         calculate_supertrend,
     )
@@ -117,11 +117,11 @@ def get_dashboard_data(db: Session = Depends(get_db)):
     rsi_val = calculate_rsi(closes, 14) if len(closes) >= 14 else None
     ema9_val = calculate_ema(closes, 9) if len(closes) >= 9 else None
     ema21_val = calculate_ema(closes, 21) if len(closes) >= 21 else None
-    vwap_val = calculate_vwap(candles) if candles else None
+    vwap_val = calculate_vwap_approx(candles) if candles else None
     macd_val = calculate_macd(closes) if len(closes) >= 26 else None
     st_val = (
-        calculate_supertrend(highs, lows, closes, 10, 3)
-        if len(closes) >= 10
+        calculate_supertrend(candles, 10)
+        if len(candles) >= 10
         else None
     )
 

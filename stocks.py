@@ -34,18 +34,25 @@ stock_prices = {
 
 
 def fetch_stock_ohlc(stock_name: str) -> Optional[Dict]:
-    """Fetch live OHLC for a stock."""
+    """Fetch live price for a stock (OHLC currently fallback to LTP)."""
     if stock_name not in STOCK_SYMBOLS:
         logger.warning(f"Unknown stock: {stock_name}")
         return None
     
     try:
         symbol = STOCK_SYMBOLS[stock_name]
-        # get_ohlc expects a token, which is resolved dynamically inside angel_client.get_ohlc
-        ohlc_data = angel_client.get_ohlc("NSE", symbol)
-        return ohlc_data
+        client = angel_client.get_angel_client()
+        ltp = client.get_ltp("NSE", symbol)
+        if ltp:
+            return {
+                "ltp": ltp,
+                "open": ltp,
+                "high": ltp,
+                "low": ltp,
+            }
+        return None
     except Exception as e:
-        logger.error(f"Failed to fetch OHLC for {stock_name}: {e}")
+        logger.error(f"Failed to fetch price for {stock_name}: {e}")
         return None
 
 

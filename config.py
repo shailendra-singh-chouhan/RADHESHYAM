@@ -10,6 +10,7 @@ from typing import Optional, Dict, Any, List
 ANGEL_API_KEY     = os.getenv("ANGEL_API_KEY", "")
 ANGEL_CLIENT_ID   = os.getenv("ANGEL_CLIENT_ID", "")
 ANGEL_MPIN        = os.getenv("ANGEL_MPIN", "")
+ANGEL_PASSWORD    = os.getenv("ANGEL_PASSWORD", ANGEL_MPIN) # Fallback to MPIN
 ANGEL_TOTP_SECRET = os.getenv("ANGEL_TOTP_SECRET", "")
 
 # ────────────────────────────────────────────
@@ -35,6 +36,8 @@ FTSE_SYMBOL      = "^FTSE"
 # Trading Configuration
 # ────────────────────────────────────────────
 GAP_THRESHOLD_PERCENT = float(os.getenv("GAP_THRESHOLD_PERCENT", "0.5")) # 0.5% gap threshold
+MAX_DAILY_LOSS = -2000
+MAX_DAILY_TRADES = 5
 
 # ────────────────────────────────────────────
 # Auto-Trade Toggle (SAFETY-DEFAULT: OFF)
