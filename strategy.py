@@ -17,6 +17,14 @@ import requests
 import config
 from angel_client import get_angel_client
 
+# ── Live data fetcher (real NSE, Yahoo, Angel data) ──
+from live_data_fetcher import (
+    fetch_nifty_spot, fetch_banknifty_spot, fetch_sensex_spot,
+    fetch_nse_option_chain, fetch_india_vix,
+    fetch_global_markets, fetch_fii_dii,
+    fetch_candles, fetch_all_live_data,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -487,43 +495,54 @@ _poller_running = False
 
 def _live_data_poller() -> None:
     """
-    Background thread: every 15 seconds fetches live data and updates
-    shared_state + config.state_manager.
+    Background thread: every 15 seconds fetches ALL real data
+    from NSE India, Angel One, Yahoo Finance.
     """
     global _poller_running
-    logger.info("Live data poller started")
+    logger.info("Live data poller started — ALL REAL DATA")
 
     while _poller_running:
         try:
-            # 1. Get live spot from state_manager (already set by stocks.py)
-            spot = config.state_manager.latest_prices.get("nifty")
+            # 1. Fetch spot from Angel One (real)
+            nifty = fetch_nifty_spot()
+            banknifty = fetch_banknifty_spot()
+            spot = nifty.get("value", 0)
+
             if not spot:
-                logger.debug("No spot price yet, skipping signal generation")
+                logger.warning("No NIFTY spot from Angel One")
                 time.sleep(5)
                 continue
 
-            # 2. Fetch NIFTY candles (15 min, 5 days)
-            client = get_angel_client()
-            candles = client.get_candle_data("NSE", "NIFTY 50", "FIFTEEN_MINUTE", 5)
+            # 2. Fetch candles from Angel One (real)
+            candles = fetch_candles("NIFTY 50", "NSE", "FIFTEEN_MINUTE", 5)
 
-            # 3. Generate signal
-            signal_data = generate_signal(candles, spot)
+            # 3. Generate signal from real candles
+            signal_data = generate_signal(candles, spot) if candles and len(candles) >= 21 else {
+                "signal": "WAIT",
+                "confidence": 0,
+                "checklist": {},
+                "note": "Not enough candles" if not candles else "Insufficient data",
+            }
 
-            # 4. Fetch OI data
-            oi_data = get_oi_data("NIFTY")
+            # 4. Fetch OI from NSE India (real)
+            oi_data = fetch_nse_option_chain("NIFTY")
 
-            # 5. Calculate Greeks for ATM options
+            # 5. Calculate Greeks (real Black-Scholes)
             greeks_data = get_atm_greeks(spot, "NIFTY")
 
-            # 6. Fetch global markets
+            # 6. Fetch VIX (real NSE/Yahoo)
+            vix_data = fetch_india_vix()
+
+            # 7. Fetch Global Markets (real Yahoo)
             global_data = fetch_global_markets()
 
-            # 7. Fetch institutional stats
-            inst_data = fetch_institutional_stats()
+            # 8. Fetch FII/DII (real NSE)
+            fii_dii = fetch_fii_dii()
 
-            # 8. Update shared_state (for routes.py)
+            # 9. Update shared_state
             shared_state.update({
                 "spot": spot,
+                "banknifty_spot": banknifty.get("value", 0),
                 "signal": signal_data.get("signal", "WAIT"),
                 "confidence": signal_data.get("confidence", 0),
                 "checklist": signal_data.get("checklist", {}),
@@ -532,30 +551,38 @@ def _live_data_poller() -> None:
                 "signal_note": signal_data.get("note", ""),
                 "greeks": greeks_data,
                 "oi_data": oi_data,
+                "vix": vix_data,
                 "global": global_data,
-                "institutional_stats": inst_data,
+                "institutional_stats": {
+                    "fii_buy": fii_dii["fii"]["buy"],
+                    "fii_sell": fii_dii["fii"]["sell"],
+                    "fii_net": fii_dii["fii"]["net"],
+                    "dii_buy": fii_dii["dii"]["buy"],
+                    "dii_sell": fii_dii["dii"]["sell"],
+                    "dii_net": fii_dii["dii"]["net"],
+                    "source": fii_dii["source"],
+                },
                 "last_updated": datetime.now().isoformat(),
             })
 
-            # 9. Update config.state_manager (for trading.py)
+            # 10. Update state_manager
+            config.state_manager.set_state("latest_prices", {
+                "nifty": spot,
+                "banknifty": banknifty.get("value", 0),
+            })
             config.state_manager.set_state("candle_store", candles)
             config.state_manager.set_state("signal_data", signal_data)
             config.state_manager.set_state("oi_data", oi_data)
             config.state_manager.set_state("greeks_data", greeks_data)
-            config.state_manager.set_state("indicator_data", {
-                "rsi": None,  # Could extract from signal if needed
-                "ema9": None,
-                "ema21": None,
-                "vwap_approx": None,
-                "macd": None,
-                "supertrend": None,
-            })
-            config.state_manager.set_state("institutional_stats", inst_data)
+            config.state_manager.set_state("vix_data", vix_data)
+            config.state_manager.set_state("global_data", global_data)
+            config.state_manager.set_state("fii_dii", fii_dii)
             config.state_manager.last_data_update_time = datetime.now()
 
             logger.info(
-                f"Live data updated | Spot: {spot} | Signal: {signal_data['signal']} | "
-                f"Confidence: {signal_data['confidence']} | OI Source: {oi_data.get('source')}"
+                f"LIVE DATA | Spot: {spot} | Signal: {signal_data['signal']} | "
+                f"OI: {oi_data.get('source')} | VIX: {vix_data.get('value')} | "
+                f"Global: {global_data.get('source')} | FII/DII: {fii_dii.get('source')}"
             )
 
         except Exception as e:
@@ -564,8 +591,6 @@ def _live_data_poller() -> None:
         time.sleep(15)
 
     logger.info("Live data poller stopped")
-
-
 def start_background_threads() -> None:
     """Start the live data poller background thread."""
     global _poller_running
