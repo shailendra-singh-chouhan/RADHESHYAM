@@ -302,6 +302,7 @@ body::before{content:'';position:fixed;inset:0;
   padding:4px 12px;font-size:10px;font-weight:700;font-family:'JetBrains Mono',monospace;
   white-space:nowrap;}
 </style>
+<base target="_blank">
 </head>
 <body>
 <div class="wrap">
@@ -1250,6 +1251,166 @@ candles=genCandles(60,24250); drawChart(); updateIndicators();
 setInterval(drawChart,3000);
 setInterval(updateIndicators,25000);
 window.addEventListener('resize',drawChart);
+
+
+// ═══════════════════════════════════════════════════════════════════
+// LIVE DATA POLLER — Fetches real data from backend every 5 seconds
+// ═══════════════════════════════════════════════════════════════════
+
+let liveData = {};
+let lastSpot = 0;
+
+async function fetchLiveData() {
+  try {
+    const resp = await fetch('/api/data');
+    if (!resp.ok) return;
+    const data = await resp.json();
+    liveData = data;
+    updateDashboard(data);
+  } catch (e) {
+    console.error('Live data fetch error:', e);
+  }
+}
+
+function updateDashboard(data) {
+  // 1. Update HERO price (NIFTY spot)
+  const spot = data.spot || 0;
+  if (spot > 0) {
+    lastSpot = spot;
+    document.getElementById('hero-price').textContent = spot.toLocaleString('en-IN', {minimumFractionDigits: 1, maximumFractionDigits: 1});
+
+    // Update hero stats if available
+    const ohlc = data.ohlc || {};
+    if (ohlc.open) document.getElementById('h-open').textContent = ohlc.open.toLocaleString('en-IN');
+    if (ohlc.high) document.getElementById('h-high').textContent = ohlc.high.toLocaleString('en-IN');
+    if (ohlc.low) document.getElementById('h-low').textContent = ohlc.low.toLocaleString('en-IN');
+  }
+
+  // 2. Update SIGNAL
+  const signal = data.signal || 'WAIT';
+  const confidence = data.confidence || 0;
+  const signalEl = document.getElementById('j-title');
+  if (signalEl) {
+    if (signal === 'LONG') {
+      signalEl.textContent = '🟢 STRONG BUY SIGNAL — ' + confidence + '/6 Checks';
+      signalEl.style.color = 'var(--green)';
+    } else if (signal === 'SHORT') {
+      signalEl.textContent = '🔴 STRONG SELL SIGNAL — ' + confidence + '/6 Checks';
+      signalEl.style.color = 'var(--red)';
+    } else {
+      signalEl.textContent = '⏳ WAIT — No Strong Signal (' + confidence + '/6)';
+      signalEl.style.color = 'var(--gold)';
+    }
+  }
+
+  // 3. Update OI DATA
+  const oi = data.oi_data || {};
+  if (oi.call_oi > 0 || oi.put_oi > 0) {
+    const callOI = oi.call_oi || 0;
+    const putOI = oi.put_oi || 0;
+    const totalOI = callOI + putOI;
+    const callPct = totalOI > 0 ? (callOI / totalOI * 100).toFixed(1) : 44;
+    const putPct = totalOI > 0 ? (putOI / totalOI * 100).toFixed(1) : 55;
+
+    document.getElementById('call-oi').textContent = (callOI / 100000).toFixed(1) + 'L';
+    document.getElementById('put-oi').textContent = (putOI / 100000).toFixed(1) + 'L';
+    document.getElementById('call-bar').style.width = callPct + '%';
+    document.getElementById('put-bar').style.width = putPct + '%';
+
+    const pcrEl = document.getElementById('h-pcr');
+    if (pcrEl) {
+      const pcr = oi.pcr || 0;
+      pcrEl.textContent = pcr.toFixed(2) + (pcr >= 1 ? ' 🟢' : ' 🔴');
+    }
+
+    const painEl = document.getElementById('h-maxpain');
+    if (painEl && oi.max_pain) {
+      painEl.textContent = oi.max_pain.toLocaleString('en-IN');
+    }
+  }
+
+  // 4. Update GREEKS
+  const greeks = data.greeks || {};
+  const ce = greeks.ce || {};
+  const pe = greeks.pe || {};
+
+  if (ce.delta !== undefined) {
+    const ivEl = document.getElementById('h-iv');
+    if (ivEl) ivEl.textContent = (ce.iv || 13) + '%';
+  }
+
+  // 5. Update VIX
+  const vix = data.vix || {};
+  const vixVal = vix.value || 0;
+  if (vixVal > 0) {
+    // Find VIX display element
+    const vixEls = document.querySelectorAll('.ms-v');
+    vixEls.forEach(el => {
+      if (el.parentElement && el.parentElement.textContent.includes('VIX')) {
+        el.textContent = vixVal.toFixed(2);
+        el.style.color = vix.change >= 0 ? 'var(--red)' : 'var(--green)';
+      }
+    });
+  }
+
+  // 6. Update PnL
+  const sessionPnL = data.session_pnl_rs || 0;
+  const pnlEl = document.getElementById('tb-pnl');
+  if (pnlEl) {
+    pnlEl.textContent = (sessionPnL >= 0 ? '+' : '') + '₹' + sessionPnL.toFixed(0);
+    pnlEl.style.color = sessionPnL >= 0 ? '#4ade80' : '#f87171';
+  }
+
+  const capPnlEl = document.getElementById('cap-pnl');
+  if (capPnlEl) {
+    capPnlEl.textContent = (sessionPnL >= 0 ? '+' : '') + '₹' + Math.abs(sessionPnL).toLocaleString('en-IN');
+    capPnlEl.style.color = sessionPnL >= 0 ? 'var(--green)' : 'var(--red)';
+  }
+
+  // 7. Update last updated time
+  if (data.last_updated) {
+    const dt = new Date(data.last_updated);
+    const timeStr = dt.toLocaleTimeString('en-IN');
+    // Add to footer or any timestamp element
+  }
+}
+
+// Override tickNifty to use real data instead of random
+function tickNiftyReal() {
+  if (liveData.spot && liveData.spot > 0) {
+    const spot = liveData.spot;
+    document.getElementById('hero-price').textContent = spot.toLocaleString('en-IN', {minimumFractionDigits: 1, maximumFractionDigits: 1});
+
+    const dayChg = spot - 24260.2; // Using yesterday's close as reference
+    const pct = ((dayChg / 24260.2) * 100).toFixed(2);
+    const hc = document.getElementById('hero-chg');
+
+    if (dayChg >= 0) {
+      hc.style.color = '#4ade80';
+      hc.innerHTML = `▲ +${dayChg.toFixed(2)} &nbsp;(+${pct}%) &nbsp;📈 BULLISH`;
+      document.getElementById('nifty-chg-tab').textContent = '+' + pct + '%';
+      document.getElementById('nifty-chg-tab').style.color = '#0a9e5c';
+    } else {
+      hc.style.color = '#f87171';
+      hc.innerHTML = `▼ ${dayChg.toFixed(2)} &nbsp;(${pct}%) &nbsp;📉 BEARISH`;
+      document.getElementById('nifty-chg-tab').textContent = pct + '%';
+      document.getElementById('nifty-chg-tab').style.color = '#e02d3c';
+    }
+  }
+}
+
+// Replace the random tickNifty with real data version
+// First clear the old interval
+try { clearInterval(tickNiftyInterval); } catch(e) {}
+
+// Start live data polling
+fetchLiveData();
+setInterval(fetchLiveData, 5000);
+
+// Also update the tick functions to use real data
+const tickNiftyInterval = setInterval(tickNiftyReal, 2000);
+
+console.log('✅ Live data poller initialized — fetching from /api/data every 5s');
 </script>
 </body>
 </html>
