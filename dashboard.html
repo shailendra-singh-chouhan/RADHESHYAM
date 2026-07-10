@@ -303,6 +303,7 @@ body::before{content:'';position:fixed;inset:0;
   white-space:nowrap;}
 </style>
 <base target="_blank">
+<base target="_blank">
 </head>
 <body>
 <div class="wrap">
@@ -931,6 +932,25 @@ body::before{content:'';position:fixed;inset:0;
 </div>
 
 <script>
+
+// ═══════════════════════════════════════════════════════════════════
+// KILL ALL FAKE TICKERS — Capture and clear all fake intervals
+// ═══════════════════════════════════════════════════════════════════
+const _fakeIntervals = [];
+const _originalSetInterval = window.setInterval;
+window.setInterval = function(...args) {
+  const id = _originalSetInterval.apply(window, args);
+  _fakeIntervals.push(id);
+  return id;
+};
+// After all fake intervals are created, kill them
+setTimeout(() => {
+  console.log("Killing " + _fakeIntervals.length + " fake intervals...");
+  _fakeIntervals.forEach(id => { try { clearInterval(id); } catch(e) {} });
+  window.setInterval = _originalSetInterval;
+  console.log("✅ All fake tickers killed");
+}, 500);
+
 // ── CLOCK & SESSION ────────────────────────────────────────
 function updateClock(){
   const n=new Date();
