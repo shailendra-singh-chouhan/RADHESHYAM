@@ -55,14 +55,17 @@ def init_db() -> None:
     except Exception as e:
         logger.error(f"init_db error: {e}")
 
-    # ---- One-time lightweight migration for trade_date ----
+    # ---- One-time lightweight migration for trade_date + symbol ----
     try:
         with db_engine.connect() as conn:
             conn.execute(text(
                 "ALTER TABLE trades ADD COLUMN IF NOT EXISTS trade_date VARCHAR(10)"
             ))
+            conn.execute(text(
+                "ALTER TABLE trades ADD COLUMN IF NOT EXISTS symbol VARCHAR(64)"
+            ))
             conn.commit()
-        logger.info("Migration check passed: trade_date column ensured.")
+        logger.info("Migration check passed: trade_date + symbol columns ensured.")
     except Exception as e:
         logger.error(f"migration check error (safe to ignore if table is brand new): {e}")
 
