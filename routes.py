@@ -1,244 +1,214 @@
-"""
-routes.py — FastAPI API endpoints for GOAT PRO dashboard
-Updated with Kill-Switch integration and Analytics endpoints.
-Fix: /api/data no longer holds a DB connection across slow external API calls
-(was exhausting the SQLAlchemy connection pool under frequent polling).
-"""
-import logging
-from datetime import datetime, time as dt_time
-from typing import Optional, List
-
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+import datetime
+from pathlib import Path
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
+from logzero import logger
 
-import config
-from database import get_db, SessionLocal
+from database import get_db, db_engine
 from models import Trade
-from angel_client import get_angel_client
-from strategy import (
-    generate_signal,
-    get_oi_data,
-    calculate_greeks,
-    fetch_institutional_stats,
-    fetch_global_markets,
-)
-from trading import open_paper_trade, close_paper_trade
-import auto_execute
+import config
+import trading
+import angel_client
+import strategy
+import stocks
 
-logger = logging.getLogger(__name__)
 router = APIRouter()
 
+DASHBOARD_FILE = Path(__file__).parent / "dashboard.html"
 
-# ════════════════════════════════════════════════════════
-# REQUEST / RESPONSE MODELS
-# ════════════════════════════════════════════════════════
-class ExecuteRequest(BaseModel):
-    direction: Optional[str] = None
-    entry: Optional[float] = None
+def load_dashboard_html() -> str:
+    """Loads the dashboard HTML from disk."""
+    return DASHBOARD_FILE.read_text(encoding="utf-8")
 
-
-class CloseRequest(BaseModel):
-    reason: Optional[str] = "Manual Close"
-
-
-# ════════════════════════════════════════════════════════
-# HELPERS
-# ════════════════════════════════════════════════════════
-def _market_status() -> str:
-    now = datetime.now()
-    t = now.time()
-    if now.weekday() >= 5:
-        return "CLOSED"
-    if dt_time(9, 15) <= t <= dt_time(15, 30):
-        return "OPEN"
-    if dt_time(9, 0) <= t < dt_time(9, 15):
-        return "PRE_OPEN"
-    return "CLOSED"
-
-
-# ════════════════════════════════════════════════════════
-# MAIN DASHBOARD ENDPOINT
-# ════════════════════════════════════════════════════════
-@router.get("/api/data")
-def get_dashboard_data():
-    client = get_angel_client()
-    status = _market_status()
-
-    # ── Short-lived DB session #1: risk guardrail check only ──
-    db1 = SessionLocal() if SessionLocal else None
-    try:
-        if db1:
-            risk_ok, risk_msg = auto_execute.enforce_risk_guardrail(db1)
-        else:
-            risk_ok, risk_msg = True, "Risk OK (No DB)"
-    finally:
-        if db1:
-            db1.close()
-
-    # ── Everything below is slow network I/O — NO db connection held here ──
-    spot = client.get_ltp("NSE", "NIFTY") or 0
-    banknifty = client.get_ltp("NSE", "BANKNIFTY") or 0
-    finnifty = client.get_ltp("NSE", "FINNIFTY") or 0
-    sensex = client.get_ltp("BSE", "SENSEX") or 0
-    crudeoil = client.get_ltp("MCX", "CRUDEOIL") or 0
-    gold = client.get_ltp("MCX", "GOLD") or 0
-    silver = client.get_ltp("MCX", "SILVER") or 0
-    usdinr = client.get_ltp("CDS", "USDINR") or 0
-    midcap = client.get_ltp("NSE", "NIFTY MIDCAP 100") or 0
-    vix = client.get_ltp("NSE", "INDIA VIX") or 0
-
-    day_open = spot
-    candles = client.get_candle_data("NSE", "NIFTY", "FIFTEEN_MINUTE", days=1)
-    if candles:
-        day_open = candles[0]["open"]
-
-    from indicators import (
-        calculate_rsi,
-        calculate_ema,
-        calculate_vwap_approx,
-        calculate_macd,
-        calculate_supertrend,
-    )
-
-    closes = [c["close"] for c in candles] if candles else []
-    rsi_val = calculate_rsi(closes, 14) if len(closes) >= 14 else None
-    ema9_val = calculate_ema(closes, 9) if len(closes) >= 9 else None
-    ema21_val = calculate_ema(closes, 21) if len(closes) >= 21 else None
-    vwap_val = calculate_vwap_approx(candles) if candles else None
-    macd_val = calculate_macd(closes) if len(closes) >= 26 else None
-    st_val = calculate_supertrend(candles, 10) if len(candles) >= 10 else None
-
-    indicators = {
-        "rsi": round(rsi_val, 1) if rsi_val else 0,
-        "ema9": round(ema9_val, 2) if ema9_val else 0,
-        "ema21": round(ema21_val, 2) if ema21_val else 0,
-        "vwap_approx": round(vwap_val, 2) if vwap_val else 0,
-        "macd": {
-            "macd": round(macd_val["macd"], 2) if macd_val and macd_val.get("macd") else 0,
-            "signal": round(macd_val["signal"], 2) if macd_val and macd_val.get("signal") else 0,
-        },
-        "supertrend": {
-            "trend": st_val.get("trend", "WAIT") if st_val else "WAIT",
-            "value": round(st_val.get("value", 0), 2) if st_val else 0,
-        },
-    }
-
-    real_signal = (generate_signal(candles, spot) if candles and spot > 0 else None) or {
-        "signal": "WAIT",
-        "confidence": 0,
-        "checklist": {},
-        "orb_high": 0,
-        "orb_low": 0,
-        "note": "No candle data",
-    }
-
-    oi_data = get_oi_data("NIFTY") or {}
-    max_pain = oi_data.get("max_pain", 0) or int(spot / 50) * 50
-    strike = max_pain
-    option_type = "PE" if real_signal.get("signal") == "SHORT" else "CE"
-
-    options_contract = {"symbol": f"NIFTY {strike} {option_type}", "premium_estimate": "---"}
-    if status == "OPEN" and spot > 0:
-        try:
-            ltp_result = client.get_option_ltp("NIFTY", strike, option_type)
-            if ltp_result:
-                options_contract["premium_estimate"] = f"₹{ltp_result['ltp']:.2f}"
-        except: pass
-
-    greeks_data = calculate_greeks(spot=spot, strike=strike, option_type=option_type, days_to_expiry=5, iv_percent=15)
-    inst_stats = fetch_institutional_stats() or {}
-    global_data = fetch_global_markets() or {}
-
-    stocks = {}
-    for sym in ["HDFC", "SBI", "PNB", "YES", "INFY"]:
-        try:
-            ltp = client.get_ltp("NSE", sym)
-            if ltp: stocks[sym] = {"ltp": round(ltp, 2)}
-        except: pass
-
-    # ── Short-lived DB session #2: active trade + today's PnL only ──
-    active_trade = None
-    session_pnl = 0
-    db2 = SessionLocal() if SessionLocal else None
-    try:
-        if db2:
-            open_trade = db2.query(Trade).filter(Trade.status == "ACTIVE").order_by(Trade.id.desc()).first()
-            if open_trade:
-                pnl = (spot - open_trade.entry) * 75 if open_trade.direction == "LONG" else (open_trade.entry - spot) * 75
-                active_trade = {"direction": open_trade.direction, "entry": open_trade.entry, "live_pnl": round(pnl, 2)}
-
-            today_str = datetime.now().date().isoformat()
-            today_trades = db2.query(Trade).filter(Trade.trade_date == today_str).all()
-            session_pnl = sum(t.pnl or 0 for t in today_trades)
-    finally:
-        if db2:
-            db2.close()
-
-    return {
-        "spot": round(spot, 2), "banknifty": round(banknifty, 2), "finnifty": round(finnifty, 2),
-        "market_status": status, "risk_ok": risk_ok, "risk_message": risk_msg,
-        "session_pnl_rs": round(session_pnl, 2), "indicators": indicators,
-        "real_signal": real_signal, "active_trade": active_trade,
-        "institutional_stats": inst_stats, "oi_data": oi_data, "greeks_data": greeks_data,
-        "stocks": stocks, "global": global_data, "last_update": datetime.now().isoformat()
-    }
-
-
-# ════════════════════════════════════════════════════════
-# ANALYTICS & HISTORY ENDPOINTS
-# ════════════════════════════════════════════════════════
-@router.get("/api/stats")
-def get_stats(db: Session = Depends(get_db)):
-    closed = db.query(Trade).filter(Trade.status == "CLOSED").all()
-    total = len(closed)
-    wins = sum(1 for t in closed if (t.pnl or 0) > 0)
-    acc_pnl = sum(t.pnl or 0 for t in closed)
-    
-    today_str = datetime.now().date().isoformat()
-    today_trades = db.query(Trade).filter(Trade.trade_date == today_str).all()
-    day_pnl = sum(t.pnl or 0 for t in today_trades)
-
-    return {
-        "total_trades": total,
-        "win_rate": round(wins/total*100, 1) if total > 0 else 0,
-        "accumulated_pnl": round(acc_pnl, 2),
-        "day_pnl": round(day_pnl, 2),
-        "kill_switch": auto_execute.kill_switch_status()
-    }
-
-@router.get("/api/history")
-def get_history(limit: int = 25, db: Session = Depends(get_db)):
-    trades = db.query(Trade).order_by(Trade.id.desc()).limit(limit).all()
-    return [{
-        "id": t.id, "date": t.trade_date, "symbol": "NIFTY", "direction": t.direction,
-        "entry": t.entry, "exit": t.exit_price, "pnl": t.pnl, "status": t.status
-    } for t in trades]
-
-@router.get("/api/kill_switch")
-def get_kill_switch():
-    return auto_execute.kill_switch_status()
-
-
-# ════════════════════════════════════════════════════════
-# EXECUTE / CLOSE TRADE ENDPOINTS (Aligned with Frontend)
-# ════════════════════════════════════════════════════════
-@router.post("/api/execute_trade")
-def execute_trade_endpoint(db: Session = Depends(get_db)):
-    # Check Kill-Switch first
-    ok, msg = auto_execute.enforce_risk_guardrail(db)
-    if not ok:
-        raise HTTPException(status_code=423, detail=msg)
-        
-    success, msg = open_paper_trade(db)
-    return {"success": success, "message": msg}
-
-@router.post("/api/close_trade")
-def close_trade_endpoint(db: Session = Depends(get_db)):
-    success, msg = close_paper_trade(db)
-    return {"success": success, "message": msg}
+@router.get("/", response_class=HTMLResponse)
+async def read_root() -> HTMLResponse:
+    """The main dashboard UI."""
+    return HTMLResponse(content=load_dashboard_html())
 
 @router.api_route("/health", methods=["GET", "HEAD"])
-def health():
-    return {"status": "ok", "time": datetime.now().isoformat()}
+async def health() -> dict:
+    return {
+        "status": "healthy",
+        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "service": "GOAT PRO Institutional",
+        "version": "3.2",
+        "db_connected": db_engine is not None,
+    }
+
+@router.get("/ping")
+async def ping() -> dict:
+    return {"status": "alive"}
+
+# NOTE: The /token login route and all `Depends(get_current_user)` auth checks
+# were removed here (per user request) - they made the dashboard's own API
+# calls return 401 Unauthorized because dashboard.html never sends a Bearer
+# token. auth.py is left in the repo but unused; nothing imports it now.
+
+@router.get("/api/data")
+async def api_data(db: Session = Depends(get_db)) -> JSONResponse:
+    """Main data endpoint that the dashboard polls every few seconds."""
+    market_status = config.get_market_status()
+    risk_ok, risk_message = trading.check_risk_limits(db) if db else (True, "Risk OK (no DB)")
+    stats = trading.get_institutional_stats(db)
+    
+    # PRO Auto-Trade Logic
+    auto_status = trading.process_auto_signal(db) if db else {"action": "skipped", "reason": "No DB"}
+    
+    # Access state via state_manager
+    state = config.state_manager
+    latest_prices = state.latest_prices
+    signal_data = state.signal_data
+    
+    # Phase 4: Calculate Options Contract dynamically
+    selected_contract = None
+    spot = latest_prices.get("nifty")
+    if signal_data and signal_data.get("signal") in ["LONG", "SHORT"] and spot:
+        selected_contract = trading.get_options_contract(spot, signal_data["signal"])
+
+    current_active = None
+    session_pnl = 0.0
+    live_pnl = None
+    today = config.get_ist_now().date().isoformat()
+    
+    if db:
+        try:
+            active_row = db.query(Trade).filter(Trade.status == "ACTIVE").first()
+            if active_row:
+                current_active = {
+                    "direction": active_row.direction,
+                    "entry": active_row.entry,
+                    "target": active_row.target,
+                    "sl": active_row.sl,
+                }
+                if latest_prices.get("nifty") is not None:
+                    # FIX: Direction-aware PnL calculation
+                    # SHORT: profit when price falls (entry - current)
+                    # LONG:  profit when price rises (current - entry)
+                    if active_row.direction == "SHORT":
+                        live_pnl = round(active_row.entry - latest_prices["nifty"], 2)
+                    else:  # LONG (default)
+                        live_pnl = round(latest_prices["nifty"] - active_row.entry, 2)
+            
+            # Today's closed trades PnL
+            today_closed = db.query(Trade).filter(
+                Trade.status == "CLOSED", Trade.trade_date == today,
+            ).all()
+            session_pnl = sum(t.pnl or 0 for t in today_closed)
+        except Exception as e:
+            logger.error(f"api_data query error: {e}")
+
+    return JSONResponse({
+        "spot": latest_prices.get("nifty"),
+        "banknifty": latest_prices.get("banknifty"),
+        "finnifty": latest_prices.get("finnifty"),
+        "sensex": latest_prices.get("sensex"),
+        "crudeoil": latest_prices.get("crudeoil"),
+        "gold": latest_prices.get("gold"),
+        "silver": latest_prices.get("silver"),
+        "usdinr": latest_prices.get("usdinr"),
+        "midcap": latest_prices.get("midcap"),
+        "vix": latest_prices.get("vix"),
+        "day_open": latest_prices.get("day_open"),
+        "market_status": market_status,
+        "risk_ok": risk_ok,
+        "risk_message": risk_message,
+        "auto_trade": auto_status,
+        "session_pnl_rs": session_pnl,
+        "win_rate": stats["win_rate"],
+        "total_trades": stats["total_trades"],
+        "institutional_stats": stats,
+        "options_contract": selected_contract,
+        "oi_data": state.oi_data,
+        "greeks": state.greeks_data,
+        "alerts": list(state.market_alerts)[-10:], # last 10 alerts to save bandwidth
+        "stocks": stocks.get_all_stock_data(),
+        "indicators": state.indicator_data,
+        "global": {
+            "kospi": latest_prices.get("kospi"),
+            "nasdaq": latest_prices.get("nasdaq"),
+            "dji": latest_prices.get("dji"),
+            "source": "YAHOO_FINANCE",  # Real data via yfinance
+        },
+        "active_trade": {
+            "direction": current_active["direction"],
+            "entry": current_active["entry"],
+            "target": current_active["target"],
+            "sl": current_active["sl"],
+            "live_pnl": live_pnl,
+        } if current_active else None,
+        "real_signal": signal_data,
+        "last_update": state.last_data_update_time.isoformat() if state.last_data_update_time else "N/A", # Use last_data_update_time
+    })
+
+@router.get("/api/trades")
+async def api_trades(db: Session = Depends(get_db)) -> dict:
+    if db is None:
+        return {"open": None, "closed": [], "stats": trading.get_institutional_stats(None)}
+    try:
+        open_trade = db.query(Trade).filter(Trade.status == "ACTIVE").first()
+        closed_trades = db.query(Trade).filter(Trade.status == "CLOSED")\
+                                       .order_by(Trade.closed_at.desc()).limit(100).all()
+        return {
+            "open": open_trade.to_dict() if open_trade else None,
+            "closed": [t.to_dict() for t in closed_trades],
+            "stats": trading.get_institutional_stats(db),
+        }
+    except Exception as e:
+        logger.error(f"api_trades error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/api/execute_trade")
+async def api_execute_trade(db: Session = Depends(get_db)) -> dict:
+    success, message = trading.open_paper_trade(db)
+    return {"success": success, "message": message}
+
+@router.post("/api/close_trade")
+async def api_close_trade(db: Session = Depends(get_db)) -> dict:
+    success, message = trading.close_paper_trade(db)
+    return {"success": success, "message": message}
+
+@router.get("/api/candles")
+async def api_candles() -> dict:
+    candles = config.state_manager.candle_store
+    return {"candles": candles}
+
+@router.get("/get_market_data")
+async def get_market_data_endpoint(symbol: str) -> dict:
+    symbol_map = {
+        "NIFTY": ("NSE", config.NIFTY_SYMBOL),
+        "BANKNIFTY": ("NSE", config.BANKNIFTY_SYMBOL),
+        "VIX": ("NSE", config.VIX_SYMBOL),
+    }
+    key = symbol.upper().strip()
+    if key not in symbol_map:
+        raise HTTPException(status_code=404, detail=f"Unknown symbol: {symbol}")
+    
+    exch, sym = symbol_map[key]
+    ltp = angel_client.get_ltp(exch, sym)
+    
+    if key == "VIX" and ltp is None:
+        ltp = angel_client.get_ltp("NFO", sym)
+        
+    candles = angel_client.fetch_todays_candles() if key == "NIFTY" else []
+    return {"symbol": sym, "ltp": ltp, "todays_candles": candles or []}
+
+@router.get("/institutional_stats")
+async def get_stats_endpoint(db: Session = Depends(get_db)) -> dict:
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database is not connected.")
+    try:
+        active_count = db.query(Trade).filter(Trade.status == "ACTIVE").count()
+        closed_count = db.query(Trade).filter(Trade.status == "CLOSED").count()
+        total_pnl = db.query(func.coalesce(func.sum(Trade.pnl), 0.0))\
+                       .filter(Trade.status == "CLOSED").scalar()
+        stats = {
+            "total_active_trades": active_count,
+            "total_closed_trades": closed_count,
+            "total_pnl_realized": round(total_pnl, 2) if total_pnl is not None else 0.0,
+        }
+        return stats
+    except Exception as e:
+        logger.error(f"Error fetching stats: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch stats: {e}")
