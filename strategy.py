@@ -16,6 +16,24 @@ from angel_client import get_angel_client
 logger = logging.getLogger(__name__)
 
 
+
+# ════════════════════════════════════════════════════════
+# SHARED STATE — global dict used by routes.py & background threads
+# ════════════════════════════════════════════════════════
+
+shared_state: Dict[str, Any] = {
+    "spot": 0.0,
+    "active_trade": None,
+    "signal": "WAIT",
+    "confidence": 0,
+    "checklist": {},
+    "greeks": {},
+    "oi_data": {},
+    "global": {},
+    "institutional_stats": {},
+    "last_updated": None,
+}
+
 # ════════════════════════════════════════════════════════
 # SIGNAL GENERATION — 6-check GOAT system
 # ════════════════════════════════════════════════════════
