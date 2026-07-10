@@ -1,109 +1,76 @@
-import os
-import logging
-import time
+import os, logging, time, requests, pyotp, pandas as pd
 from datetime import datetime, timedelta
-from typing import Optional, Dict, Any, List
-import pandas as pd
-import requests
-import pyotp
 from SmartApi import SmartConnect
 import config
 
 logger = logging.getLogger(__name__)
 
 class AngelClient:
-    _KNOWN_TOKENS = {
-        ("NSE", "NIFTY 50"): "26000", ("NSE", "NIFTY"): "26000",
-        ("NFO", "NIFTY"): "26000", ("NSE", "BANKNIFTY"): "26009",
-        ("NFO", "BANKNIFTY"): "26009", ("BSE", "SENSEX"): "1"
-    }
-
     def __init__(self):
-        self.smart_api = None
-        self._last_login_time = 0
-        self._scrip_master_df = None
-        self._login()
-        self._load_scrip_master()
+        self.api = None
+        self.last_login = 0
+        self.master_df = None
+        self.login()
+        self.load_master()
 
-    def _login(self):
+    def login(self):
         try:
-            self.smart_api = SmartConnect(api_key=config.ANGEL_API_KEY)
-            data = self.smart_api.generateSession(config.ANGEL_CLIENT_ID, config.ANGEL_MPIN, pyotp.TOTP(config.ANGEL_TOTP_SECRET).now())
-            if data.get("status"):
-                self._last_login_time = time.time()
-                logger.info("Login Successful")
-                return True
-        except Exception as e:
-            logger.error(f"Login Error: {e}")
+            self.api = SmartConnect(api_key=config.ANGEL_API_KEY)
+            res = self.api.generateSession(config.ANGEL_CLIENT_ID, config.ANGEL_MPIN, pyotp.TOTP(config.ANGEL_TOTP_SECRET).now())
+            if res.get("status"): self.last_login = time.time(); return True
+        except: pass
         return False
 
-    def _ensure_session(self):
-        if time.time() - self._last_login_time > 1800: return self._login()
-        return self.smart_api is not None
+    def ensure(self):
+        if time.time() - self.last_login > 1800: return self.login()
+        return self.api is not None
 
-    def _load_scrip_master(self):
+    def load_master(self):
         try:
-            resp = requests.get("https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json", timeout=15)
-            if resp.status_code == 200 and resp.text.strip():
-                self._scrip_master_df = pd.DataFrame(resp.json())
-                for col in ("symbol", "name", "exch_seg"):
-                    self._scrip_master_df[col] = self._scrip_master_df[col].astype(str).str.upper().str.strip()
-                self._scrip_master_df["token"] = self._scrip_master_df["token"].astype(str)
-        except Exception as e:
-            logger.error(f"Scrip Master Error: {e}")
-
-    def get_token(self, exchange, symbol):
-        if self._scrip_master_df is None or self._scrip_master_df.empty:
-            return self._KNOWN_TOKENS.get((exchange.upper(), symbol.upper()))
-        df = self._scrip_master_df
-        match = df[(df["exch_seg"] == exchange.upper()) & (df["symbol"] == symbol.upper())]
-        if not match.empty:
-            if exchange.upper() in ("NFO", "MCX"):
-                match = match.copy()
-                match["_exp"] = pd.to_datetime(match["expiry"], format="%d%b%Y", errors="coerce")
-                match = match.dropna(subset=["_exp"]).sort_values("_exp")
-                return str(match.iloc[0]["token"])
-            return str(match.iloc[0]["token"])
-        return self._KNOWN_TOKENS.get((exchange.upper(), symbol.upper()))
-
-    def get_ltp(self, exchange, symbol):
-        if not self._ensure_session(): return None
-        token = self.get_token(exchange, symbol)
-        try:
-            res = self.smart_api.ltpData(exchange, symbol, token)
-            if res.get("status"): return float(res["data"]["ltp"])
+            r = requests.get("https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json", timeout=10)
+            if r.status_code == 200:
+                self.master_df = pd.DataFrame(r.json())
+                self.master_df["symbol"] = self.master_df["symbol"].str.upper()
         except: pass
-        return None
 
-    def get_candle_data(self, exchange, symbol, interval="FIFTEEN_MINUTE", days=5):
-        if not self._ensure_session(): return []
-        token = self.get_token(exchange, symbol)
+    def get_token(self, exch, sym):
+        if self.master_df is None: return "26000" if "NIFTY" in sym else "26009"
+        m = self.master_df[(self.master_df["exch_seg"] == exch) & (self.master_df["symbol"] == sym)]
+        return str(m.iloc[0]["token"]) if not m.empty else "26000"
+
+    def get_ltp(self, exch, sym):
+        if not self.ensure(): return 0
+        try:
+            r = self.api.ltpData(exch, sym, self.get_token(exch, sym))
+            return float(r["data"]["ltp"]) if r.get("status") else 0
+        except: return 0
+
+    def get_candle_data(self, exch, sym, interval="FIFTEEN_MINUTE", days=2):
+        if not self.ensure(): return []
         try:
             to_dt = datetime.now()
-            from_dt = to_dt - timedelta(days=days)
-            params = {"exchange": exchange, "symbol": symbol, "token": token, "interval": interval, "from": from_dt.strftime("%Y-%m-%d %H:%M"), "to": to_dt.strftime("%Y-%m-%d %H:%M")}
-            res = self.smart_api.getCandleData(params)
-            if res and res.get("status") and res.get("data"):
-                return [{"time": c[0], "open": float(c[1]), "high": float(c[2]), "low": float(c[3]), "close": float(c[4]), "volume": int(c[5])} for c in res["data"] if len(c) >= 5]
-        except Exception as e:
-            logger.error(f"Candle Error: {e}")
+            fr_dt = to_dt - timedelta(days=days)
+            p = {"exchange": exch, "symbol": sym, "token": self.get_token(exch, sym), "interval": interval, "from": fr_dt.strftime("%Y-%m-%d %H:%M"), "to": to_dt.strftime("%Y-%m-%d %H:%M")}
+            r = self.api.getCandleData(p)
+            if r.get("status"): return [{"time": c[0], "open": float(c[1]), "high": float(c[2]), "low": float(c[3]), "close": float(c[4]), "volume": int(c[5])} for c in r["data"]]
+        except: pass
         return []
 
     def fetch_nse_option_chain(self, index="NIFTY"):
         try:
+            h = {"User-Agent": "Mozilla/5.0", "Referer": "https://www.nseindia.com/"}
             s = requests.Session()
-            h = {"User-Agent": "Mozilla/5.0", "Accept": "application/json", "Referer": "https://www.nseindia.com/"}
             s.get("https://www.nseindia.com", headers=h, timeout=5)
-            res = s.get(f"https://www.nseindia.com/api/option-chain-indices?symbol={index.upper()}", headers=h, timeout=5)
-            if res.status_code == 200:
-                d = res.json()
-                f = d["filtered"]["data"]
-                return {"source": "NSE_LIVE", "pcr": round(sum(x.get("PE",{}).get("openInterest",0) for x in f)/sum(x.get("CE",{}).get("openInterest",0) for x in f), 2) if sum(x.get("CE",{}).get("openInterest",0) for x in f) > 0 else 0}
+            r = s.get(f"https://www.nseindia.com/api/option-chain-indices?symbol={index}", headers=h, timeout=5)
+            if r.status_code == 200:
+                f = r.json()["filtered"]["data"]
+                pcr = sum(x.get("PE",{}).get("openInterest",0) for x in f) / sum(x.get("CE",{}).get("openInterest",0) for x in f)
+                return {"source": "NSE", "pcr": round(pcr, 2), "call_oi": sum(x.get("CE",{}).get("openInterest",0) for x in f), "put_oi": sum(x.get("PE",{}).get("openInterest",0) for x in f)}
         except: pass
-        return {"source": "FALLBACK", "pcr": 1.0}
+        return {"source": "FALLBACK", "pcr": 1.0, "call_oi": 0, "put_oi": 0}
 
-_inst = None
+_i = None
 def get_angel_client():
-    global _inst
-    if _inst is None: _inst = AngelClient()
-    return _inst
+    global _i
+    if _i is None: _i = AngelClient()
+    return _i
