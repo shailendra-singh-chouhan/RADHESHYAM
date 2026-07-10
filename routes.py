@@ -1,6 +1,8 @@
 """
 routes.py — FastAPI API endpoints for GOAT PRO dashboard
 Updated with Kill-Switch integration and Analytics endpoints.
+Fix: /api/data no longer holds a DB connection across slow external API calls
+(was exhausting the SQLAlchemy connection pool under frequent polling).
 """
 import logging
 from datetime import datetime, time as dt_time
@@ -12,7 +14,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 import config
-from database import get_db
+from database import get_db, SessionLocal
 from models import Trade
 from angel_client import get_angel_client
 from strategy import (
@@ -60,13 +62,22 @@ def _market_status() -> str:
 # MAIN DASHBOARD ENDPOINT
 # ════════════════════════════════════════════════════════
 @router.get("/api/data")
-def get_dashboard_data(db: Session = Depends(get_db)):
+def get_dashboard_data():
     client = get_angel_client()
     status = _market_status()
-    
-    # Delegate risk check to auto_execute (Kill-Switch)
-    risk_ok, risk_msg = auto_execute.enforce_risk_guardrail(db)
 
+    # ── Short-lived DB session #1: risk guardrail check only ──
+    db1 = SessionLocal() if SessionLocal else None
+    try:
+        if db1:
+            risk_ok, risk_msg = auto_execute.enforce_risk_guardrail(db1)
+        else:
+            risk_ok, risk_msg = True, "Risk OK (No DB)"
+    finally:
+        if db1:
+            db1.close()
+
+    # ── Everything below is slow network I/O — NO db connection held here ──
     spot = client.get_ltp("NSE", "NIFTY") or 0
     banknifty = client.get_ltp("NSE", "BANKNIFTY") or 0
     finnifty = client.get_ltp("NSE", "FINNIFTY") or 0
@@ -147,15 +158,23 @@ def get_dashboard_data(db: Session = Depends(get_db)):
             if ltp: stocks[sym] = {"ltp": round(ltp, 2)}
         except: pass
 
+    # ── Short-lived DB session #2: active trade + today's PnL only ──
     active_trade = None
-    open_trade = db.query(Trade).filter(Trade.status == "ACTIVE").order_by(Trade.id.desc()).first()
-    if open_trade:
-        pnl = (spot - open_trade.entry) * 75 if open_trade.direction == "LONG" else (open_trade.entry - spot) * 75
-        active_trade = {"direction": open_trade.direction, "entry": open_trade.entry, "live_pnl": round(pnl, 2)}
+    session_pnl = 0
+    db2 = SessionLocal() if SessionLocal else None
+    try:
+        if db2:
+            open_trade = db2.query(Trade).filter(Trade.status == "ACTIVE").order_by(Trade.id.desc()).first()
+            if open_trade:
+                pnl = (spot - open_trade.entry) * 75 if open_trade.direction == "LONG" else (open_trade.entry - spot) * 75
+                active_trade = {"direction": open_trade.direction, "entry": open_trade.entry, "live_pnl": round(pnl, 2)}
 
-    today_str = datetime.now().date().isoformat()
-    today_trades = db.query(Trade).filter(Trade.trade_date == today_str).all()
-    session_pnl = sum(t.pnl or 0 for t in today_trades)
+            today_str = datetime.now().date().isoformat()
+            today_trades = db2.query(Trade).filter(Trade.trade_date == today_str).all()
+            session_pnl = sum(t.pnl or 0 for t in today_trades)
+    finally:
+        if db2:
+            db2.close()
 
     return {
         "spot": round(spot, 2), "banknifty": round(banknifty, 2), "finnifty": round(finnifty, 2),
