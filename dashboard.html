@@ -827,7 +827,9 @@ function populateAll() {
   drawCandles();
 }
 
-function drawCandles() {
+let _lastRealCandles = null;
+
+async function drawCandles() {
   const c = document.getElementById('candleChart');
   if (!c) return;
   const ctx = c.getContext('2d');
@@ -837,15 +839,25 @@ function drawCandles() {
   ctx.strokeStyle = 'rgba(255,255,255,0.03)'; ctx.lineWidth = 1;
   for (let i=0; i<5; i++) { ctx.beginPath(); ctx.moveTo(0, h*i/5); ctx.lineTo(w, h*i/5); ctx.stroke(); }
 
-  const n = REAL_DATA.nifty;
-  const candles = [];
-  for (let i = 0; i < 30; i++) {
-    const base = n.spot - 100 + Math.random() * 200;
-    candles.push({ o: base, h: base + Math.random()*30, l: base - Math.random()*30, c: base + (Math.random()-0.5)*40 });
+  // Real candles from the backend (config.state_manager.candle_store) —
+  // no more Math.random() fake data. If none are available yet, show a
+  // waiting message instead of fabricating a chart.
+  let candles = _lastRealCandles;
+  try {
+    const res = await fetch('/api/candles');
+    const d = await res.json();
+    if (d.candles && d.candles.length > 0) {
+      candles = d.candles.map(x => ({ o: x.open, h: x.high, l: x.low, c: x.close }));
+      _lastRealCandles = candles;
+    }
+  } catch (e) { /* keep last known candles on fetch failure */ }
+
+  if (!candles || candles.length === 0) {
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    ctx.font = '13px sans-serif';
+    ctx.fillText('Waiting for real candle data...', 20, h/2);
+    return;
   }
-  candles[candles.length-1].c = n.spot;
-  candles[candles.length-1].h = Math.max(candles[candles.length-1].h, n.high);
-  candles[candles.length-1].l = Math.min(candles[candles.length-1].l, n.low);
 
   const prices = candles.flatMap(d => [d.h, d.l]);
   const min = Math.min(...prices), max = Math.max(...prices), range = max - min || 1;
