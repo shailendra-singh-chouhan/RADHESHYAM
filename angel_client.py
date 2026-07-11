@@ -215,5 +215,35 @@ class AngelClient:
             result = self.smart_api.ltpData(exchange, symbol, token)
             if result and result.get("status") and result.get("data"):
                 d = result["data"]
+                # NOTE: ltpData only returns LTP, not real open/high/low/close.
+                # Returning those as None (not 0) so callers don't mistake
+                # missing data for a real zero price.
                 return {
-                    "
+                    "ltp": float(d.get("ltp", 0) or 0),
+                    "open": None,
+                    "high": None,
+                    "low": None,
+                    "close": None,
+                }
+            logger.warning("get_ohlc failed for %s/%s: %s", exchange, symbol, result)
+        except Exception as e:
+            logger.error("get_ohlc exception %s/%s: %s", exchange, symbol, e)
+        return None
+
+
+# ────────────────────────────────────────────────────────
+# SINGLETON — used everywhere else in the app (main.py, stocks.py,
+# strategy.py, live_data_fetcher.py) via get_angel_client().
+# This was accidentally removed in a recent rewrite, breaking every
+# import across the app. Do not remove this again.
+# ────────────────────────────────────────────────────────
+
+_angel_client: Optional["AngelClient"] = None
+
+
+def get_angel_client() -> "AngelClient":
+    """Get or create the singleton AngelClient instance."""
+    global _angel_client
+    if _angel_client is None:
+        _angel_client = AngelClient()
+    return _angel_client
