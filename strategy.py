@@ -2,9 +2,11 @@
 strategy.py — Signal generation, OI analysis, Greeks, Institutional stats
 
 FIXED:
-- Removed local fetch_global_markets() that shadowed live_data_fetcher import
+- OI fallback: No hardcoded fake numbers
+- FII/DII fallback: No hardcoded fake ratios
+- Greeks: VIX proxy for IV, honest theoretical labels
+- Removed local fetch_global_markets() shadowing
 - ORB: time range 09:14-09:16 IST with timezone awareness
-- Better handling when candles are empty
 """
 
 import logging
@@ -253,15 +255,16 @@ def _fetch_real_option_chain(index: str = "NIFTY") -> dict:
 
 def _fallback_oi_data() -> dict:
     return {
-        "call_oi": 4500000,
-        "put_oi": 5200000,
-        "pcr": 1.16,
-        "max_pain": 24000,
+        "call_oi": None,
+        "put_oi": None,
+        "pcr": None,
+        "max_pain": None,
         "expiry": None,
         "top_strikes": [],
         "strike_count": 0,
-        "source": "FALLBACK_SPOT_ONLY",
+        "source": "UNAVAILABLE",
         "underlying": None,
+        "note": "NSE OI API blocked on cloud / Angel One has no OI field",
     }
 
 
@@ -321,29 +324,46 @@ def get_atm_greeks(spot: float, index: str = "NIFTY") -> dict:
     step = 50 if index == "NIFTY" else 100
     atm_strike = round(spot / step) * step
 
-    ce_greeks = calculate_greeks(spot, atm_strike, "CE")
-    pe_greeks = calculate_greeks(spot, atm_strike, "PE")
+    # Try to use live VIX as IV proxy; fallback to 13.0 but mark it clearly
+    try:
+        vix_data = fetch_india_vix()
+        iv = vix_data.get("value")
+    except Exception:
+        iv = None
+
+    if iv is None or iv <= 0:
+        iv = 13.0
+        iv_source = "HARDCODED_DEFAULT"
+    else:
+        iv_source = "INDIA_VIX_PROXY"
+
+    ce_greeks = calculate_greeks(spot, atm_strike, "CE", iv_percent=iv)
+    pe_greeks = calculate_greeks(spot, atm_strike, "PE", iv_percent=iv)
 
     return {
         "atm_strike": atm_strike,
         "ce": ce_greeks,
         "pe": pe_greeks,
-        "source": "BS_APPROX",
+        "source": "BS_THEORETICAL",
+        "iv_source": iv_source,
+        "iv_value": iv,
+        "note": "Greeks are theoretical (Black-Scholes). IV may not reflect market implied volatility.",
     }
 
 
 def fetch_institutional_stats() -> dict:
     result = {
-        "fii_long": 0.17,
-        "fii_short": 0.16,
-        "fii_net": 0.02,
-        "dii_long": 0.19,
-        "dii_short": 0.18,
-        "dii_net": 0.01,
+        "fii_long": None,
+        "fii_short": None,
+        "fii_net": None,
+        "dii_long": None,
+        "dii_short": None,
+        "dii_net": None,
         "win_rate": 0.0,
         "total_trades": 0,
-        "status": "Fallback",
-        "source": "FALLBACK",
+        "status": "Unavailable",
+        "source": "NSE_BLOCKED",
+        "note": "NSE blocks cloud IPs. Deploy locally or use VPN for real FII/DII.",
     }
 
     try:
