@@ -1,8 +1,10 @@
 """
 strategy.py — Signal generation, OI analysis, Greeks, Institutional stats
 
-Phase 3.B2: _fetch_real_option_chain() now returns top_strikes, expiry, strike_count
-Phase 5:    LIVE background poller — updates shared_state + config.state_manager every 15s
+FIXED:
+- Removed local fetch_global_markets() that shadowed live_data_fetcher import
+- ORB: time range 09:14-09:16 IST with timezone awareness
+- Better handling when candles are empty
 """
 
 import logging
@@ -17,7 +19,6 @@ import requests
 import config
 from angel_client import get_angel_client
 
-# ── Live data fetcher (real NSE, Yahoo, Angel data) ──
 from live_data_fetcher import (
     fetch_nifty_spot, fetch_banknifty_spot, fetch_sensex_spot,
     fetch_nse_option_chain, fetch_india_vix,
@@ -26,11 +27,6 @@ from live_data_fetcher import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-# ════════════════════════════════════════════════════════
-# SHARED STATE — global dict used by routes.py & background threads
-# ════════════════════════════════════════════════════════
 
 shared_state: Dict[str, Any] = {
     "spot": 0.0,
@@ -46,23 +42,10 @@ shared_state: Dict[str, Any] = {
 }
 
 
-# ════════════════════════════════════════════════════════
-# SIGNAL GENERATION — 6-check GOAT system
-# ════════════════════════════════════════════════════════
-
 def generate_signal(candles: List[dict], spot: float) -> dict:
     """
-    Generate GOAT Signal based on 6 conditions:
-
-    Bearish checks (for SHORT):
-      orb_breakdown, below_vwap, ema_bearish,
-      rsi_not_oversold, macd_bearish, supertrend_sell
-
-    Bullish checks (for LONG):
-      orb_breakout, above_vwap, ema_bullish,
-      rsi_not_overbought, macd_bullish, supertrend_buy
-
-    Majority wins → signal + confidence = count of True checks.
+    Generate GOAT Signal based on 6 conditions.
+    FIXED: ORB uses time range (09:14-09:16 IST) instead of exact match.
     """
     signal = {
         "signal": "WAIT",
@@ -88,7 +71,6 @@ def generate_signal(candles: List[dict], spot: float) -> dict:
     highs = [c["high"] for c in candles]
     lows = [c["low"] for c in candles]
 
-    # ── Import indicators here to avoid circular import ──
     from indicators import (
         calculate_rsi,
         calculate_ema,
@@ -97,7 +79,6 @@ def generate_signal(candles: List[dict], spot: float) -> dict:
         calculate_supertrend,
     )
 
-    # Calculate indicators
     rsi_val = calculate_rsi(closes, period=14)
     ema9 = calculate_ema(closes, period=9)
     ema21 = calculate_ema(closes, period=21)
@@ -106,21 +87,18 @@ def generate_signal(candles: List[dict], spot: float) -> dict:
     st_data = calculate_supertrend(highs, lows, closes, period=10, multiplier=3)
 
     # ── ORB (Opening Range Breakout) — FIXED ──
-    # IST = UTC+5:30
     IST = timezone(timedelta(hours=5, minutes=30))
     today = datetime.now(IST).date()
     
     today_candles = []
     for c in candles:
         ts = c.get("time", 0)
-        # Handle both epoch seconds and milliseconds
         if ts > 1e11:
             ts = ts / 1000
         dt = datetime.fromtimestamp(ts, tz=timezone.utc).astimezone(IST)
         if dt.date() == today:
             today_candles.append((dt, c))
     
-    # Sort by time
     today_candles.sort(key=lambda x: x[0])
     
     # Find 09:15 candle using time range (09:14:00 to 09:16:59)
@@ -130,7 +108,6 @@ def generate_signal(candles: List[dict], spot: float) -> dict:
             market_open = c
             break
     
-    # Fallback: use first candle of today if exact 09:15 not found
     if market_open:
         signal["orb_high"] = round(market_open["high"], 2)
         signal["orb_low"] = round(market_open["low"], 2)
@@ -140,13 +117,11 @@ def generate_signal(candles: List[dict], spot: float) -> dict:
         signal["orb_low"] = round(first_c["low"], 2)
         signal["note"] = f"ORB approximated from first candle ({today_candles[0][0].strftime('%H:%M')})"
     else:
-        # Last resort: use earliest candle in buffer
         first_c = candles[0]
         signal["orb_high"] = round(first_c["high"], 2)
         signal["orb_low"] = round(first_c["low"], 2)
         signal["note"] = "ORB from historical buffer (no today's data)"
 
-    # ── Evaluate 6 bearish checks ──
     orb_high = signal["orb_high"] or 0
     orb_low = signal["orb_low"] or 0
 
@@ -166,7 +141,6 @@ def generate_signal(candles: List[dict], spot: float) -> dict:
         ),
     }
 
-    # ── Evaluate 6 bullish checks ──
     bull_checks = {
         "orb_breakout": (orb_high > 0 and spot > orb_high),
         "above_vwap": (vwap_val is not None and spot > vwap_val),
@@ -190,13 +164,10 @@ def generate_signal(candles: List[dict], spot: float) -> dict:
         signal["signal"] = "SHORT"
         signal["confidence"] = bear_count
         signal["checklist"] = {k: bool(v) for k, v in bear_checks.items()}
-        signal["note"] = (
-            f"{bear_count}/6 checks agree — ORB breakdown + trend confirmed"
-        )
+        signal["note"] = f"{bear_count}/6 checks agree — ORB breakdown + trend confirmed"
     elif bull_count >= 4 and bull_count > bear_count:
         signal["signal"] = "LONG"
         signal["confidence"] = bull_count
-        # For LONG, map to same keys but with bullish meanings
         signal["checklist"] = {
             "orb_breakdown": bull_checks["orb_breakout"],
             "below_vwap": bull_checks["above_vwap"],
@@ -205,30 +176,16 @@ def generate_signal(candles: List[dict], spot: float) -> dict:
             "macd_bearish": bull_checks["macd_bullish"],
             "supertrend_sell": bull_checks["supertrend_buy"],
         }
-        signal["note"] = (
-            f"{bull_count}/6 checks agree — ORB breakout + trend confirmed"
-        )
+        signal["note"] = f"{bull_count}/6 checks agree — ORB breakout + trend confirmed"
     else:
         signal["confidence"] = max(bear_count, bull_count)
-        signal["note"] = (
-            f"No strong signal (bull={bull_count}, bear={bear_count})"
-        )
+        signal["note"] = f"No strong signal (bull={bull_count}, bear={bear_count})"
 
     return signal
 
 
-# ════════════════════════════════════════════════════════
-# OPTION CHAIN / OI DATA
-# ════════════════════════════════════════════════════════
-
 def _fetch_real_option_chain(index: str = "NIFTY") -> dict:
-    """
-    Fetch real OI data from NSE India.
-    Phase 3.B2: NOW returns expiry, top_strikes (top 7 by OI), strike_count.
-    Falls back to _fallback_oi_data() on failure.
-    """
     try:
-        # NSE India option chain API
         url = f"https://www.nseindia.com/api/option-chain-indices?symbol={index}"
         session = requests.Session()
         session.headers.update({
@@ -272,7 +229,6 @@ def _fetch_real_option_chain(index: str = "NIFTY") -> dict:
             top_strikes = strikes_data[:7]
             pcr = round(pe_oi / ce_oi, 2) if ce_oi > 0 else 0.0
 
-            # Max pain calculation
             max_pain = None
             if strikes_data:
                 max_pain = min(strikes_data, key=lambda x: abs(x["strike"] - underlying))["strike"]
@@ -296,7 +252,6 @@ def _fetch_real_option_chain(index: str = "NIFTY") -> dict:
 
 
 def _fallback_oi_data() -> dict:
-    """Rough OI estimates when NSE is unreachable."""
     return {
         "call_oi": 4500000,
         "put_oi": 5200000,
@@ -311,21 +266,14 @@ def _fallback_oi_data() -> dict:
 
 
 def get_oi_data(index: str = "NIFTY") -> dict:
-    """Public entry point — always returns a valid dict."""
     return _fetch_real_option_chain(index)
 
 
-# ════════════════════════════════════════════════════════
-# GREEKS (Black-Scholes approximation)
-# ════════════════════════════════════════════════════════
-
 def _norm_cdf(x: float) -> float:
-    """Cumulative standard normal distribution."""
     return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
 
 
 def _norm_pdf(x: float) -> float:
-    """Standard normal probability density function."""
     return math.exp(-0.5 * x * x) / math.sqrt(2.0 * math.pi)
 
 
@@ -337,11 +285,6 @@ def calculate_greeks(
     risk_free_rate: float = 0.07,
     iv_percent: float = 13.0,
 ) -> dict:
-    """
-    Black-Scholes Greeks approximation.
-
-    Returns: {iv, delta, gamma, theta, vega, source: "BS_APPROX"}
-    """
     S = spot
     K = strike
     T = max(days_to_expiry / 365.0, 0.001)
@@ -375,7 +318,6 @@ def calculate_greeks(
 
 
 def get_atm_greeks(spot: float, index: str = "NIFTY") -> dict:
-    """Calculate Greeks for ATM CE and PE options."""
     step = 50 if index == "NIFTY" else 100
     atm_strike = round(spot / step) * step
 
@@ -390,15 +332,7 @@ def get_atm_greeks(spot: float, index: str = "NIFTY") -> dict:
     }
 
 
-# ════════════════════════════════════════════════════════
-# INSTITUTIONAL STATS (FII / DII)
-# ════════════════════════════════════════════════════════
-
 def fetch_institutional_stats() -> dict:
-    """
-    Fetch FII/DII long/short ratios from NSE India.
-    Falls back to approximate values.
-    """
     result = {
         "fii_long": 0.17,
         "fii_short": 0.16,
@@ -444,7 +378,6 @@ def fetch_institutional_stats() -> dict:
 
         if resp.status_code == 200:
             data = resp.json()
-            # NSE FII/DII API format varies — try common keys
             fii_data = data.get("FII", []) or data.get("fii", [])
             dii_data = data.get("DII", []) or data.get("dii", [])
 
@@ -481,38 +414,18 @@ def fetch_institutional_stats() -> dict:
     return result
 
 
-# ════════════════════════════════════════════════════════
-# GLOBAL MARKETS (Yahoo Finance) — DEPRECATED, use live_data_fetcher
-# ════════════════════════════════════════════════════════
+# REMOVED: local fetch_global_markets() that was shadowing the import from live_data_fetcher
 
-def fetch_global_markets() -> dict:
-    """Fetch NASDAQ, DOW, KOSPI from Yahoo Finance."""
-    return {
-        "kospi": 0.0,
-        "nasdaq": 0.0,
-        "dji": 0.0,
-        "source": "DEPRECATED",
-    }
-
-
-# ════════════════════════════════════════════════════════
-# LIVE DATA POLLER — Background thread
-# ════════════════════════════════════════════════════════
 
 _poller_running = False
 
 
 def _live_data_poller() -> None:
-    """
-    Background thread: every 15 seconds fetches ALL real data
-    from NSE India, Angel One, Yahoo Finance.
-    """
     global _poller_running
     logger.info("Live data poller started — ALL REAL DATA")
 
     while _poller_running:
         try:
-            # 1. Fetch spot from Angel One (real)
             nifty = fetch_nifty_spot()
             banknifty = fetch_banknifty_spot()
             spot = nifty.get("value", 0)
@@ -522,10 +435,8 @@ def _live_data_poller() -> None:
                 time.sleep(5)
                 continue
 
-            # 2. Fetch candles from Angel One (real)
             candles = fetch_candles("NIFTY 50", "NSE", "FIFTEEN_MINUTE", 5)
 
-            # 3. Generate signal from real candles
             signal_data = generate_signal(candles, spot) if candles and len(candles) >= 21 else {
                 "signal": "WAIT",
                 "confidence": 0,
@@ -533,22 +444,12 @@ def _live_data_poller() -> None:
                 "note": "Not enough candles" if not candles else "Insufficient data",
             }
 
-            # 4. Fetch OI from Angel One (real, proxied)
             oi_data = fetch_nse_option_chain("NIFTY")
-
-            # 5. Calculate Greeks (real Black-Scholes)
             greeks_data = get_atm_greeks(spot, "NIFTY")
-
-            # 6. Fetch VIX (real Yahoo — cached)
             vix_data = fetch_india_vix()
-
-            # 7. Fetch Global Markets (real Yahoo — cached)
             global_data = fetch_global_markets()
-
-            # 8. Fetch FII/DII (real NSE — blocked on cloud)
             fii_dii = fetch_fii_dii()
 
-            # 9. Update shared_state
             shared_state.update({
                 "spot": spot,
                 "banknifty_spot": banknifty.get("value", 0),
@@ -575,7 +476,6 @@ def _live_data_poller() -> None:
                 "last_updated": datetime.now().isoformat(),
             })
 
-            # 10. Update state_manager
             config.state_manager.set_state("latest_prices", {
                 "nifty": spot,
                 "banknifty": banknifty.get("value", 0),
@@ -604,7 +504,6 @@ def _live_data_poller() -> None:
 
 
 def start_background_threads() -> None:
-    """Start the live data poller background thread."""
     global _poller_running
     if _poller_running:
         logger.info("Background poller already running")
