@@ -1,17 +1,17 @@
 """
 live_data_fetcher.py — Fetches ALL real market data
 
-FIXED:
-- Strike normalized in scrip master load (÷100 if > 100000)
-- CE/PE detection uses 'optiontype' or 'instrumenttype' column if available
-- Candles: yfinance fallback if Angel One fails
-- VIX: 10-min cache + fallback
-- Global: None sentinel on failure
+FIXED v3:
+- NaN/inf from yfinance → None (JSON safe)
+- Strike paisa normalization (÷100)
+- yfinance candle fallback
+- 10-min cache for VIX/Global
 """
 
 import logging
 import time
 import re
+import math
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 
@@ -20,6 +20,21 @@ import config
 from angel_client import get_angel_client
 
 logger = logging.getLogger(__name__)
+
+
+def _safe_float(val, default=None, ndigits: Optional[int] = None):
+    """Convert value to float, replacing NaN/inf with default. JSON-safe."""
+    try:
+        if val is None:
+            return default
+        f = float(val)
+        if math.isnan(f) or math.isinf(f):
+            return default
+        if ndigits is not None:
+            return round(f, ndigits)
+        return f
+    except (TypeError, ValueError):
+        return default
 
 
 class _TTLCache:
@@ -39,9 +54,9 @@ class _TTLCache:
     def set(self, key: str, value: Any):
         self._store[key] = (value, datetime.now() + timedelta(seconds=self._ttl))
 
-_vix_cache = _TTLCache(ttl_seconds=600)      # 10 min
-_global_cache = _TTLCache(ttl_seconds=600)   # 10 min
-_candles_cache = _TTLCache(ttl_seconds=60) # 1 min
+_vix_cache = _TTLCache(ttl_seconds=600)
+_global_cache = _TTLCache(ttl_seconds=600)
+_candles_cache = _TTLCache(ttl_seconds=60)
 
 
 def fetch_nifty_spot() -> Dict[str, Any]:
@@ -49,7 +64,7 @@ def fetch_nifty_spot() -> Dict[str, Any]:
         client = get_angel_client()
         ltp = client.get_ltp("NSE", "NIFTY 50")
         if ltp and ltp > 0:
-            return {"value": ltp, "source": "ANGEL_ONE", "time": datetime.now().isoformat()}
+            return {"value": _safe_float(ltp, ndigits=2), "source": "ANGEL_ONE", "time": datetime.now().isoformat()}
     except Exception as e:
         logger.error(f"NIFTY spot error: {e}")
     return {"value": None, "source": "UNAVAILABLE", "time": datetime.now().isoformat()}
@@ -60,7 +75,7 @@ def fetch_banknifty_spot() -> Dict[str, Any]:
         client = get_angel_client()
         ltp = client.get_ltp("NSE", "BANKNIFTY")
         if ltp and ltp > 0:
-            return {"value": ltp, "source": "ANGEL_ONE", "time": datetime.now().isoformat()}
+            return {"value": _safe_float(ltp, ndigits=2), "source": "ANGEL_ONE", "time": datetime.now().isoformat()}
     except Exception as e:
         logger.error(f"BANKNIFTY spot error: {e}")
     return {"value": None, "source": "UNAVAILABLE", "time": datetime.now().isoformat()}
@@ -71,7 +86,7 @@ def fetch_sensex_spot() -> Dict[str, Any]:
         client = get_angel_client()
         ltp = client.get_ltp("BSE", "SENSEX")
         if ltp and ltp > 0:
-            return {"value": ltp, "source": "ANGEL_ONE", "time": datetime.now().isoformat()}
+            return {"value": _safe_float(ltp, ndigits=2), "source": "ANGEL_ONE", "time": datetime.now().isoformat()}
     except Exception as e:
         logger.error(f"SENSEX spot error: {e}")
     return {"value": None, "source": "UNAVAILABLE", "time": datetime.now().isoformat()}
@@ -95,13 +110,7 @@ def _extract_strike_from_symbol(symbol: str, index: str = "NIFTY") -> Optional[i
 
 
 def _detect_ce_pe(row: pd.Series) -> Optional[bool]:
-    """
-    Detect if option is CE (True) or PE (False).
-    Uses optiontype/instrumenttype columns if available, falls back to symbol.
-    """
     symbol = str(row.get("symbol", "")).upper()
-    
-    # Check explicit option type columns
     for col in ["optiontype", "option_type", "opt_type"]:
         if col in row and pd.notna(row[col]):
             val = str(row[col]).upper().strip()
@@ -109,8 +118,6 @@ def _detect_ce_pe(row: pd.Series) -> Optional[bool]:
                 return True
             if val == "PE":
                 return False
-    
-    # Check instrument type
     for col in ["instrumenttype", "instrument_type"]:
         if col in row and pd.notna(row[col]):
             val = str(row[col]).upper().strip()
@@ -118,8 +125,6 @@ def _detect_ce_pe(row: pd.Series) -> Optional[bool]:
                 return True
             if "PE" in val:
                 return False
-    
-    # Fallback: parse symbol
     if symbol.endswith("CE"):
         return True
     if symbol.endswith("PE"):
@@ -128,7 +133,6 @@ def _detect_ce_pe(row: pd.Series) -> Optional[bool]:
         return True
     if "PE" in symbol and "CE" not in symbol:
         return False
-    
     return None
 
 
@@ -162,7 +166,6 @@ def fetch_nse_option_chain(index: str = "NIFTY") -> Dict[str, Any]:
             logger.warning(f"No options found for {index}")
             return _fallback_oi_data()
 
-        # Parse expiry
         expiry_col = "expiry" if "expiry" in opts.columns else "expiry_date"
         if expiry_col in opts.columns:
             opts["_expiry_dt"] = pd.to_datetime(opts[expiry_col], errors="coerce", dayfirst=True)
@@ -180,11 +183,9 @@ def fetch_nse_option_chain(index: str = "NIFTY") -> Dict[str, Any]:
         nearest_expiry = opts["_expiry_dt"].min().strftime("%d-%b-%Y")
         opts = opts[opts["_expiry_dt"] == opts["_expiry_dt"].min()].copy()
 
-        # Extract strike
         strike_col = "strike" if "strike" in opts.columns else "strike_price"
         if strike_col in opts.columns:
             opts["_strike"] = pd.to_numeric(opts[strike_col], errors="coerce")
-            # Additional normalization for any remaining paisa-format strikes
             mask_paisa = opts["_strike"] > 100000
             opts.loc[mask_paisa, "_strike"] = opts.loc[mask_paisa, "_strike"] / 100
         else:
@@ -195,7 +196,6 @@ def fetch_nse_option_chain(index: str = "NIFTY") -> Dict[str, Any]:
         opts = opts.dropna(subset=["_strike"])
         opts["_strike"] = opts["_strike"].astype(int)
         
-        # Validate strikes are reasonable (within 20% of spot)
         opts = opts[
             (opts["_strike"] > spot * 0.5) & 
             (opts["_strike"] < spot * 1.5)
@@ -206,7 +206,7 @@ def fetch_nse_option_chain(index: str = "NIFTY") -> Dict[str, Any]:
             return _fallback_oi_data()
 
         opts["_dist"] = abs(opts["_strike"] - atm_strike)
-        opts = opts.sort_values("_dist").head(20)  # ±10 strikes around ATM
+        opts = opts.sort_values("_dist").head(20)
 
         strikes_data = []
         ce_oi = 0
@@ -227,7 +227,6 @@ def fetch_nse_option_chain(index: str = "NIFTY") -> Dict[str, Any]:
 
                 is_ce = _detect_ce_pe(row)
                 if is_ce is None:
-                    logger.debug(f"Cannot detect CE/PE for {symbol}, skipping")
                     continue
 
                 proxy_oi = int(ltp * 1000)
@@ -242,7 +241,7 @@ def fetch_nse_option_chain(index: str = "NIFTY") -> Dict[str, Any]:
                     "oi": proxy_oi,
                     "ce_oi": proxy_oi if is_ce else 0,
                     "pe_oi": proxy_oi if not is_ce else 0,
-                    "ltp": round(ltp, 2),
+                    "ltp": _safe_float(ltp, ndigits=2),
                 })
 
             except Exception as e:
@@ -250,7 +249,7 @@ def fetch_nse_option_chain(index: str = "NIFTY") -> Dict[str, Any]:
                 continue
 
         strikes_data.sort(key=lambda x: x["oi"], reverse=True)
-        pcr = round(pe_oi / ce_oi, 2) if ce_oi > 0 else 0.0
+        pcr = _safe_float(pe_oi / ce_oi, ndigits=2) if ce_oi > 0 else 0.0
 
         max_pain = atm_strike
         if strikes_data:
@@ -264,7 +263,7 @@ def fetch_nse_option_chain(index: str = "NIFTY") -> Dict[str, Any]:
             "expiry": nearest_expiry,
             "top_strikes": strikes_data[:7],
             "strike_count": len(strikes_data),
-            "underlying": round(spot, 2),
+            "underlying": _safe_float(spot, ndigits=2),
             "source": "ANGEL_ONE_PROXIED",
             "note": "OI proxied from LTP (Angel One does not provide raw OI)",
             "time": datetime.now().isoformat(),
@@ -302,20 +301,25 @@ def fetch_india_vix() -> Dict[str, Any]:
         ticker = yf.Ticker("^INDIAVIX")
         hist = ticker.history(period="5d")
         if not hist.empty:
-            close = float(hist["Close"].iloc[-1])
-            prev = float(hist["Close"].iloc[-2]) if len(hist) > 1 else close
-            change = close - prev
-            change_pct = (change / prev * 100) if prev > 0 else 0
+            close_raw = hist["Close"].iloc[-1]
+            prev_raw = hist["Close"].iloc[-2] if len(hist) > 1 else close_raw
             
-            result = {
-                "value": round(close, 2),
-                "change": round(change, 2),
-                "change_percent": round(change_pct, 2),
-                "source": "YAHOO_FINANCE",
-                "time": datetime.now().isoformat(),
-            }
-            _vix_cache.set(cache_key, result)
-            return result
+            close = _safe_float(close_raw, ndigits=2)
+            prev = _safe_float(prev_raw, ndigits=2)
+            
+            if close is not None and prev is not None:
+                change = _safe_float(close - prev, ndigits=2)
+                change_pct = _safe_float((change / prev * 100) if prev > 0 else 0, ndigits=2)
+                
+                result = {
+                    "value": close,
+                    "change": change,
+                    "change_percent": change_pct,
+                    "source": "YAHOO_FINANCE",
+                    "time": datetime.now().isoformat(),
+                }
+                _vix_cache.set(cache_key, result)
+                return result
     except Exception as e:
         logger.warning(f"Yahoo VIX error: {e}")
 
@@ -359,20 +363,21 @@ def fetch_global_markets() -> Dict[str, Any]:
                 hist = t.history(period="2d")
                 
                 if not hist.empty:
-                    close = float(hist["Close"].iloc[-1])
-                    if len(hist) >= 2:
-                        prev = float(hist["Close"].iloc[-2])
-                    else:
-                        prev = close
+                    close_raw = hist["Close"].iloc[-1]
+                    prev_raw = hist["Close"].iloc[-2] if len(hist) >= 2 else close_raw
                     
-                    change = close - prev
-                    change_pct = (change / prev * 100) if prev > 0 else 0
+                    close = _safe_float(close_raw, ndigits=2)
+                    prev = _safe_float(prev_raw, ndigits=2)
+                    
+                    if close is not None and prev is not None:
+                        change = _safe_float(close - prev, ndigits=2)
+                        change_pct = _safe_float((change / prev * 100) if prev > 0 else 0, ndigits=2)
 
-                    result[key] = {
-                        "value": round(close, 2),
-                        "change": round(change, 2),
-                        "change_percent": round(change_pct, 2),
-                    }
+                        result[key] = {
+                            "value": close,
+                            "change": change,
+                            "change_percent": change_pct,
+                        }
                 
                 time.sleep(0.5)
                 
@@ -420,11 +425,11 @@ def fetch_stock_price(stock_name: str) -> Dict[str, Any]:
         ohlc = client.get_ohlc("NSE", symbol)
         if ohlc:
             return {
-                "ltp": ohlc.get("ltp"),
-                "open": ohlc.get("open"),
-                "high": ohlc.get("high"),
-                "low": ohlc.get("low"),
-                "close": ohlc.get("close"),
+                "ltp": _safe_float(ohlc.get("ltp"), ndigits=2),
+                "open": _safe_float(ohlc.get("open"), ndigits=2),
+                "high": _safe_float(ohlc.get("high"), ndigits=2),
+                "low": _safe_float(ohlc.get("low"), ndigits=2),
+                "close": _safe_float(ohlc.get("close"), ndigits=2),
                 "source": "ANGEL_ONE",
                 "time": datetime.now().isoformat(),
             }
@@ -432,11 +437,11 @@ def fetch_stock_price(stock_name: str) -> Dict[str, Any]:
         ltp = client.get_ltp("NSE", symbol)
         if ltp:
             return {
-                "ltp": ltp,
-                "open": ltp,
-                "high": ltp,
-                "low": ltp,
-                "close": ltp,
+                "ltp": _safe_float(ltp, ndigits=2),
+                "open": _safe_float(ltp, ndigits=2),
+                "high": _safe_float(ltp, ndigits=2),
+                "low": _safe_float(ltp, ndigits=2),
+                "close": _safe_float(ltp, ndigits=2),
                 "source": "ANGEL_ONE_LTP",
                 "time": datetime.now().isoformat(),
             }
@@ -455,11 +460,9 @@ def fetch_stock_price(stock_name: str) -> Dict[str, Any]:
 
 
 def _fetch_candles_yfinance(symbol: str, interval: str, days: int) -> List[Dict]:
-    """Fallback candle fetcher using yfinance."""
     try:
         import yfinance as yf
         
-        # Map symbol to yfinance ticker
         ticker_map = {
             "NIFTY 50": "^NSEI",
             "NIFTY": "^NSEI",
@@ -468,7 +471,6 @@ def _fetch_candles_yfinance(symbol: str, interval: str, days: int) -> List[Dict]
         }
         ticker = ticker_map.get(symbol, symbol)
         
-        # Map interval
         interval_map = {
             "ONE_MINUTE": "1m",
             "FIVE_MINUTE": "5m",
@@ -479,7 +481,6 @@ def _fetch_candles_yfinance(symbol: str, interval: str, days: int) -> List[Dict]
         }
         yf_interval = interval_map.get(interval, "15m")
         
-        # yfinance only allows 15m data for last 60 days
         t = yf.Ticker(ticker)
         hist = t.history(period=f"{days}d", interval=yf_interval)
         
@@ -489,14 +490,16 @@ def _fetch_candles_yfinance(symbol: str, interval: str, days: int) -> List[Dict]
         
         candles = []
         for timestamp, row in hist.iterrows():
-            ts_ms = int(timestamp.timestamp() * 1000)
+            open_val = _safe_float(row.get("Open"), ndigits=2)
+            if open_val is None:
+                continue  # Skip NaN rows
             candles.append({
-                "time": ts_ms,
-                "open": round(float(row["Open"]), 2),
-                "high": round(float(row["High"]), 2),
-                "low": round(float(row["Low"]), 2),
-                "close": round(float(row["Close"]), 2),
-                "volume": int(row["Volume"]) if "Volume" in row else 0,
+                "time": int(timestamp.timestamp() * 1000),
+                "open": open_val,
+                "high": _safe_float(row.get("High"), ndigits=2),
+                "low": _safe_float(row.get("Low"), ndigits=2),
+                "close": _safe_float(row.get("Close"), ndigits=2),
+                "volume": int(row.get("Volume", 0)) if pd.notna(row.get("Volume")) else 0,
             })
         
         logger.info(f"yfinance fallback: fetched {len(candles)} candles for {ticker}")
@@ -509,13 +512,11 @@ def _fetch_candles_yfinance(symbol: str, interval: str, days: int) -> List[Dict]
 
 def fetch_candles(symbol: str = "NIFTY 50", exchange: str = "NSE",
                   interval: str = "FIFTEEN_MINUTE", days: int = 5) -> List[Dict]:
-    """Fetch historical candle data from Angel One, fallback to yfinance."""
     cache_key = f"candles_{symbol}_{interval}_{days}"
     cached = _candles_cache.get(cache_key)
     if cached:
         return cached
 
-    # Try Angel One first
     try:
         client = get_angel_client()
         candles = client.get_candle_data(exchange, symbol, interval, days)
@@ -525,7 +526,6 @@ def fetch_candles(symbol: str = "NIFTY 50", exchange: str = "NSE",
     except Exception as e:
         logger.error(f"Angel One candle fetch failed: {e}")
 
-    # Fallback to yfinance
     logger.info("Falling back to yfinance for candles")
     candles = _fetch_candles_yfinance(symbol, interval, days)
     if candles:
