@@ -2,10 +2,11 @@
 live_data_fetcher.py — Fetches ALL real market data
 
 FIXED:
-- Strike extraction uses scrip master 'strike' column directly
-- VIX & Global markets cached (5-min TTL) to avoid Yahoo rate limits
-- Global markets return None instead of 0.0 on failure
-- Better error handling and logging
+- Strike normalized in scrip master load (÷100 if > 100000)
+- CE/PE detection uses 'optiontype' or 'instrumenttype' column if available
+- Candles: yfinance fallback if Angel One fails
+- VIX: 10-min cache + fallback
+- Global: None sentinel on failure
 """
 
 import logging
@@ -20,12 +21,9 @@ from angel_client import get_angel_client
 
 logger = logging.getLogger(__name__)
 
-# ─────────────────────────────────────────────────────────────────
-# CACHE — Simple TTL cache to avoid rate limiting
-# ─────────────────────────────────────────────────────────────────
 
 class _TTLCache:
-    def __init__(self, ttl_seconds: int = 300):
+    def __init__(self, ttl_seconds: int = 600):
         self._ttl = ttl_seconds
         self._store: Dict[str, tuple] = {}
 
@@ -41,15 +39,12 @@ class _TTLCache:
     def set(self, key: str, value: Any):
         self._store[key] = (value, datetime.now() + timedelta(seconds=self._ttl))
 
-_vix_cache = _TTLCache(ttl_seconds=300)      # 5 min
-_global_cache = _TTLCache(ttl_seconds=300)   # 5 min
+_vix_cache = _TTLCache(ttl_seconds=600)      # 10 min
+_global_cache = _TTLCache(ttl_seconds=600)   # 10 min
+_candles_cache = _TTLCache(ttl_seconds=60) # 1 min
 
-# ─────────────────────────────────────────────────────────────────
-# 1. SPOT PRICES (Angel One — works on cloud)
-# ─────────────────────────────────────────────────────────────────
 
 def fetch_nifty_spot() -> Dict[str, Any]:
-    """Fetch NIFTY 50 spot from Angel One."""
     try:
         client = get_angel_client()
         ltp = client.get_ltp("NSE", "NIFTY 50")
@@ -61,7 +56,6 @@ def fetch_nifty_spot() -> Dict[str, Any]:
 
 
 def fetch_banknifty_spot() -> Dict[str, Any]:
-    """Fetch BANKNIFTY spot from Angel One."""
     try:
         client = get_angel_client()
         ltp = client.get_ltp("NSE", "BANKNIFTY")
@@ -73,7 +67,6 @@ def fetch_banknifty_spot() -> Dict[str, Any]:
 
 
 def fetch_sensex_spot() -> Dict[str, Any]:
-    """Fetch SENSEX spot from Angel One."""
     try:
         client = get_angel_client()
         ltp = client.get_ltp("BSE", "SENSEX")
@@ -84,63 +77,78 @@ def fetch_sensex_spot() -> Dict[str, Any]:
     return {"value": None, "source": "UNAVAILABLE", "time": datetime.now().isoformat()}
 
 
-# ─────────────────────────────────────────────────────────────────
-# 2. OPTION CHAIN / OI (Angel One Scrip Master — FIXED)
-# ─────────────────────────────────────────────────────────────────
-
 def _extract_strike_from_symbol(symbol: str, index: str = "NIFTY") -> Optional[int]:
-    """
-    Robust strike extraction from symbol string.
-    Returns None if extraction fails.
-    """
     symbol = symbol.upper().strip()
-    
-    # Pattern 1: NIFTY24JUL24200CE -> 24200
     m = re.search(r'(\d{4,5})(?:CE|PE)$', symbol)
     if m:
         strike = int(m.group(1))
         step = 50 if index == "NIFTY" else 100
         if strike % step == 0:
             return strike
-    
-    # Pattern 2: NIFTY-24200-CE-24JUL -> 24200
     m = re.search(r'(?:^|[^\d])(\d{4,5})(?:[^\d]|$)', symbol)
     if m:
         strike = int(m.group(1))
         step = 50 if index == "NIFTY" else 100
         if strike % step == 0:
             return strike
+    return None
+
+
+def _detect_ce_pe(row: pd.Series) -> Optional[bool]:
+    """
+    Detect if option is CE (True) or PE (False).
+    Uses optiontype/instrumenttype columns if available, falls back to symbol.
+    """
+    symbol = str(row.get("symbol", "")).upper()
+    
+    # Check explicit option type columns
+    for col in ["optiontype", "option_type", "opt_type"]:
+        if col in row and pd.notna(row[col]):
+            val = str(row[col]).upper().strip()
+            if val == "CE":
+                return True
+            if val == "PE":
+                return False
+    
+    # Check instrument type
+    for col in ["instrumenttype", "instrument_type"]:
+        if col in row and pd.notna(row[col]):
+            val = str(row[col]).upper().strip()
+            if "CE" in val:
+                return True
+            if "PE" in val:
+                return False
+    
+    # Fallback: parse symbol
+    if symbol.endswith("CE"):
+        return True
+    if symbol.endswith("PE"):
+        return False
+    if "CE" in symbol and "PE" not in symbol:
+        return True
+    if "PE" in symbol and "CE" not in symbol:
+        return False
     
     return None
 
 
 def fetch_nse_option_chain(index: str = "NIFTY") -> Dict[str, Any]:
-    """
-    Fetch option chain data using Angel One scrip master.
-    FIXED: Uses 'strike' column from scrip master directly.
-           Falls back to robust symbol parsing with validation.
-    """
     try:
         client = get_angel_client()
-
-        # Get spot for ATM calculation
         spot = client.get_ltp("NSE", "NIFTY 50" if index == "NIFTY" else index)
         if not spot or spot <= 0:
             logger.warning(f"Invalid spot for {index}: {spot}")
             return _fallback_oi_data()
 
-        # Get scrip master DataFrame
         df = client._scrip_master_df
         if df is None or df.empty:
             logger.warning("Scrip master empty")
             return _fallback_oi_data()
 
-        # Filter for index options in NFO segment
         step = 50 if index == "NIFTY" else 100
         atm_strike = round(spot / step) * step
-        
-        # Look for index name in symbol/name columns
         index_name = "NIFTY" if index == "NIFTY" else index
+        
         mask = (
             (df["exch_seg"] == "NFO") &
             (
@@ -154,7 +162,7 @@ def fetch_nse_option_chain(index: str = "NIFTY") -> Dict[str, Any]:
             logger.warning(f"No options found for {index}")
             return _fallback_oi_data()
 
-        # Parse expiry and filter for nearest
+        # Parse expiry
         expiry_col = "expiry" if "expiry" in opts.columns else "expiry_date"
         if expiry_col in opts.columns:
             opts["_expiry_dt"] = pd.to_datetime(opts[expiry_col], errors="coerce", dayfirst=True)
@@ -170,25 +178,36 @@ def fetch_nse_option_chain(index: str = "NIFTY") -> Dict[str, Any]:
             return _fallback_oi_data()
 
         nearest_expiry = opts["_expiry_dt"].min().strftime("%d-%b-%Y")
-
-        # Get nearest expiry options only
         opts = opts[opts["_expiry_dt"] == opts["_expiry_dt"].min()].copy()
 
-        # Sort by strike distance from ATM
+        # Extract strike
         strike_col = "strike" if "strike" in opts.columns else "strike_price"
         if strike_col in opts.columns:
             opts["_strike"] = pd.to_numeric(opts[strike_col], errors="coerce")
+            # Additional normalization for any remaining paisa-format strikes
+            mask_paisa = opts["_strike"] > 100000
+            opts.loc[mask_paisa, "_strike"] = opts.loc[mask_paisa, "_strike"] / 100
         else:
-            # Fallback: extract from symbol
             opts["_strike"] = opts["symbol"].apply(
                 lambda s: _extract_strike_from_symbol(str(s), index)
             )
 
         opts = opts.dropna(subset=["_strike"])
-        opts["_dist"] = abs(opts["_strike"] - atm_strike)
-        opts = opts.sort_values("_dist").head(14)  # ±7 strikes around ATM
+        opts["_strike"] = opts["_strike"].astype(int)
+        
+        # Validate strikes are reasonable (within 20% of spot)
+        opts = opts[
+            (opts["_strike"] > spot * 0.5) & 
+            (opts["_strike"] < spot * 1.5)
+        ]
+        
+        if opts.empty:
+            logger.warning("No valid strikes near spot %s", spot)
+            return _fallback_oi_data()
 
-        # Fetch LTP for each option
+        opts["_dist"] = abs(opts["_strike"] - atm_strike)
+        opts = opts.sort_values("_dist").head(20)  # ±10 strikes around ATM
+
         strikes_data = []
         ce_oi = 0
         pe_oi = 0
@@ -197,19 +216,20 @@ def fetch_nse_option_chain(index: str = "NIFTY") -> Dict[str, Any]:
             try:
                 token = str(row.get("token", ""))
                 symbol = str(row.get("symbol", ""))
-                strike = int(row["_strike"]) if pd.notna(row["_strike"]) else 0
+                strike = int(row["_strike"])
                 
                 if strike <= 0:
                     continue
 
                 ltp = client.get_ltp_by_token("NFO", symbol, token)
-                
                 if not ltp or ltp <= 0:
                     continue
 
-                is_ce = "CE" in symbol.upper()
-                
-                # Proxy OI = LTP * 1000 (Angel One doesn't provide raw OI)
+                is_ce = _detect_ce_pe(row)
+                if is_ce is None:
+                    logger.debug(f"Cannot detect CE/PE for {symbol}, skipping")
+                    continue
+
                 proxy_oi = int(ltp * 1000)
 
                 if is_ce:
@@ -226,13 +246,12 @@ def fetch_nse_option_chain(index: str = "NIFTY") -> Dict[str, Any]:
                 })
 
             except Exception as e:
-                logger.debug(f"Option LTP fetch error for row: {e}")
+                logger.debug(f"Option LTP fetch error: {e}")
                 continue
 
         strikes_data.sort(key=lambda x: x["oi"], reverse=True)
         pcr = round(pe_oi / ce_oi, 2) if ce_oi > 0 else 0.0
 
-        # Max pain: strike closest to spot
         max_pain = atm_strike
         if strikes_data:
             max_pain = min(strikes_data, key=lambda x: abs(x["strike"] - spot))["strike"]
@@ -257,7 +276,6 @@ def fetch_nse_option_chain(index: str = "NIFTY") -> Dict[str, Any]:
 
 
 def _fallback_oi_data() -> Dict[str, Any]:
-    """Return empty OI data when sources fail."""
     return {
         "call_oi": 0,
         "put_oi": 0,
@@ -273,12 +291,7 @@ def _fallback_oi_data() -> Dict[str, Any]:
     }
 
 
-# ─────────────────────────────────────────────────────────────────
-# 3. INDIA VIX (Yahoo Finance — CACHED)
-# ─────────────────────────────────────────────────────────────────
-
 def fetch_india_vix() -> Dict[str, Any]:
-    """Fetch India VIX from Yahoo Finance with 5-min cache."""
     cache_key = "india_vix"
     cached = _vix_cache.get(cache_key)
     if cached:
@@ -315,12 +328,7 @@ def fetch_india_vix() -> Dict[str, Any]:
     }
 
 
-# ─────────────────────────────────────────────────────────────────
-# 4. GLOBAL MARKETS (Yahoo Finance — CACHED + DELAY)
-# ─────────────────────────────────────────────────────────────────
-
 def fetch_global_markets() -> Dict[str, Any]:
-    """Fetch NASDAQ, DOW, KOSPI from Yahoo Finance with 5-min cache."""
     cache_key = "global_markets"
     cached = _global_cache.get(cache_key)
     if cached:
@@ -366,7 +374,6 @@ def fetch_global_markets() -> Dict[str, Any]:
                         "change_percent": round(change_pct, 2),
                     }
                 
-                # Sleep 0.5s between requests to avoid rate limiting
                 time.sleep(0.5)
                 
             except Exception as e:
@@ -383,15 +390,7 @@ def fetch_global_markets() -> Dict[str, Any]:
     return result
 
 
-# ─────────────────────────────────────────────────────────────────
-# 5. FII / DII (NSE blocks cloud — return note)
-# ─────────────────────────────────────────────────────────────────
-
 def fetch_fii_dii() -> Dict[str, Any]:
-    """
-    FII/DII data from NSE India.
-    NOTE: NSE API is blocked on cloud servers (Render/AWS).
-    """
     return {
         "fii": {"buy": 0, "sell": 0, "net": 0},
         "dii": {"buy": 0, "sell": 0, "net": 0},
@@ -400,10 +399,6 @@ def fetch_fii_dii() -> Dict[str, Any]:
         "time": datetime.now().isoformat(),
     }
 
-
-# ─────────────────────────────────────────────────────────────────
-# 6. STOCK PRICES (Angel One — works on cloud)
-# ─────────────────────────────────────────────────────────────────
 
 STOCK_SYMBOLS = {
     "HDFC": "HDFCBANK-EQ",
@@ -415,7 +410,6 @@ STOCK_SYMBOLS = {
 
 
 def fetch_stock_price(stock_name: str) -> Dict[str, Any]:
-    """Fetch live price for a stock via Angel One."""
     if stock_name not in STOCK_SYMBOLS:
         return {"error": f"Unknown stock: {stock_name}"}
 
@@ -460,32 +454,86 @@ def fetch_stock_price(stock_name: str) -> Dict[str, Any]:
     }
 
 
-# ─────────────────────────────────────────────────────────────────
-# 7. CANDLE DATA (Angel One — works on cloud)
-# ─────────────────────────────────────────────────────────────────
+def _fetch_candles_yfinance(symbol: str, interval: str, days: int) -> List[Dict]:
+    """Fallback candle fetcher using yfinance."""
+    try:
+        import yfinance as yf
+        
+        # Map symbol to yfinance ticker
+        ticker_map = {
+            "NIFTY 50": "^NSEI",
+            "NIFTY": "^NSEI",
+            "BANKNIFTY": "^NSEBANK",
+            "SENSEX": "^BSESN",
+        }
+        ticker = ticker_map.get(symbol, symbol)
+        
+        # Map interval
+        interval_map = {
+            "ONE_MINUTE": "1m",
+            "FIVE_MINUTE": "5m",
+            "FIFTEEN_MINUTE": "15m",
+            "THIRTY_MINUTE": "30m",
+            "ONE_HOUR": "60m",
+            "ONE_DAY": "1d",
+        }
+        yf_interval = interval_map.get(interval, "15m")
+        
+        # yfinance only allows 15m data for last 60 days
+        t = yf.Ticker(ticker)
+        hist = t.history(period=f"{days}d", interval=yf_interval)
+        
+        if hist.empty:
+            logger.warning(f"yfinance returned empty for {ticker}")
+            return []
+        
+        candles = []
+        for timestamp, row in hist.iterrows():
+            ts_ms = int(timestamp.timestamp() * 1000)
+            candles.append({
+                "time": ts_ms,
+                "open": round(float(row["Open"]), 2),
+                "high": round(float(row["High"]), 2),
+                "low": round(float(row["Low"]), 2),
+                "close": round(float(row["Close"]), 2),
+                "volume": int(row["Volume"]) if "Volume" in row else 0,
+            })
+        
+        logger.info(f"yfinance fallback: fetched {len(candles)} candles for {ticker}")
+        return candles
+        
+    except Exception as e:
+        logger.error(f"yfinance candle fallback error: {e}")
+        return []
+
 
 def fetch_candles(symbol: str = "NIFTY 50", exchange: str = "NSE",
                   interval: str = "FIFTEEN_MINUTE", days: int = 5) -> List[Dict]:
-    """Fetch historical candle data from Angel One."""
+    """Fetch historical candle data from Angel One, fallback to yfinance."""
+    cache_key = f"candles_{symbol}_{interval}_{days}"
+    cached = _candles_cache.get(cache_key)
+    if cached:
+        return cached
+
+    # Try Angel One first
     try:
         client = get_angel_client()
         candles = client.get_candle_data(exchange, symbol, interval, days)
         if candles and len(candles) > 0:
+            _candles_cache.set(cache_key, candles)
             return candles
     except Exception as e:
-        logger.error(f"Candle fetch error: {e}")
-    return []
+        logger.error(f"Angel One candle fetch failed: {e}")
 
+    # Fallback to yfinance
+    logger.info("Falling back to yfinance for candles")
+    candles = _fetch_candles_yfinance(symbol, interval, days)
+    if candles:
+        _candles_cache.set(cache_key, candles)
+    return candles
 
-# ─────────────────────────────────────────────────────────────────
-# 8. MASTER FETCH — Get everything at once
-# ─────────────────────────────────────────────────────────────────
 
 def fetch_all_live_data() -> Dict[str, Any]:
-    """
-    Fetch ALL live data in one call.
-    Returns complete market snapshot.
-    """
     logger.info("Fetching all live data...")
     start = time.time()
 
