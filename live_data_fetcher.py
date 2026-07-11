@@ -1,10 +1,10 @@
 """
 live_data_fetcher.py — Fetches ALL real market data
 
-FIXED v4:
-- Candles: yfinance fallback with correct tickers (^NSEI works, but use NSEI.NS for better compatibility)
-- Global: Removed invalid tickers (SGX Nifty, KOSPI). Added Nikkei, FTSE.
-- _safe_float handles all NaN/inf
+FIXED v5:
+- OI: Removed fake proxy (ltp*1000). Now returns LTP-only with honest labels.
+- Candles: yfinance fallback with correct tickers
+- Global: Valid tickers only (Nikkei, FTSE)
 """
 
 import logging
@@ -135,6 +135,22 @@ def _detect_ce_pe(row: pd.Series) -> Optional[bool]:
     return None
 
 
+def _fallback_oi_data() -> Dict[str, Any]:
+    return {
+        "call_oi": None,
+        "put_oi": None,
+        "pcr": None,
+        "max_pain": None,
+        "expiry": None,
+        "top_strikes": [],
+        "strike_count": 0,
+        "underlying": None,
+        "source": "UNAVAILABLE",
+        "note": "Data unavailable — market may be closed or source blocked",
+        "time": datetime.now().isoformat(),
+    }
+
+
 def fetch_nse_option_chain(index: str = "NIFTY") -> Dict[str, Any]:
     try:
         client = get_angel_client()
@@ -208,8 +224,6 @@ def fetch_nse_option_chain(index: str = "NIFTY") -> Dict[str, Any]:
         opts = opts.sort_values("_dist").head(20)
 
         strikes_data = []
-        ce_oi = 0
-        pe_oi = 0
 
         for _, row in opts.iterrows():
             try:
@@ -228,65 +242,38 @@ def fetch_nse_option_chain(index: str = "NIFTY") -> Dict[str, Any]:
                 if is_ce is None:
                     continue
 
-                proxy_oi = int(ltp * 1000)
-
-                if is_ce:
-                    ce_oi += proxy_oi
-                else:
-                    pe_oi += proxy_oi
-
+                # HONEST: No OI from Angel One. Only LTP is real.
                 strikes_data.append({
                     "strike": strike,
-                    "oi": proxy_oi,
-                    "ce_oi": proxy_oi if is_ce else 0,
-                    "pe_oi": proxy_oi if not is_ce else 0,
                     "ltp": _safe_float(ltp, ndigits=2),
+                    "side": "CE" if is_ce else "PE",
+                    "symbol": symbol,
                 })
 
             except Exception as e:
                 logger.debug(f"Option LTP fetch error: {e}")
                 continue
 
-        strikes_data.sort(key=lambda x: x["oi"], reverse=True)
-        pcr = _safe_float(pe_oi / ce_oi, ndigits=2) if ce_oi > 0 else 0.0
-
-        max_pain = atm_strike
-        if strikes_data:
-            max_pain = min(strikes_data, key=lambda x: abs(x["strike"] - spot))["strike"]
+        # Sort by strike distance from ATM (closest first)
+        strikes_data.sort(key=lambda x: abs(x["strike"] - atm_strike))
 
         return {
-            "call_oi": ce_oi,
-            "put_oi": pe_oi,
-            "pcr": pcr,
-            "max_pain": max_pain,
+            "call_oi": None,
+            "put_oi": None,
+            "pcr": None,
+            "max_pain": None,
             "expiry": nearest_expiry,
             "top_strikes": strikes_data[:7],
             "strike_count": len(strikes_data),
             "underlying": _safe_float(spot, ndigits=2),
-            "source": "ANGEL_ONE_PROXIED",
-            "note": "OI proxied from LTP (Angel One does not provide raw OI)",
+            "source": "ANGEL_ONE_LTP_ONLY",
+            "note": "Angel One SmartAPI does not provide OI. LTP only. Use NSE official API for real OI/PCR.",
             "time": datetime.now().isoformat(),
         }
 
     except Exception as e:
         logger.error(f"Option chain error: {e}", exc_info=True)
         return _fallback_oi_data()
-
-
-def _fallback_oi_data() -> Dict[str, Any]:
-    return {
-        "call_oi": 0,
-        "put_oi": 0,
-        "pcr": 0.0,
-        "max_pain": None,
-        "expiry": None,
-        "top_strikes": [],
-        "strike_count": 0,
-        "underlying": None,
-        "source": "UNAVAILABLE",
-        "note": "Data unavailable — market may be closed or source blocked",
-        "time": datetime.now().isoformat(),
-    }
 
 
 def fetch_india_vix() -> Dict[str, Any]:
