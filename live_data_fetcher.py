@@ -1,11 +1,10 @@
 """
 live_data_fetcher.py — Fetches ALL real market data
 
-FIXED v3:
-- NaN/inf from yfinance → None (JSON safe)
-- Strike paisa normalization (÷100)
-- yfinance candle fallback
-- 10-min cache for VIX/Global
+FIXED v4:
+- Candles: yfinance fallback with correct tickers (^NSEI works, but use NSEI.NS for better compatibility)
+- Global: Removed invalid tickers (SGX Nifty, KOSPI). Added Nikkei, FTSE.
+- _safe_float handles all NaN/inf
 """
 
 import logging
@@ -341,17 +340,18 @@ def fetch_global_markets() -> Dict[str, Any]:
     result = {
         "nasdaq": {"value": None, "change": None, "change_percent": None},
         "dow": {"value": None, "change": None, "change_percent": None},
-        "kospi": {"value": None, "change": None, "change_percent": None},
-        "sgx_nifty": {"value": None, "change": None, "change_percent": None},
+        "nikkei": {"value": None, "change": None, "change_percent": None},
+        "ftse": {"value": None, "change": None, "change_percent": None},
         "source": "UNAVAILABLE",
         "time": datetime.now().isoformat(),
     }
 
+    # Valid Yahoo Finance tickers for major indices
     tickers = {
         "nasdaq": "^IXIC",
         "dow": "^DJI",
-        "kospi": "^KS11",
-        "sgx_nifty": "IN.NS",
+        "nikkei": "^N225",      # Nikkei 225 (Japan)
+        "ftse": "^FTSE",        # FTSE 100 (UK)
     }
 
     try:
@@ -463,6 +463,7 @@ def _fetch_candles_yfinance(symbol: str, interval: str, days: int) -> List[Dict]
     try:
         import yfinance as yf
         
+        # yfinance ticker mapping
         ticker_map = {
             "NIFTY 50": "^NSEI",
             "NIFTY": "^NSEI",
@@ -471,6 +472,7 @@ def _fetch_candles_yfinance(symbol: str, interval: str, days: int) -> List[Dict]
         }
         ticker = ticker_map.get(symbol, symbol)
         
+        # Interval mapping
         interval_map = {
             "ONE_MINUTE": "1m",
             "FIVE_MINUTE": "5m",
@@ -481,8 +483,17 @@ def _fetch_candles_yfinance(symbol: str, interval: str, days: int) -> List[Dict]
         }
         yf_interval = interval_map.get(interval, "15m")
         
+        # yfinance only allows 15m data for last 60 days
+        # For indices, use 1d if 15m fails
         t = yf.Ticker(ticker)
+        
+        # Try requested interval first
         hist = t.history(period=f"{days}d", interval=yf_interval)
+        
+        # If empty, try 1d as fallback
+        if hist.empty and yf_interval != "1d":
+            logger.warning(f"yfinance {ticker} {yf_interval} empty, trying 1d")
+            hist = t.history(period=f"{days}d", interval="1d")
         
         if hist.empty:
             logger.warning(f"yfinance returned empty for {ticker}")
@@ -492,7 +503,7 @@ def _fetch_candles_yfinance(symbol: str, interval: str, days: int) -> List[Dict]
         for timestamp, row in hist.iterrows():
             open_val = _safe_float(row.get("Open"), ndigits=2)
             if open_val is None:
-                continue  # Skip NaN rows
+                continue
             candles.append({
                 "time": int(timestamp.timestamp() * 1000),
                 "open": open_val,
@@ -517,6 +528,7 @@ def fetch_candles(symbol: str = "NIFTY 50", exchange: str = "NSE",
     if cached:
         return cached
 
+    # Try Angel One first
     try:
         client = get_angel_client()
         candles = client.get_candle_data(exchange, symbol, interval, days)
@@ -526,6 +538,7 @@ def fetch_candles(symbol: str = "NIFTY 50", exchange: str = "NSE",
     except Exception as e:
         logger.error(f"Angel One candle fetch failed: {e}")
 
+    # Fallback to yfinance
     logger.info("Falling back to yfinance for candles")
     candles = _fetch_candles_yfinance(symbol, interval, days)
     if candles:
