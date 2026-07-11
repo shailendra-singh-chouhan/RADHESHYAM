@@ -6,6 +6,7 @@ from database import get_db
 from models import Trade
 from strategy import shared_state
 import trading
+import config
 from config import AUTO_TRADE_ENABLED
 
 router = APIRouter()
@@ -178,6 +179,13 @@ from live_data_fetcher import (
     fetch_fii_dii, fetch_stock_price, fetch_all_live_data,
 )
 from datetime import datetime
+
+
+@router.get("/api/candles")
+def get_candles():
+    """Returns today's real candles (used by the chart — no more fake random data)."""
+    candles = config.state_manager.candle_store
+    return {"candles": candles or []}
 
 
 @router.get("/api/live/spot")
