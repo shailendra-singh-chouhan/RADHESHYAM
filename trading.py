@@ -38,6 +38,52 @@ def _check_risk(db: Session) -> tuple:
     return True, ""
 
 
+def check_risk_limits(db: Session) -> tuple:
+    """Public wrapper around _check_risk. Returns (ok: bool, message: str)."""
+    return _check_risk(db)
+
+
+def get_institutional_stats(db: Session) -> dict:
+    """Calculate win rate and total trades from closed trades."""
+    closed = db.query(Trade).filter(Trade.status == "CLOSED").all()
+    total = len(closed)
+    if total:
+        wins = sum(1 for t in closed if (t.pnl or 0) > 0)
+        win_rate = round(wins / total * 100, 1)
+    else:
+        win_rate = 0.0
+
+    return {
+        "win_rate": win_rate,
+        "total_trades": total,
+        "status": "Live",
+    }
+
+
+def get_options_contract(spot: float, signal: str) -> dict:
+    """Return basic ATM Nifty options contract details."""
+    if not spot or spot <= 0:
+        return {}
+
+    # Nifty strike interval is 50 points
+    atm_strike = round(spot / 50) * 50
+
+    if signal == "LONG":
+        option_type = "CE"
+    elif signal == "SHORT":
+        option_type = "PE"
+    else:
+        return {}
+
+    return {
+        "symbol": f"NIFTY{atm_strike}{option_type}",
+        "strike": atm_strike,
+        "type": option_type,
+        "spot": spot,
+        "signal": signal,
+    }
+
+
 def open_paper_trade(db: Session, signal: str, spot: float) -> Trade:
     if signal not in ("LONG", "SHORT"):
         return None
