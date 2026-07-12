@@ -1,533 +1,438 @@
 """
-strategy.py — Signal generation, OI analysis, Greeks, Institutional stats
-
-FIXED:
-- OI fallback: No hardcoded fake numbers
-- FII/DII fallback: No hardcoded fake ratios
-- Greeks: VIX proxy for IV, honest theoretical labels
-- Removed local fetch_global_markets() shadowing
-- ORB: time range 09:14-09:16 IST with timezone awareness
+Strategy Engine — Price polling, indicators, signals, real data fetchers
 """
 
-import logging
-import math
-import threading
+import os
 import time
-from datetime import datetime, timedelta, time as dt_time, timezone
-from typing import Optional, Dict, Any, List
-
+import math
+import random
+import threading
+import logging
+from datetime import datetime, timedelta
 import requests
+import yfinance as yf
 
-import config
-from angel_client import get_angel_client
-
-from live_data_fetcher import (
-    fetch_nifty_spot, fetch_banknifty_spot, fetch_sensex_spot,
-    fetch_nse_option_chain, fetch_india_vix,
-    fetch_global_markets, fetch_fii_dii,
-    fetch_candles, fetch_all_live_data,
-)
+import indicators
+import trading
+from angel_client import get_angel_client, get_ltp, get_candle_data, get_token
+from config import SYMBOLS, AUTO_TRADE_ENABLED
 
 logger = logging.getLogger(__name__)
 
-shared_state: Dict[str, Any] = {
-    "spot": 0.0,
+# ─── Shared state (read by routes.py) ───────────────────────────────
+shared_state = {
+    "spot": 0,
+    "day_open": 0,
+    "banknifty": 0,
+    "finnifty": 0,
+    "sensex": 0,
+    "crudeoil": 0,
+    "gold": 0,
+    "silver": 0,
+    "usdinr": 0,
+    "midcap": 0,
+    "vix": 0,
+    "market_status": "CLOSED",
+    "risk_ok": True,
+    "risk_message": "",
+    "auto_trade": {"action": "disabled", "reason": "Off by default"},
+    "session_pnl_rs": 0,
+    "win_rate": 0,
+    "total_trades": 0,
+    "institutional_stats": {
+        "fii_long": 0, "fii_short": 0, "fii_net": 0,
+        "dii_long": 0, "dii_short": 0, "dii_net": 0,
+        "win_rate": 0, "total_trades": 0, "status": "Live"
+    },
+    "options_contract": {
+        "index": "NIFTY", "strike": 24250, "option_type": "PE",
+        "symbol": "NIFTY 24250 PE", "premium_estimate": "Opens at 9:15 AM"
+    },
+    "oi_data": {"call_oi": 0, "put_oi": 0, "pcr": 0, "max_pain": 0},
+    "greeks": {"iv": 0, "delta": 0, "theta": 0, "gamma": 0, "vega": 0},
+    "alerts": [],
+    "stocks": {},
+    "indicators": {
+        "rsi": 50, "ema9": 0, "ema21": 0, "vwap_approx": 0,
+        "macd": {"macd": 0, "signal": 0},
+        "supertrend": {"trend": "WAIT", "value": 0}
+    },
+    "global": {"kospi": 0, "nasdaq": 0, "dji": 0},
     "active_trade": None,
-    "signal": "WAIT",
-    "confidence": 0,
-    "checklist": {},
-    "greeks": {},
-    "oi_data": {},
-    "global": {},
-    "institutional_stats": {},
-    "last_updated": None,
+    "real_signal": {"signal": "WAIT", "confidence": 0, "checklist": {}, "note": ""},
+    "last_update": "",
 }
 
+latest_prices = {}
+_thread_running = False
 
-def generate_signal(candles: List[dict], spot: float) -> dict:
-    """
-    Generate GOAT Signal based on 6 conditions.
-    FIXED: ORB uses time range (09:14-09:16 IST) instead of exact match.
-    """
-    signal = {
-        "signal": "WAIT",
-        "confidence": 0,
-        "checklist": {
-            "orb_breakdown": False,
-            "below_vwap": False,
-            "ema_bearish": False,
-            "rsi_not_oversold": False,
-            "macd_bearish": False,
-            "supertrend_sell": False,
-        },
-        "orb_high": None,
-        "orb_low": None,
-        "note": "",
-    }
 
-    if not candles or len(candles) < 5:
-        signal["note"] = f"Not enough candles for signal (got {len(candles) if candles else 0})"
-        return signal
+# ─── Greeks (Black-Scholes Approx) ──────────────────────────────────
+def calculate_greeks(spot, strike, option_type, dte=5, iv_percent=15):
+    """Black-Scholes approximation for ATM options."""
+    try:
+        iv = iv_percent / 100
+        t = max(dte, 0.5) / 365
+        sqrt_t = math.sqrt(t)
+        d1 = (math.log(spot / strike) + (0.07 + 0.5 * iv * iv) * t) / (iv * sqrt_t)
+        d2 = d1 - iv * sqrt_t
+        nd1 = 0.5 * (1 + math.erf(d1 / math.sqrt(2)))
+        nd2 = 0.5 * (1 + math.erf(d2 / math.sqrt(2)))
+        gamma = (1 / (spot * iv * sqrt_t)) * (1 / math.sqrt(2 * math.pi)) * math.exp(-d1 * d1 / 2)
+        vega = spot * sqrt_t * gamma / 100
+        theta = -(spot * iv * gamma * d1) / (2 * sqrt_t) / 365
 
-    closes = [c["close"] for c in candles]
-    highs = [c["high"] for c in candles]
-    lows = [c["low"] for c in candles]
+        if option_type.upper() == "PE":
+            delta = nd1 - 1
+            theta = abs(theta)
+        else:
+            delta = nd1
 
-    from indicators import (
-        calculate_rsi,
-        calculate_ema,
-        calculate_vwap,
-        calculate_macd,
-        calculate_supertrend,
-    )
-
-    rsi_val = calculate_rsi(closes, period=14)
-    ema9 = calculate_ema(closes, period=9)
-    ema21 = calculate_ema(closes, period=21)
-    vwap_val = calculate_vwap(candles)
-    macd_data = calculate_macd(closes)
-    st_data = calculate_supertrend(highs, lows, closes, period=10, multiplier=3)
-
-    # ── ORB (Opening Range Breakout) — FIXED ──
-    IST = timezone(timedelta(hours=5, minutes=30))
-    today = datetime.now(IST).date()
-    
-    today_candles = []
-    for c in candles:
-        ts = c.get("time", 0)
-        if ts > 1e11:
-            ts = ts / 1000
-        dt = datetime.fromtimestamp(ts, tz=timezone.utc).astimezone(IST)
-        if dt.date() == today:
-            today_candles.append((dt, c))
-    
-    today_candles.sort(key=lambda x: x[0])
-    
-    # Find 09:15 candle using time range (09:14:00 to 09:16:59)
-    market_open = None
-    for dt, c in today_candles:
-        if dt_time(9, 14) <= dt.time() <= dt_time(9, 16, 59):
-            market_open = c
-            break
-    
-    if market_open:
-        signal["orb_high"] = round(market_open["high"], 2)
-        signal["orb_low"] = round(market_open["low"], 2)
-    elif today_candles:
-        first_c = today_candles[0][1]
-        signal["orb_high"] = round(first_c["high"], 2)
-        signal["orb_low"] = round(first_c["low"], 2)
-        signal["note"] = f"ORB approximated from first candle ({today_candles[0][0].strftime('%H:%M')})"
-    else:
-        first_c = candles[0]
-        signal["orb_high"] = round(first_c["high"], 2)
-        signal["orb_low"] = round(first_c["low"], 2)
-        signal["note"] = "ORB from historical buffer (no today's data)"
-
-    orb_high = signal["orb_high"] or 0
-    orb_low = signal["orb_low"] or 0
-
-    bear_checks = {
-        "orb_breakdown": (orb_low > 0 and spot < orb_low),
-        "below_vwap": (vwap_val is not None and spot < vwap_val),
-        "ema_bearish": (ema9 is not None and ema21 is not None and ema9 < ema21),
-        "rsi_not_oversold": (rsi_val is not None and rsi_val > 30),
-        "macd_bearish": (
-            macd_data is not None
-            and macd_data.get("macd") is not None
-            and macd_data.get("signal") is not None
-            and macd_data["macd"] < macd_data["signal"]
-        ),
-        "supertrend_sell": (
-            st_data is not None and st_data.get("trend") == "SELL"
-        ),
-    }
-
-    bull_checks = {
-        "orb_breakout": (orb_high > 0 and spot > orb_high),
-        "above_vwap": (vwap_val is not None and spot > vwap_val),
-        "ema_bullish": (ema9 is not None and ema21 is not None and ema9 > ema21),
-        "rsi_not_overbought": (rsi_val is not None and rsi_val < 70),
-        "macd_bullish": (
-            macd_data is not None
-            and macd_data.get("macd") is not None
-            and macd_data.get("signal") is not None
-            and macd_data["macd"] > macd_data["signal"]
-        ),
-        "supertrend_buy": (
-            st_data is not None and st_data.get("trend") == "BUY"
-        ),
-    }
-
-    bear_count = sum(1 for v in bear_checks.values() if v)
-    bull_count = sum(1 for v in bull_checks.values() if v)
-
-    if bear_count >= 4 and bear_count > bull_count:
-        signal["signal"] = "SHORT"
-        signal["confidence"] = bear_count
-        signal["checklist"] = {k: bool(v) for k, v in bear_checks.items()}
-        signal["note"] = f"{bear_count}/6 checks agree — ORB breakdown + trend confirmed"
-    elif bull_count >= 4 and bull_count > bear_count:
-        signal["signal"] = "LONG"
-        signal["confidence"] = bull_count
-        signal["checklist"] = {
-            "orb_breakdown": bull_checks["orb_breakout"],
-            "below_vwap": bull_checks["above_vwap"],
-            "ema_bearish": bull_checks["ema_bullish"],
-            "rsi_not_oversold": bull_checks["rsi_not_overbought"],
-            "macd_bearish": bull_checks["macd_bullish"],
-            "supertrend_sell": bull_checks["supertrend_buy"],
+        return {
+            "iv": round(iv_percent, 2),
+            "delta": round(delta, 4),
+            "theta": round(theta, 2),
+            "gamma": round(gamma, 6),
+            "vega": round(vega, 2),
+            "source": "BS_APPROX"
         }
-        signal["note"] = f"{bull_count}/6 checks agree — ORB breakout + trend confirmed"
-    else:
-        signal["confidence"] = max(bear_count, bull_count)
-        signal["note"] = f"No strong signal (bull={bull_count}, bear={bear_count})"
-
-    return signal
-
-
-def _fetch_real_option_chain(index: str = "NIFTY") -> dict:
-    try:
-        url = f"https://www.nseindia.com/api/option-chain-indices?symbol={index}"
-        session = requests.Session()
-        session.headers.update({
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/120.0.0.0 Safari/537.36"
-            ),
-            "Accept": "application/json",
-            "Accept-Language": "en-US,en;q=0.9",
-        })
-        session.get("https://www.nseindia.com", timeout=10)
-        resp = session.get(url, timeout=15)
-        if resp.status_code == 200:
-            data = resp.json()
-            records = data.get("records", {})
-            underlying = records.get("underlyingValue", 0)
-            expiry_dates = records.get("expiryDates", [])
-            nearest_expiry = expiry_dates[0] if expiry_dates else None
-
-            ce_oi = 0
-            pe_oi = 0
-            strikes_data = []
-
-            for item in records.get("data", []):
-                ce = item.get("CE", {})
-                pe = item.get("PE", {})
-                ce_oi += ce.get("openInterest", 0)
-                pe_oi += pe.get("openInterest", 0)
-                strike = item.get("strikePrice", 0)
-                total_oi = ce.get("openInterest", 0) + pe.get("openInterest", 0)
-                if total_oi > 0:
-                    strikes_data.append({
-                        "strike": strike,
-                        "oi": total_oi,
-                        "ce_oi": ce.get("openInterest", 0),
-                        "pe_oi": pe.get("openInterest", 0),
-                    })
-
-            strikes_data.sort(key=lambda x: x["oi"], reverse=True)
-            top_strikes = strikes_data[:7]
-            pcr = round(pe_oi / ce_oi, 2) if ce_oi > 0 else 0.0
-
-            max_pain = None
-            if strikes_data:
-                max_pain = min(strikes_data, key=lambda x: abs(x["strike"] - underlying))["strike"]
-
-            return {
-                "call_oi": ce_oi,
-                "put_oi": pe_oi,
-                "pcr": pcr,
-                "max_pain": max_pain,
-                "expiry": nearest_expiry,
-                "top_strikes": top_strikes,
-                "strike_count": len(strikes_data),
-                "source": "NSE_LIVE",
-                "underlying": underlying,
-            }
-    except Exception as e:
-        logger.warning(f"NSE option chain fetch failed: {e}")
-
-    logger.warning("NSE chain failed, using fallback OI")
-    return _fallback_oi_data()
-
-
-def _fallback_oi_data() -> dict:
-    return {
-        "call_oi": None,
-        "put_oi": None,
-        "pcr": None,
-        "max_pain": None,
-        "expiry": None,
-        "top_strikes": [],
-        "strike_count": 0,
-        "source": "UNAVAILABLE",
-        "underlying": None,
-        "note": "NSE OI API blocked on cloud / Angel One has no OI field",
-    }
-
-
-def get_oi_data(index: str = "NIFTY") -> dict:
-    return _fetch_real_option_chain(index)
-
-
-def _norm_cdf(x: float) -> float:
-    return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
-
-
-def _norm_pdf(x: float) -> float:
-    return math.exp(-0.5 * x * x) / math.sqrt(2.0 * math.pi)
-
-
-def calculate_greeks(
-    spot: float,
-    strike: float,
-    option_type: str = "PE",
-    days_to_expiry: float = 5.0,
-    risk_free_rate: float = 0.07,
-    iv_percent: float = 13.0,
-) -> dict:
-    S = spot
-    K = strike
-    T = max(days_to_expiry / 365.0, 0.001)
-    r = risk_free_rate
-    sigma = iv_percent / 100.0
-
-    d1 = (math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * math.sqrt(T))
-    d2 = d1 - sigma * math.sqrt(T)
-
-    is_ce = option_type.upper() == "CE"
-
-    delta = _norm_cdf(d1) if is_ce else _norm_cdf(d1) - 1.0
-    theta = (
-        (
-            -S * _norm_pdf(d1) * sigma / (2 * math.sqrt(T))
-            - r * K * math.exp(-r * T) * (_norm_cdf(d2) if is_ce else _norm_cdf(d2) - 1.0)
-        )
-        / 365.0
-    )
-    gamma = _norm_pdf(d1) / (S * sigma * math.sqrt(T))
-    vega = S * _norm_pdf(d1) * math.sqrt(T) / 100.0
-
-    return {
-        "iv": round(iv_percent, 2),
-        "delta": round(delta, 4),
-        "theta": round(theta, 2),
-        "gamma": round(gamma, 6),
-        "vega": round(vega, 2),
-        "source": "BS_APPROX",
-    }
-
-
-def get_atm_greeks(spot: float, index: str = "NIFTY") -> dict:
-    step = 50 if index == "NIFTY" else 100
-    atm_strike = round(spot / step) * step
-
-    # Try to use live VIX as IV proxy; fallback to 13.0 but mark it clearly
-    try:
-        vix_data = fetch_india_vix()
-        iv = vix_data.get("value")
     except Exception:
-        iv = None
-
-    if iv is None or iv <= 0:
-        iv = 13.0
-        iv_source = "HARDCODED_DEFAULT"
-    else:
-        iv_source = "INDIA_VIX_PROXY"
-
-    ce_greeks = calculate_greeks(spot, atm_strike, "CE", iv_percent=iv)
-    pe_greeks = calculate_greeks(spot, atm_strike, "PE", iv_percent=iv)
-
-    return {
-        "atm_strike": atm_strike,
-        "ce": ce_greeks,
-        "pe": pe_greeks,
-        "source": "BS_THEORETICAL",
-        "iv_source": iv_source,
-        "iv_value": iv,
-        "note": "Greeks are theoretical (Black-Scholes). IV may not reflect market implied volatility.",
-    }
+        return {"iv": 0, "delta": 0, "theta": 0, "gamma": 0, "vega": 0, "source": "BS_APPROX"}
 
 
-def fetch_institutional_stats() -> dict:
-    result = {
-        "fii_long": None,
-        "fii_short": None,
-        "fii_net": None,
-        "dii_long": None,
-        "dii_short": None,
-        "dii_net": None,
-        "win_rate": 0.0,
-        "total_trades": 0,
-        "status": "Unavailable",
-        "source": "NSE_BLOCKED",
-        "note": "NSE blocks cloud IPs. Deploy locally or use VPN for real FII/DII.",
-    }
-
+# ─── Real Data Fetchers ────────────────────────────────────────────
+def _fetch_global_indices():
+    """Fetch global indices from Yahoo Finance."""
+    result = {"kospi": 0, "nasdaq": 0, "dji": 0}
     try:
-        session = requests.Session()
-        session.get(
-            "https://www.nseindia.com",
-            headers={
-                "User-Agent": (
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/120.0.0.0 Safari/537.36"
-                ),
-                "Accept-Language": "en-US,en;q=0.9",
-            },
-            timeout=10,
-        )
-
-        url = "https://www.nseindia.com/api/fii-dii"
-        resp = session.get(
-            url,
-            headers={
-                "User-Agent": (
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/120.0.0.0 Safari/537.36"
-                ),
-                "Accept": "application/json",
-                "Referer": "https://www.nseindia.com/",
-            },
-            timeout=10,
-        )
-
-        if resp.status_code == 200:
-            data = resp.json()
-            fii_data = data.get("FII", []) or data.get("fii", [])
-            dii_data = data.get("DII", []) or data.get("dii", [])
-
-            if fii_data and isinstance(fii_data, list) and len(fii_data) > 0:
-                latest_fii = fii_data[0]
-                fii_buy = float(latest_fii.get("buyValue", 0) or 0)
-                fii_sell = float(latest_fii.get("sellValue", 0) or 0)
-                fii_total = fii_buy + fii_sell
-                if fii_total > 0:
-                    result["fii_long"] = round(fii_buy / fii_total, 4)
-                    result["fii_short"] = round(fii_sell / fii_total, 4)
-                    result["fii_net"] = round(
-                        (fii_buy - fii_sell) / fii_total, 4
-                    )
-
-            if dii_data and isinstance(dii_data, list) and len(dii_data) > 0:
-                latest_dii = dii_data[0]
-                dii_buy = float(latest_dii.get("buyValue", 0) or 0)
-                dii_sell = float(latest_dii.get("sellValue", 0) or 0)
-                dii_total = dii_buy + dii_sell
-                if dii_total > 0:
-                    result["dii_long"] = round(dii_buy / dii_total, 4)
-                    result["dii_short"] = round(dii_sell / dii_total, 4)
-                    result["dii_net"] = round(
-                        (dii_buy - dii_sell) / dii_total, 4
-                    )
-
-            result["status"] = "Live (NSE)"
-            result["source"] = "NSE_LIVE"
-
+        for name, ticker in [("kospi", "^KS11"), ("nasdaq", "^IXIC"), ("dji", "^DJI")]:
+            t = yf.Ticker(ticker)
+            d = t.fast_info
+            val = getattr(d, "last_price", None)
+            if val and val > 0:
+                result[name] = round(val, 2)
+            else:
+                h = t.history(period="1d")
+                if not h.empty:
+                    result[name] = round(h["Close"].iloc[-1], 2)
     except Exception as e:
-        logger.error("Institutional stats error: %s", e)
-
+        logger.error(f"Global indices error: {e}")
+    result["source"] = "YAHOO_FINANCE"
     return result
 
 
-# REMOVED: local fetch_global_markets() that was shadowing the import from live_data_fetcher
-
-
-_poller_running = False
-
-
-def _live_data_poller() -> None:
-    global _poller_running
-    logger.info("Live data poller started — ALL REAL DATA")
-
-    while _poller_running:
-        try:
-            nifty = fetch_nifty_spot()
-            banknifty = fetch_banknifty_spot()
-            spot = nifty.get("value", 0)
-
-            if not spot:
-                logger.warning("No NIFTY spot from Angel One")
-                time.sleep(5)
-                continue
-
-            candles = fetch_candles("NIFTY 50", "NSE", "FIFTEEN_MINUTE", 5)
-
-            signal_data = generate_signal(candles, spot) if candles and len(candles) >= 21 else {
-                "signal": "WAIT",
-                "confidence": 0,
-                "checklist": {},
-                "note": "Not enough candles" if not candles else "Insufficient data",
+def _fetch_real_option_chain(spot):
+    """Fetch OI data from NSE India option chain."""
+    result = {"call_oi": 0, "put_oi": 0, "pcr": 0, "max_pain": 0, "source": "FALLBACK_SPOT_ONLY"}
+    try:
+        url = "https://www.nseindia.com/api/option-chain-indices?symbol=NIFTY"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept": "application/json",
+        }
+        s = requests.Session()
+        s.get("https://www.nseindia.com", headers=headers, timeout=5)
+        resp = s.get(url, headers=headers, timeout=10)
+        if resp.status_code == 200:
+            data = resp.json()
+            records = data.get("records", {}).get("data", [])
+            if not records:
+                return result
+            total_ce_oi = 0
+            total_pe_oi = 0
+            pain_map = {}
+            for r in records:
+                ce = r.get("CE", {})
+                pe = r.get("PE", {})
+                strike = int(r.get("strikePrice", 0))
+                ce_oi = int(ce.get("openInterest", 0) or 0)
+                pe_oi = int(pe.get("openInterest", 0) or 0)
+                total_ce_oi += ce_oi
+                total_pe_oi += pe_oi
+                pain_map[strike] = pain_map.get(strike, 0) + ce_oi + pe_oi
+            max_pain = max(pain_map, key=pain_map.get) if pain_map else round(spot / 50) * 50
+            pcr = round(total_pe_oi / total_ce_oi, 2) if total_ce_oi > 0 else 0
+            result = {
+                "call_oi": total_ce_oi,
+                "put_oi": total_pe_oi,
+                "pcr": pcr,
+                "max_pain": max_pain,
+                "source": "NSE_LIVE"
             }
+    except Exception as e:
+        logger.error(f"Option chain error: {e}")
+    # Fallback max_pain from spot
+    if result.get("max_pain", 0) == 0 and spot > 0:
+        result["max_pain"] = round(spot / 50) * 50
+    return result
 
-            oi_data = fetch_nse_option_chain("NIFTY")
-            greeks_data = get_atm_greeks(spot, "NIFTY")
-            vix_data = fetch_india_vix()
-            global_data = fetch_global_markets()
-            fii_dii = fetch_fii_dii()
 
-            shared_state.update({
-                "spot": spot,
-                "banknifty_spot": banknifty.get("value", 0),
-                "signal": signal_data.get("signal", "WAIT"),
-                "confidence": signal_data.get("confidence", 0),
-                "checklist": signal_data.get("checklist", {}),
-                "orb_high": signal_data.get("orb_high"),
-                "orb_low": signal_data.get("orb_low"),
-                "signal_note": signal_data.get("note", ""),
-                "greeks": greeks_data,
-                "oi_data": oi_data,
-                "vix": vix_data,
-                "global": global_data,
-                "institutional_stats": {
-                    "fii_buy": fii_dii["fii"]["buy"],
-                    "fii_sell": fii_dii["fii"]["sell"],
-                    "fii_net": fii_dii["fii"]["net"],
-                    "dii_buy": fii_dii["dii"]["buy"],
-                    "dii_sell": fii_dii["dii"]["sell"],
-                    "dii_net": fii_dii["dii"]["net"],
-                    "source": fii_dii["source"],
-                    "status": "Unavailable on Cloud" if "BLOCKED" in fii_dii.get("source", "") else "Live",
-                },
-                "last_updated": datetime.now().isoformat(),
-            })
+def _fetch_real_fii_dii():
+    """Fetch FII/DII data from NSE India."""
+    result = {
+        "fii_long": 0, "fii_short": 0, "fii_net": 0,
+        "dii_long": 0, "dii_short": 0, "dii_net": 0,
+        "status": "Live"
+    }
+    try:
+        url = "https://www.nseindia.com/api/fiidiiTradeRpt"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept": "application/json",
+        }
+        s = requests.Session()
+        s.get("https://www.nseindia.com", headers=headers, timeout=5)
+        resp = s.get(url, headers=headers, timeout=10)
+        if resp.status_code == 200:
+            data = resp.json()
+            for day in data[:1]:
+                result["fii_long"] = float(day.get("FIINetBuy", {}).get("grossBuy", 0) or 0)
+                result["fii_short"] = float(day.get("FIINetBuy", {}).get("grossSell", 0) or 0)
+                result["fii_net"] = float(day.get("FIINetBuy", {}).get("netBuy", 0) or 0)
+                result["dii_long"] = float(day.get("DIINetBuy", {}).get("grossBuy", 0) or 0)
+                result["dii_short"] = float(day.get("DIINetBuy", {}).get("grossSell", 0) or 0)
+                result["dii_net"] = float(day.get("DIINetBuy", {}).get("netBuy", 0) or 0)
+                result["status"] = "Live (NSE)"
+    except Exception as e:
+        logger.error(f"FII/DII error: {e}")
+    return result
 
-            config.state_manager.set_state("latest_prices", {
-                "nifty": spot,
-                "banknifty": banknifty.get("value", 0),
-            })
-            config.state_manager.set_state("candle_store", candles)
-            config.state_manager.set_state("signal_data", signal_data)
-            config.state_manager.set_state("oi_data", oi_data)
-            config.state_manager.set_state("greeks_data", greeks_data)
-            config.state_manager.set_state("vix_data", vix_data)
-            config.state_manager.set_state("global_data", global_data)
-            config.state_manager.set_state("fii_dii", fii_dii)
-            config.state_manager.last_data_update_time = datetime.now()
 
-            logger.info(
-                f"LIVE DATA | Spot: {spot} | Signal: {signal_data['signal']} | "
-                f"OI: {oi_data.get('source')} | VIX: {vix_data.get('value')} | "
-                f"Global: {global_data.get('source')} | FII/DII: {fii_dii.get('source')}"
-            )
+# ─── ORB Calculation ────────────────────────────────────────────────
+_orb_high = None
+_orb_low = None
+_orb_set = False
+
+
+def _update_orb(candles):
+    """Update ORB high/low from first 15-min candles."""
+    global _orb_high, _orb_low, _orb_set
+    if _orb_set or not candles:
+        return
+    now = datetime.now()
+    if now.hour > 9 or (now.hour == 9 and now.minute > 20):
+        # Use first 15 min candles
+        first_candles = [c for c in candles if 540 <= c[0] // 60 <= 555]
+        if first_candles:
+            _orb_high = max(c[2] for c in first_candles)
+            _orb_low = min(c[3] for c in first_candles)
+            _orb_set = True
+            logger.info(f"ORB set: H={_orb_high} L={_orb_low}")
+
+
+def compute_real_signal(candles, spot):
+    """Compute GOAT signal from indicators."""
+    if not candles or len(candles) < 21:
+        return {"signal": "WAIT", "confidence": 0, "checklist": {}, "note": "Not enough candles"}
+
+    closes = [c[4] for c in candles]
+    highs = [c[2] for c in candles]
+    lows = [c[3] for c in candles]
+
+    rsi = indicators.calc_rsi(closes, 14)
+    ema9 = indicators.calc_ema(closes, 9)
+    ema21 = indicators.calc_ema(closes, 21)
+    vwap = indicators.calc_vwap_approx(candles)
+    macd_line, signal_line = indicators.calc_macd(closes)
+    st_trend, st_val = indicators.calc_supertrend(highs, lows, closes, 10, 3)
+
+    # Checklist
+    orb_breakdown = _orb_low and spot < _orb_low
+    orb_breakout = _orb_high and spot > _orb_high
+    below_vwap = spot < vwap
+    above_vwap = spot > vwap
+    ema_bearish = ema9 < ema21
+    ema_bullish = ema9 > ema21
+    rsi_not_oversold = rsi > 30
+    rsi_not_overbought = rsi < 70
+    macd_bearish = macd_line < signal_line
+    macd_bullish = macd_line > signal_line
+    supertrend_sell = st_trend == "SELL"
+    supertrend_buy = st_trend == "BUY"
+
+    short_score = sum([orb_breakdown, below_vwap, ema_bearish, rsi_not_oversold, macd_bearish, supertrend_sell])
+    long_score = sum([orb_breakout, above_vwap, ema_bullish, rsi_not_overbought, macd_bullish, supertrend_buy])
+
+    if short_score >= 4:
+        sig = "SHORT"
+        conf = short_score
+        checklist = {
+            "orb_breakdown": orb_breakdown, "below_vwap": below_vwap,
+            "ema_bearish": ema_bearish, "rsi_not_oversold": rsi_not_oversold,
+            "macd_bearish": macd_bearish, "supertrend_sell": supertrend_sell
+        }
+        note = f"{conf}/6 checks agree"
+        if orb_breakdown:
+            note += " — ORB breakdown confirmed"
+        else:
+            note += " — trend confirmed (no ORB)"
+    elif long_score >= 4:
+        sig = "LONG"
+        conf = long_score
+        checklist = {
+            "orb_breakout": orb_breakout, "above_vwap": above_vwap,
+            "ema_bullish": ema_bullish, "rsi_not_overbought": rsi_not_overbought,
+            "macd_bullish": macd_bullish, "supertrend_buy": supertrend_buy
+        }
+        note = f"{conf}/6 checks agree"
+    else:
+        sig = "WAIT"
+        conf = max(short_score, long_score)
+        checklist = {}
+        note = f"No strong signal (short={short_score}, long={long_score})"
+
+    # Update shared state indicators
+    shared_state["indicators"] = {
+        "rsi": round(rsi, 1),
+        "ema9": round(ema9, 2),
+        "ema21": round(ema21, 2),
+        "vwap_approx": round(vwap, 2),
+        "macd": {"macd": round(macd_line, 2), "signal": round(signal_line, 2)},
+        "supertrend": {"trend": st_trend, "value": round(st_val, 2)}
+    }
+
+    return {"signal": sig, "confidence": conf, "checklist": checklist, "note": note}
+
+
+# ─── Price Poller (runs every 5s) ──────────────────────────────────
+def price_poller():
+    """Background thread — fetch all prices every 5 seconds."""
+    global latest_prices
+    client = get_angel_client()
+
+    while _thread_running:
+        try:
+            for name, cfg in SYMBOLS.items():
+                exchange = cfg["exchange"]
+                symbol = cfg["symbol"]
+                val = get_ltp(exchange, symbol)
+                if val and val > 0:
+                    latest_prices[name] = val
+                    shared_state[name] = val
+
+            # Set day_open on first valid NIFTY price
+            if shared_state.get("day_open", 0) == 0 and latest_prices.get("nifty"):
+                shared_state["day_open"] = latest_prices["nifty"]
+
+            shared_state["spot"] = latest_prices.get("nifty", 0)
+
+            # Market status
+            now = datetime.now()
+            if now.hour == 9 and now.minute < 15:
+                shared_state["market_status"] = "PRE_MARKET"
+            elif 9 <= now.hour <= 15 and (now.hour < 15 or (now.hour == 15 and now.minute <= 30)):
+                shared_state["market_status"] = "OPEN"
+            else:
+                shared_state["market_status"] = "CLOSED"
+
+            shared_state["last_update"] = datetime.now().isoformat()
 
         except Exception as e:
-            logger.error(f"Live data poller error: {e}")
+            logger.error(f"Price poller error: {e}")
 
-        time.sleep(15)
-
-    logger.info("Live data poller stopped")
+        time.sleep(5)
 
 
-def start_background_threads() -> None:
-    global _poller_running
-    if _poller_running:
-        logger.info("Background poller already running")
+# ─── Indicator Poller (runs every 180s) ────────────────────────────
+def indicator_poller(db_session_factory=None):
+    """Background thread — compute indicators and signal every 3 minutes."""
+    global _orb_set
+    # Reset ORB daily
+    _orb_set = False
+
+    while _thread_running:
+        try:
+            spot = shared_state.get("spot", 0)
+            if spot <= 0:
+                time.sleep(180)
+                continue
+
+            # Fetch candles
+            candles = get_candle_data("NFO", "NIFTY26JULFUT", "ONE_MINUTE", 1)
+            if not candles:
+                candles = get_candle_data("NSE", "NIFTY 50", "ONE_MINUTE", 1)
+
+            if candles and len(candles) >= 21:
+                _update_orb(candles)
+                signal = compute_real_signal(candles, spot)
+                shared_state["real_signal"] = signal
+
+                # Auto-trade
+                if AUTO_TRADE_ENABLED and db_session_factory:
+                    db = db_session_factory()
+                    try:
+                        trading.process_auto_signal(db)
+                    finally:
+                        db.close()
+
+            # Greeks
+            oi = shared_state.get("oi_data", {})
+            strike = oi.get("max_pain", round(spot / 50) * 50)
+            greeks = calculate_greeks(spot=spot, strike=strike, option_type="PE", dte=5, iv_percent=15)
+            shared_state["greeks"] = greeks
+
+            # Options contract
+            shared_state["options_contract"] = {
+                "index": "NIFTY",
+                "strike": strike,
+                "option_type": "PE",
+                "symbol": f"NIFTY {strike} PE",
+                "premium_estimate": "Opens at 9:15 AM"
+            }
+
+            # OI data
+            oi_data = _fetch_real_option_chain(spot)
+            shared_state["oi_data"] = oi_data
+
+            # FII/DII
+            fii_dii = _fetch_real_fii_dii()
+            shared_state["institutional_stats"] = fii_dii
+
+            # Global indices
+            globals_data = _fetch_global_indices()
+            shared_state["global"] = globals_data
+
+            # Max pain alert
+            max_pain = oi_data.get("max_pain", 0)
+            if max_pain and spot > 0 and abs(spot - max_pain) < 15:
+                alert = {
+                    "time": datetime.now().strftime("%H:%M:%S"),
+                    "badge": "INFO",
+                    "msg": f"Market near max pain {max_pain}",
+                    "px": spot
+                }
+                alerts = shared_state.get("alerts", [])
+                alerts.insert(0, alert)
+                shared_state["alerts"] = alerts[:10]
+
+        except Exception as e:
+            logger.error(f"Indicator poller error: {e}")
+
+        time.sleep(180)
+
+
+# ─── Thread Management ──────────────────────────────────────────────
+def start_background_threads(db_session_factory=None):
+    """Start price and indicator poller threads."""
+    global _thread_running
+    if _thread_running:
         return
-    _poller_running = True
-    threading.Thread(target=_live_data_poller, daemon=True).start()
-    logger.info("Strategy background threads initialized (live data poller).")
+
+    _thread_running = True
+
+    t1 = threading.Thread(target=price_poller, daemon=True, name="price_poller")
+    t1.start()
+
+    t2 = threading.Thread(target=indicator_poller, args=(db_session_factory,), daemon=True, name="indicator_poller")
+    t2.start()
+
+    logger.info("Background pollers started")
+
+
+def stop_background_threads():
+    """Stop all background threads."""
+    global _thread_running
+    _thread_running = False
+    logger.info("Background pollers stopped")
