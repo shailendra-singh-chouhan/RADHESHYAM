@@ -5,6 +5,7 @@ API Routes — Dashboard, Data, Trades, Execute, Close
 import os
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import HTMLResponse
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from database import get_db
 from models import Trade
@@ -15,6 +16,10 @@ from config import AUTO_TRADE_ENABLED
 router = APIRouter()
 
 DASHBOARD_FILE = os.path.join(os.path.dirname(__file__), "dashboard.html")
+
+
+class ExecuteTradeRequest(BaseModel):
+    signal: str = "WAIT"
 
 
 def load_dashboard_html():
@@ -124,9 +129,8 @@ def get_trades(db: Session = Depends(get_db)):
 
 
 @router.post("/api/execute_trade")
-def execute_trade(request: Request, db: Session = Depends(get_db)):
-    body = request.json()
-    signal = body.get("signal", "WAIT")
+def execute_trade(body: ExecuteTradeRequest, db: Session = Depends(get_db)):
+    signal = body.signal
 
     spot = shared_state.get("spot", 0)
     if not spot:
