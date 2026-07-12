@@ -1,3 +1,7 @@
+"""
+API Routes — Dashboard, Data, Trades, Execute, Close
+"""
+
 import os
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import HTMLResponse
@@ -6,7 +10,6 @@ from database import get_db
 from models import Trade
 from strategy import shared_state
 import trading
-import config
 from config import AUTO_TRADE_ENABLED
 
 router = APIRouter()
@@ -32,28 +35,6 @@ def health():
     return {"status": "ok"}
 
 
-
-
-@router.get("/api/market")
-def market_status():
-    """
-    Returns detailed market status, timing, and session info.
-    Dashboard uses this to show market open/closed state.
-    """
-    from config import get_market_info
-    info = get_market_info()
-    return {
-        "status": info["status"],
-        "session": info["session"],
-        "current_time": info["current_time"],
-        "current_date": info["current_date"],
-        "day": info["day"],
-        "is_weekend": info["is_weekend"],
-        "next_open": info["next_open"],
-        "time_until_open": info["time_until_open"],
-        "time_until_close": info["time_until_close"],
-        "market_message": info["market_message"],
-    }
 @router.api_route("/api/data", methods=["GET", "HEAD"])
 def get_dashboard_data(request: Request, db: Session = Depends(get_db)):
     data = dict(shared_state)
@@ -167,69 +148,3 @@ def close_trade(request: Request, db: Session = Depends(get_db)):
     if trade:
         return {"status": "ok", "pnl": trade.pnl, "exit": trade.exit_price}
     return {"error": "No active trade to close"}
-
-
-# ═══════════════════════════════════════════════════════════════════
-# LIVE DATA ENDPOINTS — Real-time market data
-# ═══════════════════════════════════════════════════════════════════
-
-from live_data_fetcher import (
-    fetch_nifty_spot, fetch_banknifty_spot, fetch_sensex_spot,
-    fetch_nse_option_chain, fetch_india_vix, fetch_global_markets,
-    fetch_fii_dii, fetch_stock_price, fetch_all_live_data,
-)
-from datetime import datetime
-
-
-@router.get("/api/candles")
-def get_candles():
-    """Returns today's real candles (used by the chart — no more fake random data)."""
-    candles = config.state_manager.candle_store
-    return {"candles": candles or []}
-
-
-@router.get("/api/live/spot")
-def get_live_spot():
-    """Get live spot prices for NIFTY, BANKNIFTY, SENSEX"""
-    return {
-        "nifty": fetch_nifty_spot(),
-        "banknifty": fetch_banknifty_spot(),
-        "sensex": fetch_sensex_spot(),
-        "time": datetime.now().isoformat(),
-    }
-
-
-@router.get("/api/live/oi")
-def get_live_oi(index: str = "NIFTY"):
-    """Get live option chain OI data from NSE"""
-    return fetch_nse_option_chain(index)
-
-
-@router.get("/api/live/vix")
-def get_live_vix():
-    """Get live India VIX"""
-    return fetch_india_vix()
-
-
-@router.get("/api/live/global")
-def get_live_global():
-    """Get live global market indices from Yahoo Finance"""
-    return fetch_global_markets()
-
-
-@router.get("/api/live/fii-dii")
-def get_live_fii_dii():
-    """Get live FII/DII trading data from NSE"""
-    return fetch_fii_dii()
-
-
-@router.get("/api/live/stock/{stock_name}")
-def get_live_stock(stock_name: str):
-    """Get live price for a stock (HDFC, SBI, PNB, YES, INFY)"""
-    return fetch_stock_price(stock_name.upper())
-
-
-@router.get("/api/live/all")
-def get_all_live():
-    """Get complete live market snapshot — EVERYTHING"""
-    return fetch_all_live_data()
