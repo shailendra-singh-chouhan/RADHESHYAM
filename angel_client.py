@@ -7,28 +7,33 @@ import time
 import logging
 from SmartApi import SmartConnect
 import pyotp
+from config import ANGEL_LOGIN_DISABLED
 
 logger = logging.getLogger(__name__)
 
 _client = None
 _token_map = {}
 _last_login_attempt = 0
-_login_cooldown = 300  # 5 minutes cooldown after failed login
+_login_cooldown = 300
 
 
 def get_angel_client():
     """Get or create singleton Angel One client."""
     global _client, _last_login_attempt
 
+    # Hard block — no login attempts at all
+    if ANGEL_LOGIN_DISABLED:
+        return None
+
     # If client exists and has token, return it
     if _client and _client.accessToken:
         return _client
 
-    # Check cooldown — don't spam login attempts
+    # Cooldown check
     now = time.time()
     if now - _last_login_attempt < _login_cooldown:
         remaining = int(_login_cooldown - (now - _last_login_attempt))
-        logger.warning(f"Login cooldown active — {remaining}s remaining")
+        logger.debug(f"Login cooldown — {remaining}s remaining")
         return None
 
     client_id = os.getenv("ANGEL_CLIENT_ID")
@@ -44,7 +49,7 @@ def get_angel_client():
     totp = pyotp.TOTP(totp_secret)
     totp_token = totp.now()
 
-    _last_login_attempt = now  # Record attempt time BEFORE calling API
+    _last_login_attempt = now
 
     try:
         client = SmartConnect(api_key=api_key)
@@ -86,7 +91,6 @@ def get_token(exchange, symbol):
                         _token_map[cache_key] = token
                         return token
 
-        # Fallback for known tokens
         fallbacks = {
             "NSE:NIFTY": "25843",
             "NFO:NIFTY26JULFUT": "25843",
@@ -176,7 +180,6 @@ def get_options_contract_details(index, strike, option_type, expiry_date=None):
 
         expiry_str = expiry_date.strftime("%d%b%Y").upper()
         symbol = f"{index}{expiry_str}{strike}{option_type}"
-
         token = get_token("NFO", symbol)
 
         return {
