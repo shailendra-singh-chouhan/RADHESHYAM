@@ -1,67 +1,50 @@
-import os
-import datetime
-from contextlib import asynccontextmanager
-from fastapi import FastAPI
-from fastapi.responses import FileResponse  # नया इम्पोर्ट
-from fastapi.middleware.cors import CORSMiddleware
-from logzero import logger
+"""
+GOAT PRO — FastAPI Entry Point
+"""
 
-import config
-import angel_client
-import strategy
+import logging
+import os
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from database import engine, SessionLocal
+from models import Base
 import routes
+import strategy
+import stocks
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("--- Starting GOAT PRO Institutional Services ---")
+    """Startup: create tables, start background threads. Shutdown: stop threads."""
+    logger.info("GOAT PRO starting up...")
 
-    # Initialize database tables and migrations
-    from database import init_db
-    init_db()
-    logger.info("Database initialized successfully.")
+    # Create DB tables
+    Base.metadata.create_all(bind=engine)
+    logger.info("Database tables ready")
 
-    # Initialize Angel One client — login + scrip master happen inside __init__
-    try:
-        client = angel_client.get_angel_client()
-        if client and client.jwt_token:
-            logger.info("Angel One session ready + scrip master loaded.")
-        else:
-            logger.warning("Angel One session not ready. Pollers will retry.")
-    except Exception as e:
-        logger.warning(f"Angel One init failed: {e}. Pollers will retry.")
+    # Start background pollers
+    strategy.start_background_threads(db_session_factory=SessionLocal)
 
-    # Start all background pollers
-    try:
-        import stocks
-        stocks.start_stock_price_poller()
-    except Exception as e:
-        logger.warning(f"Stock poller not started: {e}")
+    # Start stock poller
+    stocks.start_stock_poller()
 
-    try:
-        strategy.start_background_threads()
-    except Exception as e:
-        logger.warning(f"Strategy threads not started: {e}")
+    logger.info("All background threads started")
 
-    logger.info("All background services started successfully.")
     yield
-    logger.info("--- Shutting down GOAT PRO ---")
+
+    # Shutdown
+    strategy.stop_background_threads()
+    stocks.stop_stock_poller()
+    logger.info("GOAT PRO shut down")
 
 
-app = FastAPI(title="GOAT PRO", lifespan=lifespan)
-
-# ────────────────────────────────────────────────────────
-# DASHBOARD UI ROUTE (Render "Not Found" Fix)
-# ────────────────────────────────────────────────────────
-@app.get("/")
-async def serve_dashboard():
-    """Serves the main frontend UI."""
-    if os.path.exists("dashboard.html"):
-        return FileResponse("dashboard.html")
-    return {"error": "Dashboard UI file missing. Please ensure dashboard.html is in the root directory."}
-
-# Mount the main dashboard router
-app.include_router(routes.router)
+app = FastAPI(title="GOAT PRO", version="3.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -70,3 +53,5 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(routes.router)
