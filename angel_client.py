@@ -1,5 +1,5 @@
 """
-Angel One SmartAPI Client — Login, LTP, Candles, Options
+Angel One SmartAPI Client — LOGIN DISABLED UNTIL CREDENTIALS UPDATED
 """
 
 import os
@@ -7,9 +7,14 @@ import time
 import logging
 from SmartApi import SmartConnect
 import pyotp
-from config import ANGEL_LOGIN_DISABLED
 
 logger = logging.getLogger(__name__)
+
+# ═══════════════════════════════════════════════════════════════════
+# ⛔ LOGIN DISABLED — Set to False AFTER updating credentials
+# ═══════════════════════════════════════════════════════════════════
+LOGIN_DISABLED = True
+# ═══════════════════════════════════════════════════════════════════
 
 _client = None
 _token_map = {}
@@ -18,22 +23,16 @@ _login_cooldown = 300
 
 
 def get_angel_client():
-    """Get or create singleton Angel One client."""
     global _client, _last_login_attempt
 
-    # Hard block — no login attempts at all
-    if ANGEL_LOGIN_DISABLED:
+    if LOGIN_DISABLED:
         return None
 
-    # If client exists and has token, return it
     if _client and _client.accessToken:
         return _client
 
-    # Cooldown check
     now = time.time()
     if now - _last_login_attempt < _login_cooldown:
-        remaining = int(_login_cooldown - (now - _last_login_attempt))
-        logger.debug(f"Login cooldown — {remaining}s remaining")
         return None
 
     client_id = os.getenv("ANGEL_CLIENT_ID")
@@ -42,19 +41,15 @@ def get_angel_client():
     mpin = os.getenv("ANGEL_MPIN", "123456")
 
     if not all([client_id, api_key, totp_secret]):
-        logger.error("Angel One credentials not set")
         _last_login_attempt = now
         return None
 
     totp = pyotp.TOTP(totp_secret)
-    totp_token = totp.now()
-
     _last_login_attempt = now
 
     try:
         client = SmartConnect(api_key=api_key)
-        data = client.generateSession(client_id, totp_token, mpin)
-
+        data = client.generateSession(client_id, totp.now(), mpin)
         if data.get("status"):
             _client = client
             logger.info("Angel One login successful")
@@ -68,7 +63,6 @@ def get_angel_client():
 
 
 def get_token(exchange, symbol):
-    """Get symbol token from cache or fetch."""
     cache_key = f"{exchange}:{symbol}"
     if cache_key in _token_map:
         return _token_map[cache_key]
@@ -106,12 +100,11 @@ def get_token(exchange, symbol):
 
         return None
     except Exception as e:
-        logger.error(f"Token fetch error for {symbol}: {e}")
+        logger.error(f"Token error for {symbol}: {e}")
         return None
 
 
 def get_ltp(exchange, symbol):
-    """Get Last Traded Price."""
     client = get_angel_client()
     if not client:
         return None
@@ -131,7 +124,6 @@ def get_ltp(exchange, symbol):
 
 
 def get_candle_data(exchange, symbol, interval="ONE_MINUTE", days=1):
-    """Get historical candle data."""
     client = get_angel_client()
     if not client:
         return None
@@ -163,7 +155,6 @@ def get_candle_data(exchange, symbol, interval="ONE_MINUTE", days=1):
 
 
 def get_options_contract_details(index, strike, option_type, expiry_date=None):
-    """Get options contract symbol and details."""
     client = get_angel_client()
     if not client:
         return None
@@ -191,5 +182,5 @@ def get_options_contract_details(index, strike, option_type, expiry_date=None):
             "lot_size": 75 if index == "NIFTY" else 25,
         }
     except Exception as e:
-        logger.error(f"Options contract error: {e}")
+        logger.error(f"Options error: {e}")
         return None
