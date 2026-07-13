@@ -35,6 +35,17 @@ class AppStateModel(Base):
     state_json = Column(Text, nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
+def get_db():
+    """
+    FastAPI dependency that provides a transactional database session scope
+    and automatically closes it after the request completes.
+    """
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
 def save_app_state(state_dict):
     """
     Serializes and dumps the live operational state_manager memory into PostgreSQL.
