@@ -1,23 +1,25 @@
 import logging
 from fastapi import FastAPI
+from contextlib import asynccontextmanager
 from routes import router
-from strategy import start_background_threads, stop_background_threads
+import strategy
 
+# Setup logging
 logging.basicConfig(level=logging.INFO)
-app = FastAPI()
 
-app.include_router(router)
-
-@app.on_event("startup")
-def startup_event():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
     logging.info("GOAT PRO starting up...")
-    start_background_threads()
+    strategy.start_background_threads()
     logging.info("All background threads started")
-
-@app.on_event("shutdown")
-def shutdown_event():
-    stop_background_threads()
+    yield
+    # Shutdown
     logging.info("GOAT PRO shutting down...")
+    strategy.stop_background_threads()
+
+app = FastAPI(lifespan=lifespan)
+app.include_router(router)
 
 @app.get("/")
 def read_root():
