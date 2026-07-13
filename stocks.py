@@ -7,6 +7,7 @@ import threading
 import logging
 from datetime import datetime
 from angel_client import get_ltp
+import config  # Dynamic global state integration
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +24,10 @@ _running = False
 
 def _poll_stocks(shared_state_ref):
     """Fetch stock prices and update shared state."""
+    # Ensure nested dictionary structure exists to prevent KeyError
+    if "stocks" not in shared_state_ref:
+        shared_state_ref["stocks"] = {}
+
     for name, cfg in STOCKS.items():
         try:
             val = get_ltp(cfg["exchange"], cfg["symbol"])
@@ -54,8 +59,10 @@ def start_stock_poller(shared_state_ref=None):
     if _running:
         return
     _running = True
-    import strategy
-    state = shared_state_ref or strategy.shared_state
+    
+    # FIX: Fallback to global config state engine if no explicit reference is passed
+    state = shared_state_ref if shared_state_ref is not None else config.state_manager.get_state()
+    
     t = threading.Thread(target=stock_poller_loop, args=(state,), daemon=True, name="stock_poller")
     t.start()
     logger.info("Stock poller started")
