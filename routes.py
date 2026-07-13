@@ -9,13 +9,18 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from database import get_db
 from models import Trade
-from strategy import shared_state
 import trading
-from config import AUTO_TRADE_ENABLED
+from config import state_manager, AUTO_TRADE_ENABLED
 
 router = APIRouter()
 
 DASHBOARD_FILE = os.path.join(os.path.dirname(__file__), "dashboard.html")
+
+# Helper function to safely read the state from the class manager
+def _get_state_dict():
+    if hasattr(state_manager, "get_state") and callable(state_manager.get_state):
+        return state_manager.get_state()
+    return getattr(state_manager, "state", {})
 
 
 class ExecuteTradeRequest(BaseModel):
@@ -42,6 +47,7 @@ def health():
 
 @router.api_route("/api/data", methods=["GET", "HEAD"])
 def get_dashboard_data(request: Request, db: Session = Depends(get_db)):
+    shared_state = _get_state_dict()
     data = dict(shared_state)
 
     spot = data.get("spot", 0)
@@ -131,6 +137,7 @@ def get_trades(db: Session = Depends(get_db)):
 @router.post("/api/execute_trade")
 def execute_trade(body: ExecuteTradeRequest, db: Session = Depends(get_db)):
     signal = body.signal
+    shared_state = _get_state_dict()
 
     spot = shared_state.get("spot", 0)
     if not spot:
@@ -144,6 +151,7 @@ def execute_trade(body: ExecuteTradeRequest, db: Session = Depends(get_db)):
 
 @router.post("/api/close_trade")
 def close_trade(request: Request, db: Session = Depends(get_db)):
+    shared_state = _get_state_dict()
     spot = shared_state.get("spot", 0)
     if not spot:
         return {"error": "No spot price available"}
