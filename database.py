@@ -6,7 +6,6 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy.sql import func
 
 logger = logging.getLogger(__name__)
-
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/goatpro")
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
@@ -29,7 +28,6 @@ def get_db():
         db.close()
 
 def save_app_state(state_dict, *args):
-    """Saves state to DB; *args handles positional argument errors."""
     db = SessionLocal()
     try:
         db.query(AppStateModel).delete()
@@ -42,5 +40,4 @@ def save_app_state(state_dict, *args):
     finally:
         db.close()
 
-# Initialize tables
 Base.metadata.create_all(bind=engine)
