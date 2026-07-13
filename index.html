@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>GOAT PRO Dashboard</title>
+</head>
+<body>
+    <h1>GOAT PRO Dashboard is Live! 🚀</h1>
+    <div id="status">Connecting to engine...</div>
+    <script>
+        fetch('/data')
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('status').innerText = "Status: " + data.message;
+            });
+    </script>
+</body>
+</html>
