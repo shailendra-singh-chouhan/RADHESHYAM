@@ -3,11 +3,13 @@ class AngelClient:
         pass
 
     def fetch_todays_candles(self, symbol, interval="5minute"):
-        """Placeholder logic for Angel One API."""
         return [] 
 
     def get_price(self, symbol):
         return 0.0
+    
+    def get_ltp(self, symbol):
+        """Fixed: added get_ltp to prevent import error"""
+        return 0.0
 
-# Singleton instance
 angel_client = AngelClient()
