@@ -42,5 +42,5 @@ def save_app_state(state_dict, *args):
     finally:
         db.close()
 
-# Initialize tables on startup
+# Initialize tables
 Base.metadata.create_all(bind=engine)
