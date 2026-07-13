@@ -80,8 +80,8 @@ async def lifespan(app: FastAPI):
     # Migrate existing tables (add missing columns that create_all skipped)
     _auto_migrate()
 
-    # Start background pollers
-    strategy.start_background_threads(db_session_factory=SessionLocal)
+    # Start background pollers (FIX: Removed unexpected keyword argument)
+    strategy.start_background_threads()
 
     # Start stock poller
     stocks.start_stock_poller()
