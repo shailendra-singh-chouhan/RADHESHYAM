@@ -1,5 +1,6 @@
 """
 GOAT PRO — Configuration & Symbols
+(Angel One removed — all live data now sourced from Yahoo Finance)
 """
 
 import os
@@ -9,37 +10,23 @@ import pytz
 # ─── Safety Toggle ──────────────────────────────────────────────────
 AUTO_TRADE_ENABLED = os.getenv("AUTO_TRADE_ENABLED", "false").lower() == "true"
 
-# ─── TEMPORARY: Disable Angel One login until credentials are updated ───
-ANGEL_LOGIN_DISABLED = True  # Set to False after updating credentials
-
-# ─── Symbol Configuration ───────────────────────────────────────────
+# ─── Yahoo Finance Symbol Map ────────────────────────────────────────
+# internal name -> Yahoo Finance ticker
 SYMBOLS = {
-    "nifty": {"exchange": "NFO", "symbol": "NIFTY26JULFUT"},
-    "banknifty": {"exchange": "NFO", "symbol": "BANKNIFTY26JULFUT"},
-    "finnifty": {"exchange": "NFO", "symbol": "FINNIFTY26JULFUT"},
-    "sensex": {"exchange": "BSE", "symbol": "SENSEX"},
-    "crudeoil": {"exchange": "MCX", "symbol": "CRUDEOIL"},
-    "gold": {"exchange": "MCX", "symbol": "GOLD"},
-    "silver": {"exchange": "MCX", "symbol": "SILVER"},
-    "usdinr": {"exchange": "CDS", "symbol": "USDINR"},
-    "midcap": {"exchange": "NSE", "symbol": "NIFTY MIDCAP 100"},
-    "vix": {"exchange": "NSE", "symbol": "INDIA VIX"},
+    "nifty": "^NSEI",
+    "banknifty": "^NSEBANK",
+    "finnifty": "NIFTY_FIN_SERVICE.NS",
+    "sensex": "^BSESN",
+    "crudeoil": "CL=F",
+    "gold": "GC=F",
+    "silver": "SI=F",
+    "usdinr": "INR=X",
+    "midcap": "^NSEMDCP50",
+    "vix": "^INDIAVIX",
 }
 
-# Individual symbol exports expected by strategy.py
-NIFTY_SYMBOL = SYMBOLS["nifty"]["symbol"]
-BANKNIFTY_SYMBOL = SYMBOLS["banknifty"]["symbol"]
-FINNIFTY_SYMBOL = SYMBOLS["finnifty"]["symbol"]
-SENSEX_SYMBOL = SYMBOLS["sensex"]["symbol"]
-CRUDEOIL_SYMBOL = SYMBOLS["crudeoil"]["symbol"]
-GOLD_SYMBOL = SYMBOLS["gold"]["symbol"]
-SILVER_SYMBOL = SYMBOLS["silver"]["symbol"]
-USDINR_SYMBOL = SYMBOLS["usdinr"]["symbol"]
-MIDCAP_SYMBOL = SYMBOLS["midcap"]["symbol"]
-VIX_SYMBOL = SYMBOLS["vix"]["symbol"]
-
 # ─── Poller Intervals ───────────────────────────────────────────────
-PRICE_POLL_INTERVAL = 5
+PRICE_POLL_INTERVAL = 15       # yfinance — no need to hammer every 5s
 INDICATOR_POLL_INTERVAL = 180
 
 # ─── Risk Limits ────────────────────────────────────────────────────
@@ -59,73 +46,25 @@ MIN_SIGNAL_CONFIDENCE = 4
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/goatpro")
 
 # ─── Time & Market Status Utilities ──────────────────────────────────
+IST = pytz.timezone("Asia/Kolkata")
+
+
 def get_ist_now():
-    """Returns the current execution time localized to Indian Standard Time (IST)."""
-    tz = pytz.timezone("Asia/Kolkata")
-    return datetime.datetime.now(tz)
+    """Current time localized to Indian Standard Time (IST)."""
+    return datetime.datetime.now(IST)
+
 
 def get_market_status():
-    """Forces an 'OPEN' status during this troubleshooting phase so your 
-    background threads run 24/7 and actively fetch the Yahoo Finance fallback data."""
+    """Real market-hours check: NSE trades Mon-Fri, 9:15 AM - 3:30 PM IST.
+    (No more hardcoded 'always OPEN' — that was a troubleshooting hack
+    left in by a previous edit and has been removed.)"""
+    now = get_ist_now()
+    if now.weekday() >= 5:  # Saturday=5, Sunday=6
+        return "CLOSED"
+    open_time = now.replace(hour=9, minute=15, second=0, microsecond=0)
+    close_time = now.replace(hour=15, minute=30, second=0, microsecond=0)
+    if now < open_time:
+        return "PRE_MARKET"
+    if now > close_time:
+        return "CLOSED"
     return "OPEN"
-
-# ─── State Management Engine ─────────────────────────────────────────
-class StateManager:
-    def __init__(self):
-        self.state = {
-            "latest_prices": {
-                "day_open_date": "", 
-                "last_update": "",
-                "nifty": 0,
-                "banknifty": 0,
-                "sensex": 0,
-                "vix": 0
-            },
-            "indicator_data": {},
-            "signal_data": {},
-            "candle_store": [],
-            "oi_data": {"source": "FALLBACK_SPOT_ONLY"},
-            "greeks": {"source": "BS_APPROX"},
-            "greeks_data": {},
-            "global": {"source": "YAHOO_FINANCE"},
-            "institutional_stats": {"status": "Live"},
-            "market_alerts": [],
-            "active_trade": None
-        }
-        self.last_data_update_time = None
-
-    @property
-    def latest_prices(self):
-        return self.state.get("latest_prices", {})
-
-    @property
-    def indicator_data(self):
-        return self.state.get("indicator_data", {})
-
-    @property
-    def oi_data(self):
-        return self.state.get("oi_data", {})
-
-    @property
-    def market_alerts(self):
-        return self.state.get("market_alerts", [])
-
-    def get_state(self):
-        return self.state
-
-    def set_state(self, key, value):
-        self.state[key] = value
-
-    def update_state(self, key, updates, allow_none_overwrite=False):
-        if key not in self.state or self.state[key] is None:
-            self.state[key] = {}
-        
-        if isinstance(updates, dict):
-            for k, v in updates.items():
-                if v is not None or allow_none_overwrite:
-                    self.state[key][k] = v
-        else:
-            self.state[key] = updates
-
-# Single centralized instance to manage live engine memory across files
-state_manager = StateManager()
