@@ -1,20 +1,20 @@
 """
 Strategy Engine — Price polling, indicators, signals, real data fetchers
+(Angel One fully removed — all live prices now sourced from Yahoo Finance)
 """
 
-import os
-import time
 import math
-import random
+import time
 import threading
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
+
 import requests
 import yfinance as yf
 
 import indicators
 import trading
-from angel_client import get_angel_client, get_ltp, get_candle_data, get_token
+import config
 from config import SYMBOLS, AUTO_TRADE_ENABLED
 
 logger = logging.getLogger(__name__)
@@ -61,10 +61,48 @@ shared_state = {
     "active_trade": None,
     "real_signal": {"signal": "WAIT", "confidence": 0, "checklist": {}, "note": ""},
     "last_update": "",
+    "data_source": "YAHOO_FINANCE",
 }
 
 latest_prices = {}
 _thread_running = False
+
+
+# ─── Yahoo Finance Price Fetch ──────────────────────────────────────
+def get_yf_ltp(ticker: str):
+    """Fetch last traded price for a Yahoo Finance ticker. Returns None on failure."""
+    try:
+        t = yf.Ticker(ticker)
+        fast = t.fast_info
+        val = getattr(fast, "last_price", None)
+        if val and val > 0:
+            return round(float(val), 2)
+        hist = t.history(period="1d", interval="1m")
+        if not hist.empty:
+            return round(float(hist["Close"].iloc[-1]), 2)
+    except Exception as e:
+        logger.error(f"yfinance LTP error for {ticker}: {e}")
+    return None
+
+
+def get_yf_candles(ticker: str):
+    """Fetch today's 1-minute candles for a Yahoo Finance ticker.
+    Returns list of (seconds_since_midnight_IST, open, high, low, close)."""
+    try:
+        t = yf.Ticker(ticker)
+        hist = t.history(period="1d", interval="1m")
+        if hist.empty:
+            return []
+        candles = []
+        for idx, row in hist.iterrows():
+            ist_time = idx.tz_convert("Asia/Kolkata") if idx.tzinfo else idx
+            seconds = ist_time.hour * 3600 + ist_time.minute * 60
+            candles.append((seconds, float(row["Open"]), float(row["High"]),
+                             float(row["Low"]), float(row["Close"])))
+        return candles
+    except Exception as e:
+        logger.error(f"yfinance candle error for {ticker}: {e}")
+        return []
 
 
 # ─── Greeks (Black-Scholes Approx) ──────────────────────────────────
@@ -77,7 +115,6 @@ def calculate_greeks(spot, strike, option_type, dte=5, iv_percent=15):
         d1 = (math.log(spot / strike) + (0.07 + 0.5 * iv * iv) * t) / (iv * sqrt_t)
         d2 = d1 - iv * sqrt_t
         nd1 = 0.5 * (1 + math.erf(d1 / math.sqrt(2)))
-        nd2 = 0.5 * (1 + math.erf(d2 / math.sqrt(2)))
         gamma = (1 / (spot * iv * sqrt_t)) * (1 / math.sqrt(2 * math.pi)) * math.exp(-d1 * d1 / 2)
         vega = spot * sqrt_t * gamma / 100
         theta = -(spot * iv * gamma * d1) / (2 * sqrt_t) / 365
@@ -106,15 +143,9 @@ def _fetch_global_indices():
     result = {"kospi": 0, "nasdaq": 0, "dji": 0}
     try:
         for name, ticker in [("kospi", "^KS11"), ("nasdaq", "^IXIC"), ("dji", "^DJI")]:
-            t = yf.Ticker(ticker)
-            d = t.fast_info
-            val = getattr(d, "last_price", None)
-            if val and val > 0:
-                result[name] = round(val, 2)
-            else:
-                h = t.history(period="1d")
-                if not h.empty:
-                    result[name] = round(h["Close"].iloc[-1], 2)
+            val = get_yf_ltp(ticker)
+            if val:
+                result[name] = val
     except Exception as e:
         logger.error(f"Global indices error: {e}")
     result["source"] = "YAHOO_FINANCE"
@@ -122,7 +153,7 @@ def _fetch_global_indices():
 
 
 def _fetch_real_option_chain(spot):
-    """Fetch OI data from NSE India option chain."""
+    """Fetch OI data from NSE India option chain. Independent of Angel One."""
     result = {"call_oi": 0, "put_oi": 0, "pcr": 0, "max_pain": 0, "source": "FALLBACK_SPOT_ONLY"}
     try:
         url = "https://www.nseindia.com/api/option-chain-indices?symbol=NIFTY"
@@ -162,14 +193,13 @@ def _fetch_real_option_chain(spot):
             }
     except Exception as e:
         logger.error(f"Option chain error: {e}")
-    # Fallback max_pain from spot
     if result.get("max_pain", 0) == 0 and spot > 0:
         result["max_pain"] = round(spot / 50) * 50
     return result
 
 
 def _fetch_real_fii_dii():
-    """Fetch FII/DII data from NSE India."""
+    """Fetch FII/DII data from NSE India. Independent of Angel One."""
     result = {
         "fii_long": 0, "fii_short": 0, "fii_net": 0,
         "dii_long": 0, "dii_short": 0, "dii_net": 0,
@@ -207,13 +237,12 @@ _orb_set = False
 
 
 def _update_orb(candles):
-    """Update ORB high/low from first 15-min candles."""
+    """Update ORB high/low from first 15-min candles (9:00-9:15 AM IST window)."""
     global _orb_high, _orb_low, _orb_set
     if _orb_set or not candles:
         return
-    now = datetime.now()
+    now = config.get_ist_now()
     if now.hour > 9 or (now.hour == 9 and now.minute > 20):
-        # Use first 15 min candles
         first_candles = [c for c in candles if 540 <= c[0] // 60 <= 555]
         if first_candles:
             _orb_high = max(c[2] for c in first_candles)
@@ -238,7 +267,6 @@ def compute_real_signal(candles, spot):
     macd_line, signal_line = indicators.calc_macd(closes)
     st_trend, st_val = indicators.calc_supertrend(highs, lows, closes, 10, 3)
 
-    # Checklist
     orb_breakdown = _orb_low and spot < _orb_low
     orb_breakout = _orb_high and spot > _orb_high
     below_vwap = spot < vwap
@@ -263,11 +291,7 @@ def compute_real_signal(candles, spot):
             "ema_bearish": ema_bearish, "rsi_not_oversold": rsi_not_oversold,
             "macd_bearish": macd_bearish, "supertrend_sell": supertrend_sell
         }
-        note = f"{conf}/6 checks agree"
-        if orb_breakdown:
-            note += " — ORB breakdown confirmed"
-        else:
-            note += " — trend confirmed (no ORB)"
+        note = f"{conf}/6 checks agree" + (" — ORB breakdown confirmed" if orb_breakdown else " — trend confirmed (no ORB)")
     elif long_score >= 4:
         sig = "LONG"
         conf = long_score
@@ -283,7 +307,6 @@ def compute_real_signal(candles, spot):
         checklist = {}
         note = f"No strong signal (short={short_score}, long={long_score})"
 
-    # Update shared state indicators
     shared_state["indicators"] = {
         "rsi": round(rsi, 1),
         "ema9": round(ema9, 2),
@@ -296,70 +319,53 @@ def compute_real_signal(candles, spot):
     return {"signal": sig, "confidence": conf, "checklist": checklist, "note": note}
 
 
-# ─── Price Poller (runs every 5s) ──────────────────────────────────
+# ─── Price Poller (runs every 15s) ──────────────────────────────────
 def price_poller():
-    """Background thread — fetch all prices every 5 seconds."""
+    """Background thread — fetch all prices every 15 seconds via Yahoo Finance."""
     global latest_prices
-    client = get_angel_client()
 
     while _thread_running:
         try:
-            for name, cfg in SYMBOLS.items():
-                exchange = cfg["exchange"]
-                symbol = cfg["symbol"]
-                val = get_ltp(exchange, symbol)
+            for name, ticker in SYMBOLS.items():
+                val = get_yf_ltp(ticker)
                 if val and val > 0:
                     latest_prices[name] = val
                     shared_state[name] = val
 
-            # Set day_open on first valid NIFTY price
             if shared_state.get("day_open", 0) == 0 and latest_prices.get("nifty"):
                 shared_state["day_open"] = latest_prices["nifty"]
 
             shared_state["spot"] = latest_prices.get("nifty", 0)
-
-            # Market status
-            now = datetime.now()
-            if now.hour == 9 and now.minute < 15:
-                shared_state["market_status"] = "PRE_MARKET"
-            elif 9 <= now.hour <= 15 and (now.hour < 15 or (now.hour == 15 and now.minute <= 30)):
-                shared_state["market_status"] = "OPEN"
-            else:
-                shared_state["market_status"] = "CLOSED"
-
-            shared_state["last_update"] = datetime.now().isoformat()
+            shared_state["market_status"] = config.get_market_status()
+            shared_state["last_update"] = config.get_ist_now().isoformat()
+            shared_state["data_source"] = "YAHOO_FINANCE"
 
         except Exception as e:
             logger.error(f"Price poller error: {e}")
 
-        time.sleep(5)
+        time.sleep(config.PRICE_POLL_INTERVAL)
 
 
 # ─── Indicator Poller (runs every 180s) ────────────────────────────
 def indicator_poller(db_session_factory=None):
     """Background thread — compute indicators and signal every 3 minutes."""
     global _orb_set
-    # Reset ORB daily
     _orb_set = False
 
     while _thread_running:
         try:
             spot = shared_state.get("spot", 0)
             if spot <= 0:
-                time.sleep(180)
+                time.sleep(config.INDICATOR_POLL_INTERVAL)
                 continue
 
-            # Fetch candles
-            candles = get_candle_data("NFO", "NIFTY26JULFUT", "ONE_MINUTE", 1)
-            if not candles:
-                candles = get_candle_data("NSE", "NIFTY 50", "ONE_MINUTE", 1)
+            candles = get_yf_candles(SYMBOLS["nifty"])
 
             if candles and len(candles) >= 21:
                 _update_orb(candles)
                 signal = compute_real_signal(candles, spot)
                 shared_state["real_signal"] = signal
 
-                # Auto-trade
                 if AUTO_TRADE_ENABLED and db_session_factory:
                     db = db_session_factory()
                     try:
@@ -367,13 +373,11 @@ def indicator_poller(db_session_factory=None):
                     finally:
                         db.close()
 
-            # Greeks
             oi = shared_state.get("oi_data", {})
             strike = oi.get("max_pain", round(spot / 50) * 50)
             greeks = calculate_greeks(spot=spot, strike=strike, option_type="PE", dte=5, iv_percent=15)
             shared_state["greeks"] = greeks
 
-            # Options contract
             shared_state["options_contract"] = {
                 "index": "NIFTY",
                 "strike": strike,
@@ -382,23 +386,19 @@ def indicator_poller(db_session_factory=None):
                 "premium_estimate": "Opens at 9:15 AM"
             }
 
-            # OI data
             oi_data = _fetch_real_option_chain(spot)
             shared_state["oi_data"] = oi_data
 
-            # FII/DII
             fii_dii = _fetch_real_fii_dii()
             shared_state["institutional_stats"] = fii_dii
 
-            # Global indices
             globals_data = _fetch_global_indices()
             shared_state["global"] = globals_data
 
-            # Max pain alert
             max_pain = oi_data.get("max_pain", 0)
             if max_pain and spot > 0 and abs(spot - max_pain) < 15:
                 alert = {
-                    "time": datetime.now().strftime("%H:%M:%S"),
+                    "time": config.get_ist_now().strftime("%H:%M:%S"),
                     "badge": "INFO",
                     "msg": f"Market near max pain {max_pain}",
                     "px": spot
@@ -410,7 +410,7 @@ def indicator_poller(db_session_factory=None):
         except Exception as e:
             logger.error(f"Indicator poller error: {e}")
 
-        time.sleep(180)
+        time.sleep(config.INDICATOR_POLL_INTERVAL)
 
 
 # ─── Thread Management ──────────────────────────────────────────────
@@ -428,7 +428,7 @@ def start_background_threads(db_session_factory=None):
     t2 = threading.Thread(target=indicator_poller, args=(db_session_factory,), daemon=True, name="indicator_poller")
     t2.start()
 
-    logger.info("Background pollers started")
+    logger.info("Background pollers started (Yahoo Finance mode — Angel One removed)")
 
 
 def stop_background_threads():
