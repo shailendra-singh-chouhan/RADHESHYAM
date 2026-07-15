@@ -2,10 +2,7 @@ fastapi
 uvicorn[standard]
 sqlalchemy
 psycopg2-binary
-smartapi-python
-pyotp
 yfinance
 requests
 gunicorn
 logzero
-websocket-client
