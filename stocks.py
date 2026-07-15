@@ -1,71 +1,86 @@
 """
 Stock Price Poller — HDFC, SBI, PNB, YES, INFY
+(Angel One removed — now uses Yahoo Finance directly)
 """
-
 import time
 import threading
 import logging
 from datetime import datetime
-from angel_client import get_ltp
-import config  # Dynamic global state integration
+
+import yfinance as yf
+
+from strategy import shared_state  # write directly into the SAME dict routes.py reads
 
 logger = logging.getLogger(__name__)
 
+# Yahoo Finance tickers (NSE stocks use the .NS suffix)
 STOCKS = {
-    "HDFC": {"exchange": "NSE", "symbol": "HDFCBANK"},
-    "SBI": {"exchange": "NSE", "symbol": "SBIN"},
-    "PNB": {"exchange": "NSE", "symbol": "PNB"},
-    "YES": {"exchange": "NSE", "symbol": "YESBANK"},
-    "INFY": {"exchange": "NSE", "symbol": "INFY"},
+    "HDFC": "HDFCBANK.NS",
+    "SBI": "SBIN.NS",
+    "PNB": "PNB.NS",
+    "YES": "YESBANK.NS",
+    "INFY": "INFY.NS",
 }
 
 _running = False
 
 
-def _poll_stocks(shared_state_ref):
-    """Fetch stock prices and update shared state."""
-    # Ensure nested dictionary structure exists to prevent KeyError
-    if "stocks" not in shared_state_ref:
-        shared_state_ref["stocks"] = {}
+def _get_yf_stock_ltp(ticker: str):
+    """Fetch last price for a stock ticker from Yahoo Finance."""
+    try:
+        t = yf.Ticker(ticker)
+        fast = t.fast_info
+        val = getattr(fast, "last_price", None)
+        if val and val > 0:
+            return round(float(val), 2)
+        hist = t.history(period="1d", interval="1m")
+        if not hist.empty:
+            return round(float(hist["Close"].iloc[-1]), 2)
+    except Exception as e:
+        logger.error(f"yfinance stock LTP error for {ticker}: {e}")
+    return None
 
-    for name, cfg in STOCKS.items():
+
+def _poll_stocks():
+    """Fetch stock prices and write into strategy.shared_state['stocks']."""
+    if "stocks" not in shared_state:
+        shared_state["stocks"] = {}
+
+    for name, ticker in STOCKS.items():
         try:
-            val = get_ltp(cfg["exchange"], cfg["symbol"])
-            if val and val > 0:
-                shared_state_ref["stocks"][name] = {
+            val = _get_yf_stock_ltp(ticker)
+            if val:
+                shared_state["stocks"][name] = {
                     "ltp": val,
-                    "open": None,
-                    "high": None,
-                    "low": None,
                     "last_update": datetime.now().isoformat(),
+                    "source": "YAHOO_FINANCE",
                 }
         except Exception as e:
             logger.error(f"Stock {name} error: {e}")
 
 
-def stock_poller_loop(shared_state_ref):
+def stock_poller_loop():
     """Background thread for stock polling."""
     while _running:
         try:
-            _poll_stocks(shared_state_ref)
+            _poll_stocks()
         except Exception as e:
             logger.error(f"Stock poller error: {e}")
         time.sleep(30)
 
 
-def start_stock_poller(shared_state_ref=None):
-    """Start stock poller thread."""
+def start_stock_poller():
+    """Start stock poller thread. Writes directly into strategy.shared_state,
+    the same dict routes.py reads from — this fixes a previous bug where
+    stock data was written to a different, unused state object."""
     global _running
     if _running:
         return
     _running = True
-    
-    # FIX: Fallback to global config state engine if no explicit reference is passed
-    state = shared_state_ref if shared_state_ref is not None else config.state_manager.get_state()
-    
-    t = threading.Thread(target=stock_poller_loop, args=(state,), daemon=True, name="stock_poller")
+
+    t = threading.Thread(target=stock_poller_loop, daemon=True, name="stock_poller")
     t.start()
-    logger.info("Stock poller started")
+    logger.info("Stock poller started (Yahoo Finance mode)")
 
 
 def stop_stock_poller():
