@@ -147,8 +147,6 @@
     .nifty-spot { font-size: 1.8rem; }
   }
 </style>
-<base target="_blank">
-<base target="_blank">
 </head>
 <body>
 <div class="container">
@@ -178,20 +176,20 @@
 </div>
 
 <div class="cap-row">
-  <div class="cap-item"><span class="cap-label">💼 Capital</span><span class="cap-val">₹18,500</span></div>
-  <div class="cap-item"><span class="cap-label">📈 Today P&L</span><span class="cap-val up" id="todayPnl">+₹1,240</span></div>
-  <div class="cap-item"><span class="cap-label">🎯 Win Rate</span><span class="cap-val" id="winRateDisplay">68%</span></div>
-  <div class="cap-item"><span class="cap-label">📊 Trades</span><span class="cap-val" id="tradesDisplay">1</span></div>
-  <div class="cap-item"><span class="cap-label">🛑 Max Risk/Trade</span><span class="cap-val">₹185</span></div>
-  <div class="cap-item"><span class="cap-label">⛔ Daily Loss Limit</span><span class="cap-val">₹555</span></div>
+  <div class="cap-item"><span class="cap-label">💼 Capital</span><span class="cap-val" id="capitalDisplay">--</span></div>
+  <div class="cap-item"><span class="cap-label">📈 Today P&L</span><span class="cap-val up" id="todayPnl">--</span></div>
+  <div class="cap-item"><span class="cap-label">🎯 Win Rate</span><span class="cap-val" id="winRateDisplay">--</span></div>
+  <div class="cap-item"><span class="cap-label">📊 Trades</span><span class="cap-val" id="tradesDisplay">--</span></div>
+  <div class="cap-item"><span class="cap-label">🛑 Max Risk/Trade</span><span class="cap-val">₹2,000</span></div>
+  <div class="cap-item"><span class="cap-label">⛔ Daily Loss Limit</span><span class="cap-val">₹5,000</span></div>
 </div>
 <div class="card" style="margin-bottom:1rem;padding:0.75rem 1rem;">
   <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;">
     <span style="font-size:0.85rem;font-weight:600;">🎯 Daily Risk Used</span>
-    <span style="font-size:0.85rem;font-weight:700;" id="riskUsed">22%</span>
+    <span style="font-size:0.85rem;font-weight:700;" id="riskUsed">--</span>
   </div>
   <div style="height:8px;background:var(--border);border-radius:4px;margin-top:0.4rem;overflow:hidden;">
-    <div id="riskBar" style="width:22%;background:linear-gradient(90deg,var(--green),var(--yellow));border-radius:4px;height:100%;"></div>
+    <div id="riskBar" style="width:0%;background:linear-gradient(90deg,var(--green),var(--yellow));border-radius:4px;height:100%;"></div>
   </div>
 </div>
 
@@ -202,7 +200,8 @@
   <div class="ticker-item"><div class="ticker-name">🛢️ CRUDE</div><div class="ticker-price" id="tickerCrude">--</div><div class="ticker-change" id="tickerCrudeCh">--</div></div>
   <div class="ticker-item"><div class="ticker-name">🥇 GOLD</div><div class="ticker-price" id="tickerGold">--</div><div class="ticker-change" id="tickerGoldCh">--</div></div>
   <div class="ticker-item"><div class="ticker-name">🥈 SILVER</div><div class="ticker-price" id="tickerSilver">--</div><div class="ticker-change" id="tickerSilverCh">--</div></div>
-  <div class="ticker-item"><div class="ticker-name">🏢 STOCKS</div><div class="ticker-price" id="tickerStocks">LIVE</div><div class="ticker-change up">Real-time</div></div>
+  <div class="ticker-item"><div class="ticker-name">🏢 STOCKS</div><div class="ticker-price" id="tickerStocks">--</div><div class="ticker-change" id="tickerStocksCh">--</div></div>
+  <div class="ticker-item" id="tickerGift"><div class="ticker-name">🎁 GIFT NIFTY</div><div class="ticker-price" id="tickerGiftPrice">--</div><div class="ticker-change" id="tickerGiftCh">Not connected</div></div>
 </div>
 
 <div class="nifty-hero">
@@ -213,28 +212,28 @@
       <div class="nifty-change" id="niftyChange">--</div>
     </div>
     <div style="text-align:right;">
-      <div class="tag tag-g" id="niftySignalTag">BULLISH</div>
-      <div style="font-size:0.75rem;color:var(--text-dim);margin-top:0.3rem;">Source: ANGEL_ONE</div>
+      <div class="tag tag-y" id="niftySignalTag">--</div>
+      <div style="font-size:0.75rem;color:var(--text-dim);margin-top:0.3rem;">Source: <span id="niftySource">--</span></div>
     </div>
   </div>
   <div class="nifty-ohlc">
-    <div class="ohlc-item"><div class="ohlc-label">📂 Open</div><div class="ohlc-val" id="niftyOpen">--</div></div>
-    <div class="ohlc-item"><div class="ohlc-label">🔼 High</div><div class="ohlc-val" id="niftyHigh">--</div></div>
-    <div class="ohlc-item"><div class="ohlc-label">🔽 Low</div><div class="ohlc-val" id="niftyLow">--</div></div>
-    <div class="ohlc-item"><div class="ohlc-label">📊 Prev Close</div><div class="ohlc-val" id="niftyPrev">--</div></div>
+    <div class="ohlc-item"><div class="ohlc-label">📂 Open (Today)</div><div class="ohlc-val" id="niftyOpen">--</div></div>
+    <div class="ohlc-item"><div class="ohlc-label">🔼 High</div><div class="ohlc-val" id="niftyHigh">Not tracked</div></div>
+    <div class="ohlc-item"><div class="ohlc-label">🔽 Low</div><div class="ohlc-val" id="niftyLow">Not tracked</div></div>
+    <div class="ohlc-item"><div class="ohlc-label">📊 Prev Close</div><div class="ohlc-val" id="niftyPrev">Not tracked</div></div>
   </div>
   <div class="nifty-stats">
     <div class="stat-box"><div class="stat-label">📊 PCR</div><div class="stat-val" id="pcrDisplay">--</div></div>
-    <div class="stat-box"><div class="stat-label">⚡ IV</div><div class="stat-val" id="ivDisplay">--%</div></div>
+    <div class="stat-box"><div class="stat-label">⚡ IV</div><div class="stat-val" id="ivDisplay">--</div></div>
     <div class="stat-box"><div class="stat-label">😰 Max Pain</div><div class="stat-val" id="maxPainDisplay">--</div></div>
-    <div class="stat-box"><div class="stat-label">✅ Signal</div><div class="stat-val" id="signalDisplay" style="color:var(--green);">--</div></div>
+    <div class="stat-box"><div class="stat-label">✅ Signal</div><div class="stat-val" id="signalDisplay">--</div></div>
   </div>
 </div>
 
 <div class="signal-hero wait" id="signalHero">
-  <div class="signal-badge" id="signalBadge">✅ CONFIRMED</div>
-  <div class="signal-title" id="signalTitle">WAIT — Loading Real Data...</div>
-  <div class="signal-desc" id="signalDesc">Connecting to backend API for live signal...</div>
+  <div class="signal-badge" id="signalBadge">⏳ WAITING</div>
+  <div class="signal-title" id="signalTitle">Connecting to live data...</div>
+  <div class="signal-desc" id="signalDesc">--</div>
   <div class="signal-levels">
     <div class="level-box"><div class="level-label">🟢 ENTRY</div><div class="level-val" id="entryLevel">--</div></div>
     <div class="level-box"><div class="level-label">🔴 SL</div><div class="level-val" id="slLevel">--</div></div>
@@ -255,35 +254,35 @@
 </div>
 
 <div class="card" style="margin-bottom:1rem;">
-  <div class="card-title">🎛️ Indicator Dashboard <span class="tag tag-b">1M LIVE</span></div>
+  <div class="card-title">🎛️ Indicator Dashboard <span class="tag tag-b">LIVE</span></div>
   <div class="ind-grid">
-    <div class="ind-card"><div class="ind-name">📊 RSI(14)</div><div class="ind-val" id="rsiVal">--</div><div class="ind-status" id="rsiStatus" style="color:var(--green);">OVERSOLD</div></div>
-    <div class="ind-card"><div class="ind-name">📏 VWAP</div><div class="ind-val" id="vwapVal">--</div><div class="ind-status" id="vwapStatus" style="color:var(--blue);">ABOVE</div></div>
-    <div class="ind-card"><div class="ind-name">📉 EMA 9</div><div class="ind-val" id="ema9Val">--</div><div class="ind-status" id="ema9Status" style="color:var(--green);">BULL</div></div>
-    <div class="ind-card"><div class="ind-name">📉 EMA 21</div><div class="ind-val" id="ema21Val">--</div><div class="ind-status" id="ema21Status" style="color:var(--green);">BULL</div></div>
-    <div class="ind-card"><div class="ind-name">🌊 Supertrend</div><div class="ind-val" id="stVal">--</div><div class="ind-status" id="stStatus" style="color:var(--green);">BUY</div></div>
+    <div class="ind-card"><div class="ind-name">📊 RSI(14)</div><div class="ind-val" id="rsiVal">--</div><div class="ind-status" id="rsiStatus">--</div></div>
+    <div class="ind-card"><div class="ind-name">📏 VWAP (approx)</div><div class="ind-val" id="vwapVal">--</div><div class="ind-status" id="vwapStatus">--</div></div>
+    <div class="ind-card"><div class="ind-name">📉 EMA 9</div><div class="ind-val" id="ema9Val">--</div><div class="ind-status" id="ema9Status">--</div></div>
+    <div class="ind-card"><div class="ind-name">📉 EMA 21</div><div class="ind-val" id="ema21Val">--</div><div class="ind-status" id="ema21Status">--</div></div>
+    <div class="ind-card"><div class="ind-name">🌊 Supertrend</div><div class="ind-val" id="stVal">--</div><div class="ind-status" id="stStatus">--</div></div>
   </div>
 </div>
 
 <div class="card" style="margin-bottom:1rem;">
   <div class="card-title">🏦 Smart Money Moves</div>
   <div class="sm-grid">
-    <div class="sm-card"><div class="sm-icon">🐳</div><div><div class="sm-title">FII Net Activity</div><div class="sm-desc" id="fiiDesc">Loading...</div><div class="sm-tag tag-g" id="fiiTag">BUYING</div></div></div>
-    <div class="sm-card"><div class="sm-icon">🏛️</div><div><div class="sm-title">DII Net Activity</div><div class="sm-desc" id="diiDesc">Loading...</div><div class="sm-tag tag-g" id="diiTag">SUPPORT</div></div></div>
-    <div class="sm-card"><div class="sm-icon">📦</div><div><div class="sm-title">OI Long Buildup</div><div class="sm-desc" id="oiBuildDesc">Loading...</div><div class="sm-tag tag-g" id="oiBuildTag">LONG</div></div></div>
-    <div class="sm-card"><div class="sm-icon">💰</div><div><div class="sm-title">Put Writing</div><div class="sm-desc" id="putWriteDesc">Loading...</div><div class="sm-tag tag-y" id="putWriteTag">FLOOR</div></div></div>
-    <div class="sm-card"><div class="sm-icon">⚡</div><div><div class="sm-title">Gamma Exposure (GEX)</div><div class="sm-desc">Positive GEX zone — dealers buying dips. Low volatility expected in range.</div><div class="sm-tag tag-g">POSITIVE</div></div></div>
+    <div class="sm-card"><div class="sm-icon">🐳</div><div><div class="sm-title">FII Net Activity</div><div class="sm-desc" id="fiiDesc">--</div><div class="sm-tag tag-y" id="fiiTag">--</div></div></div>
+    <div class="sm-card"><div class="sm-icon">🏛️</div><div><div class="sm-title">DII Net Activity</div><div class="sm-desc" id="diiDesc">--</div><div class="sm-tag tag-y" id="diiTag">--</div></div></div>
+    <div class="sm-card"><div class="sm-icon">📦</div><div><div class="sm-title">OI Long Buildup</div><div class="sm-desc" id="oiBuildDesc">--</div><div class="sm-tag tag-y" id="oiBuildTag">--</div></div></div>
+    <div class="sm-card"><div class="sm-icon">💰</div><div><div class="sm-title">Put Writing</div><div class="sm-desc" id="putWriteDesc">--</div><div class="sm-tag tag-y" id="putWriteTag">--</div></div></div>
+    <div class="sm-card"><div class="sm-icon">⚡</div><div><div class="sm-title">Gamma Exposure (GEX)</div><div class="sm-desc" id="gexDesc">Not computed by backend yet.</div><div class="sm-tag tag-y">--</div></div></div>
   </div>
 </div>
 
 <div class="card" style="margin-bottom:1rem;">
   <div class="card-title">🧠 Theory & Science — Pro Concepts</div>
   <div class="theory-grid">
-    <div class="theory-card"><div class="theory-label">📐 Wyckoff Theory</div><div class="theory-title">Accumulation Phase</div><div class="theory-text">Market abhi <strong>Spring phase</strong> mein hai — last low test ho gaya, smart money accumulate kar raha hai. Yahan buyers aate hain. Classic Wyckoff Spring = Best entry point!</div></div>
-    <div class="theory-card"><div class="theory-label">🎯 ICT Concepts</div><div class="theory-title">Order Blocks & FVG</div><div class="theory-text"><strong>Bullish Order Block</strong> hai — yahan institutions ne previous orders place kiye the. FVG (Fair Value Gap) fill karne ke liye market wapas aayega.</div></div>
-    <div class="theory-card"><div class="theory-label">🌊 Elliott Wave</div><div class="theory-title">Wave 3 Starting</div><div class="theory-text">Wave 2 correction complete — <strong>Wave 3 (strongest wave)</strong> shuru ho rahi hai. Wave 3 usually 1.618x of Wave 1 hoti hai.</div></div>
-    <div class="theory-card"><div class="theory-label">📊 Market Structure</div><div class="theory-title">BOS Confirmed</div><div class="theory-text"><strong>Break of Structure (BOS)</strong> upward confirmed — higher highs aur higher lows ban rahe hain. Trend bullish hai.</div></div>
-    <div class="theory-card"><div class="theory-label">🧲 Options Gamma</div><div class="theory-title">Gamma Science</div><div class="theory-text">Expiry ke paas <strong>Gamma</strong> bahut zyada hoti hai — chhoti price movement mein option premium fast move karta hai. <strong>Time = Enemy, Direction = Friend!</strong></div></div>
+    <div class="theory-card"><div class="theory-label">📐 Wyckoff Theory</div><div class="theory-title">--</div><div class="theory-text">Live phase-detection not implemented in backend yet.</div></div>
+    <div class="theory-card"><div class="theory-label">🎯 ICT Concepts</div><div class="theory-title">--</div><div class="theory-text">Order block / FVG detection not implemented in backend yet.</div></div>
+    <div class="theory-card"><div class="theory-label">🌊 Elliott Wave</div><div class="theory-title">--</div><div class="theory-text">Wave counting not implemented in backend yet.</div></div>
+    <div class="theory-card"><div class="theory-label">📊 Market Structure</div><div class="theory-title">--</div><div class="theory-text">BOS/CHOCH detection not implemented in backend yet.</div></div>
+    <div class="theory-card"><div class="theory-label">🧲 Options Gamma</div><div class="theory-title">--</div><div class="theory-text">Real gamma exposure not implemented in backend yet.</div></div>
   </div>
 </div>
 
@@ -297,22 +296,18 @@
     <div class="growth-card"><div class="growth-month">Month 10–12</div><div class="growth-target">₹4L → ₹10L+</div><div class="growth-desc">Full GOAT mode · 1000% achieved!</div></div>
   </div>
   <div style="margin-top:0.75rem;padding:0.6rem;background:rgba(245,158,11,0.05);border-left:3px solid var(--yellow);border-radius:0 6px 6px 0;font-size:0.8rem;color:var(--text-dim);">
-    <strong>🔑 Key Rule:</strong> Kabhi bhi 1% se zyada risk mat lo · Loss limit hit ho toh screen band karo · Process follow karo!
+    <strong>🔑 Key Rule:</strong> Kabhi bhi 1% se zyada risk mat lo · Loss limit hit ho toh screen band karo · Process follow karo! <span style="opacity:0.7;">(Reference plan — not tied to live account data.)</span>
   </div>
 </div>
 
 <div class="grid g-2" style="margin-bottom:1rem;">
   <div class="card">
-    <div class="card-title">📰 News & Market Impact <span class="tag tag-b">LIVE</span></div>
-    <div id="newsContainer"><div style="color:var(--text-dim);text-align:center;padding:1rem;">Loading news...</div></div>
+    <div class="card-title">📰 News & Market Impact <span class="tag tag-y">NOT CONNECTED</span></div>
+    <div id="newsContainer"><div style="color:var(--text-dim);text-align:center;padding:1rem;">News feed not connected to backend yet.</div></div>
   </div>
   <div class="card">
-    <div class="card-title">🚨 Live Alert Feed <span class="tag tag-b">WhatsApp</span></div>
-    <div class="alert-item"><span class="alert-time">05:23</span><span class="alert-text"><span class="alert-sell">🔴 JADUI SELL</span> — Shooting Star at resistance + OI short — PE buy karo, SL tight!</span></div>
-    <div class="alert-item"><span class="alert-time">04:45</span><span class="alert-text"><span class="alert-buy">🟢 JADUI BUY</span> — Hammer at VWAP + RSI oversold — CE buy karo!</span></div>
-    <div class="alert-item"><span class="alert-time">03:12</span><span class="alert-text">⚠️ VIX spike detected — IV rising, avoid fresh entries</span></div>
-    <div class="alert-item"><span class="alert-time">02:30</span><span class="alert-text">📊 PCR crossed 1.0 — Put writers active, support building</span></div>
-    <div class="alert-item"><span class="alert-time">01:15</span><span class="alert-text">🟢 BANKNIFTY breakout above 51,400 — momentum strong</span></div>
+    <div class="card-title">🚨 Live Alert Feed <span class="tag tag-b">BACKEND</span></div>
+    <div id="alertsContainer"><div style="color:var(--text-dim);text-align:center;padding:1rem;">No alerts yet.</div></div>
   </div>
 </div>
 
@@ -320,76 +315,76 @@
   <div class="card">
     <div class="card-title">⚡ Greeks & IV <span class="tag tag-b">ATM</span></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;margin-top:0.5rem;">
-      <div class="ohlc-item"><div class="ohlc-label">IV (ATM)</div><div class="ohlc-val" id="greekIv">--%</div></div>
-      <div class="ohlc-item"><div class="ohlc-label">IV Rank</div><div class="ohlc-val" id="greekIvRank">--</div></div>
+      <div class="ohlc-item"><div class="ohlc-label">IV (ATM)</div><div class="ohlc-val" id="greekIv">--</div></div>
+      <div class="ohlc-item"><div class="ohlc-label">IV Rank</div><div class="ohlc-val" id="greekIvRank">Not computed</div></div>
       <div class="ohlc-item"><div class="ohlc-label">⚡ Gamma</div><div class="ohlc-val" id="greekGamma">--</div></div>
-      <div class="ohlc-item"><div class="ohlc-label">⏳ Theta/day</div><div class="ohlc-val" id="greekTheta">₹--</div></div>
+      <div class="ohlc-item"><div class="ohlc-label">⏳ Theta/day</div><div class="ohlc-val" id="greekTheta">--</div></div>
       <div class="ohlc-item"><div class="ohlc-label">🌊 Vega</div><div class="ohlc-val" id="greekVega">--</div></div>
-      <div class="ohlc-item"><div class="ohlc-label">➡️ Delta (CE)</div><div class="ohlc-val" id="greekDelta">--</div></div>
+      <div class="ohlc-item"><div class="ohlc-label">➡️ Delta (PE)</div><div class="ohlc-val" id="greekDelta">--</div></div>
     </div>
-    <div style="margin-top:0.75rem;font-size:0.75rem;color:var(--text-dim);">Source: <span id="greekSource">BS_APPROX</span></div>
+    <div style="margin-top:0.75rem;font-size:0.75rem;color:var(--text-dim);">Source: <span id="greekSource">--</span></div>
   </div>
   <div class="card">
     <div class="card-title">📊 OI Analysis <span class="tag tag-b">PCR</span></div>
     <div style="margin-top:0.5rem;">
       <div class="row-flex" style="padding:0.5rem 0;border-bottom:1px solid var(--border);"><span style="color:var(--text-dim);font-size:0.85rem;">PCR</span><span style="font-weight:700;font-family:monospace;" id="oiPcr">--</span></div>
-      <div class="row-flex" style="padding:0.5rem 0;border-bottom:1px solid var(--border);"><span style="color:var(--text-dim);font-size:0.85rem;">🔴 Call OI (Bears)</span><span style="font-weight:700;font-family:monospace;" id="oiCall">--</span></div>
-      <div class="row-flex" style="padding:0.5rem 0;border-bottom:1px solid var(--border);"><span style="color:var(--text-dim);font-size:0.85rem;">🟢 Put OI (Bulls)</span><span style="font-weight:700;font-family:monospace;" id="oiPut">--</span></div>
+      <div class="row-flex" style="padding:0.5rem 0;border-bottom:1px solid var(--border);"><span style="color:var(--text-dim);font-size:0.85rem;">🔴 Call OI</span><span style="font-weight:700;font-family:monospace;" id="oiCall">--</span></div>
+      <div class="row-flex" style="padding:0.5rem 0;border-bottom:1px solid var(--border);"><span style="color:var(--text-dim);font-size:0.85rem;">🟢 Put OI</span><span style="font-weight:700;font-family:monospace;" id="oiPut">--</span></div>
       <div class="row-flex" style="padding:0.5rem 0;border-bottom:1px solid var(--border);"><span style="color:var(--text-dim);font-size:0.85rem;">😰 Max Pain</span><span style="font-weight:700;font-family:monospace;" id="oiMaxPain">--</span></div>
-      <div class="row-flex" style="padding:0.5rem 0;border-bottom:1px solid var(--border);"><span style="color:var(--text-dim);font-size:0.85rem;">🎯 Key Resistance</span><span style="font-weight:700;font-family:monospace;">24,500 CE</span></div>
-      <div class="row-flex" style="padding:0.5rem 0;"><span style="color:var(--text-dim);font-size:0.85rem;">🛡️ Key Support</span><span style="font-weight:700;font-family:monospace;">24,300 PE</span></div>
+      <div class="row-flex" style="padding:0.5rem 0;border-bottom:1px solid var(--border);"><span style="color:var(--text-dim);font-size:0.85rem;">🎯 Key Resistance</span><span style="font-weight:700;font-family:monospace;">Not computed</span></div>
+      <div class="row-flex" style="padding:0.5rem 0;"><span style="color:var(--text-dim);font-size:0.85rem;">🛡️ Key Support</span><span style="font-weight:700;font-family:monospace;">Not computed</span></div>
     </div>
+    <div style="margin-top:0.5rem;font-size:0.7rem;color:var(--text-dim);">Source: <span id="oiSource">--</span></div>
   </div>
 </div>
 
 <div class="card" style="margin-bottom:1rem;">
   <div class="card-title">🕯️ Candle Patterns</div>
   <div class="sm-grid">
-    <div class="sm-card"><div class="sm-icon">🔨</div><div><div class="sm-title">Hammer</div><div class="sm-desc">Bullish reversal at support</div><div class="sm-tag tag-g">94%</div></div></div>
-    <div class="sm-card"><div class="sm-icon">⭐</div><div><div class="sm-title">Morning Star</div><div class="sm-desc">3-candle bullish reversal</div><div class="sm-tag tag-g">78%</div></div></div>
+    <div class="sm-card"><div class="sm-icon">🔨</div><div><div class="sm-title">Pattern detection</div><div class="sm-desc">Not implemented in backend yet.</div><div class="sm-tag tag-y">--</div></div></div>
   </div>
 </div>
 
 <div class="grid g-2" style="margin-bottom:1rem;">
   <div class="mini-card">
     <div class="mini-header"><div class="mini-name">🏦 BANKNIFTY</div><div class="mini-price" id="miniBnf">--</div></div>
-    <div class="mini-row"><span>📊 RSI</span><span id="bnfRsi">--</span></div>
-    <div class="mini-row"><span>📏 VWAP</span><span id="bnfVwap">--</span></div>
-    <div class="mini-row"><span>📈 OI</span><span id="bnfOi">--</span></div>
-    <div class="mini-row"><span>🌊 Trend</span><span id="bnfTrend">--</span></div>
-    <div class="mini-signal" id="bnfSignal" style="background:var(--red-dim);color:var(--red);">🔴 BEARISH SETUP — PE Buy</div>
+    <div class="mini-row"><span>📊 RSI</span><span id="bnfRsi">Not tracked</span></div>
+    <div class="mini-row"><span>📏 VWAP</span><span id="bnfVwap">Not tracked</span></div>
+    <div class="mini-row"><span>📈 OI</span><span id="bnfOi">Not tracked</span></div>
+    <div class="mini-row"><span>🌊 Trend</span><span id="bnfTrend">Not tracked</span></div>
+    <div class="mini-signal" id="bnfSignal" style="background:var(--yellow-dim);color:var(--yellow);">No per-instrument signal yet</div>
   </div>
   <div class="mini-card">
     <div class="mini-header"><div class="mini-name">📊 SENSEX</div><div class="mini-price" id="miniSensex">--</div></div>
-    <div class="mini-row"><span>📊 RSI</span><span id="sensexRsi">52.4</span></div>
-    <div class="mini-row"><span>📏 VWAP</span><span id="sensexVwap">ABOVE</span></div>
-    <div class="mini-row"><span>📈 OI</span><span id="sensexOi">LONG</span></div>
-    <div class="mini-row"><span>🌊 Trend</span><span id="sensexTrend">BULL</span></div>
-    <div class="mini-signal" id="sensexSignal" style="background:var(--green-dim);color:var(--green);">🟢 BULLISH — Nifty confirm karta hai</div>
+    <div class="mini-row"><span>📊 RSI</span><span id="sensexRsi">Not tracked</span></div>
+    <div class="mini-row"><span>📏 VWAP</span><span id="sensexVwap">Not tracked</span></div>
+    <div class="mini-row"><span>📈 OI</span><span id="sensexOi">Not tracked</span></div>
+    <div class="mini-row"><span>🌊 Trend</span><span id="sensexTrend">Not tracked</span></div>
+    <div class="mini-signal" id="sensexSignal" style="background:var(--yellow-dim);color:var(--yellow);">No per-instrument signal yet</div>
   </div>
   <div class="mini-card">
     <div class="mini-header"><div class="mini-name">🛢️ CRUDE OIL</div><div class="mini-price" id="miniCrude">--</div></div>
-    <div class="mini-row"><span>📊 RSI</span><span id="crudeRsi">62.1</span></div>
-    <div class="mini-row"><span>📈 Trend</span><span id="crudeTrend">BULL</span></div>
-    <div class="mini-row"><span>🌍 Impact</span><span id="crudeImpact">BEARISH</span></div>
-    <div class="mini-row"><span>📏 Level</span><span id="crudeLevel">$82.50</span></div>
-    <div class="mini-signal" id="crudeSignal" style="background:var(--yellow-dim);color:var(--yellow);">⚠️ Crude ↑ = Nifty pe pressure</div>
+    <div class="mini-row"><span>📊 RSI</span><span id="crudeRsi">Not tracked</span></div>
+    <div class="mini-row"><span>📈 Trend</span><span id="crudeTrend">Not tracked</span></div>
+    <div class="mini-row"><span>🌍 Impact</span><span id="crudeImpact">Not tracked</span></div>
+    <div class="mini-row"><span>📏 Level</span><span id="crudeLevel">--</span></div>
+    <div class="mini-signal" id="crudeSignal" style="background:var(--yellow-dim);color:var(--yellow);">No per-instrument signal yet</div>
   </div>
   <div class="mini-card">
     <div class="mini-header"><div class="mini-name">🥇 MCX GOLD</div><div class="mini-price" id="miniGold">--</div></div>
-    <div class="mini-row"><span>📊 RSI</span><span id="goldRsi">48.2</span></div>
-    <div class="mini-row"><span>📈 Trend</span><span id="goldTrend">NEUTRAL</span></div>
-    <div class="mini-row"><span>🛡️ Support</span><span id="goldSupport">$2,320</span></div>
-    <div class="mini-row"><span>🎯 Target</span><span id="goldTarget">$2,400</span></div>
-    <div class="mini-signal" id="goldSignal" style="background:var(--yellow-dim);color:var(--yellow);">⏳ WAIT — No clear setup</div>
+    <div class="mini-row"><span>📊 RSI</span><span id="goldRsi">Not tracked</span></div>
+    <div class="mini-row"><span>📈 Trend</span><span id="goldTrend">Not tracked</span></div>
+    <div class="mini-row"><span>🛡️ Support</span><span id="goldSupport">--</span></div>
+    <div class="mini-row"><span>🎯 Target</span><span id="goldTarget">--</span></div>
+    <div class="mini-signal" id="goldSignal" style="background:var(--yellow-dim);color:var(--yellow);">No per-instrument signal yet</div>
   </div>
   <div class="mini-card">
     <div class="mini-header"><div class="mini-name">🥈 MCX SILVER</div><div class="mini-price" id="miniSilver">--</div></div>
-    <div class="mini-row"><span>📊 RSI</span><span id="silverRsi">55.8</span></div>
-    <div class="mini-row"><span>📈 Trend</span><span id="silverTrend">BULL</span></div>
-    <div class="mini-row"><span>🎯 Target</span><span id="silverTarget">$31.50</span></div>
-    <div class="mini-row"><span>🛑 SL</span><span id="silverSl">$29.80</span></div>
-    <div class="mini-signal" id="silverSignal" style="background:var(--green-dim);color:var(--green);">🟢 BULLISH — Momentum strong</div>
+    <div class="mini-row"><span>📊 RSI</span><span id="silverRsi">Not tracked</span></div>
+    <div class="mini-row"><span>📈 Trend</span><span id="silverTrend">Not tracked</span></div>
+    <div class="mini-row"><span>🎯 Target</span><span id="silverTarget">--</span></div>
+    <div class="mini-row"><span>🛑 SL</span><span id="silverSl">--</span></div>
+    <div class="mini-signal" id="silverSignal" style="background:var(--yellow-dim);color:var(--yellow);">No per-instrument signal yet</div>
   </div>
 </div>
 
@@ -400,6 +395,7 @@
     <div class="stock-row"><span class="stock-name">🏛️ SBI</span><span class="stock-price" style="color:var(--text-dim)">Loading...</span><span class="stock-signal tag-y">--</span></div>
     <div class="stock-row"><span class="stock-name">🏪 PNB</span><span class="stock-price" style="color:var(--text-dim)">Loading...</span><span class="stock-signal tag-y">--</span></div>
     <div class="stock-row"><span class="stock-name">🏢 YES Bank</span><span class="stock-price" style="color:var(--text-dim)">Loading...</span><span class="stock-signal tag-y">--</span></div>
+    <div class="stock-row"><span class="stock-name">💻 Infosys</span><span class="stock-price" style="color:var(--text-dim)">Loading...</span><span class="stock-signal tag-y">--</span></div>
   </div>
 </div>
 
@@ -422,7 +418,7 @@
     <div class="ohlc-item"><div class="ohlc-label">🇺🇸 DOW JONES</div><div class="ohlc-val" id="globalDji">--</div><div style="font-size:0.7rem;margin-top:0.2rem;" id="globalDjiCh">--</div></div>
     <div class="ohlc-item"><div class="ohlc-label">🇰🇷 KOSPI</div><div class="ohlc-val" id="globalKospi">--</div><div style="font-size:0.7rem;margin-top:0.2rem;" id="globalKospiCh">--</div></div>
   </div>
-  <div style="margin-top:0.5rem;font-size:0.75rem;color:var(--text-dim);">Source: Yahoo Finance · Updated every 30s</div>
+  <div style="margin-top:0.5rem;font-size:0.75rem;color:var(--text-dim);">Source: <span id="globalSource">--</span></div>
 </div>
 
 <div class="card" style="margin-bottom:1rem;">
@@ -434,400 +430,302 @@
       <th style="text-align:right;padding:0.5rem;color:var(--text-dim);font-size:0.7rem;text-transform:uppercase;">PE OI</th>
       <th style="text-align:right;padding:0.5rem;color:var(--text-dim);font-size:0.7rem;text-transform:uppercase;">LTP</th>
     </tr></thead>
-    <tbody id="strikesTable"><tr><td colspan="4" style="text-align:center;padding:1rem;color:var(--text-dim);">Loading strikes...</td></tr></tbody>
+    <tbody id="strikesTable"><tr><td colspan="4" style="text-align:center;padding:1rem;color:var(--text-dim);">Per-strike OI table not provided by backend yet.</td></tr></tbody>
   </table>
 </div>
 
 <div class="footer">
-  ⏱️ Last Updated: <span id="lastUpdated">--</span> · Real Data via <span>Angel One + Yahoo Finance + NSE</span> · Polls every 5 sec<br>
+  ⏱️ Last Updated: <span id="lastUpdated">--</span> · Data source: <span id="footerSource">--</span> · Polls every 5 sec (continues even when market is closed)<br>
   <span style="color:var(--yellow);">Intraday closed? Swing levels & Greeks still valid for weekly expiry ↓</span>
 </div>
 
 </div>
 <script>
 // ============================================
-// GOAT PRO — REAL DATA ENGINE
-// All values verified from NSE / Yahoo / MoneyControl / ICICI Direct
-// Jul 10, 2026 Close + Jul 9 FII/DII Provisional
+// GOAT PRO — LIVE DATA ENGINE
+// Fetches real data from /api/data. Anything the
+// backend doesn't provide yet is shown as "--" or
+// an honest "Not tracked / Not implemented" label
+// instead of being faked. Nothing is deleted.
 // ============================================
 
-const REAL_DATA = {
-  nifty: { spot: 24206.90, prev: 23962.80, open: 24172.00, high: 24274.50, low: 24160.00, change: 244.10, changePct: 1.02 },
-  banknifty: { spot: 58045.90, prev: 57700.00, open: 57592.50, high: 58251.95, low: 57592.50, change: 345.90, changePct: 0.60 },
-  sensex: { spot: 77569.39, prev: 76741.82, change: 827.57, changePct: 1.08 },
-  giftnifty: { spot: 24234.50, prev: 24102.50, open: 24099.50, high: 24282.00, low: 24081.50, change: 132.00, changePct: 0.55 },
-  vix: { spot: 12.25, prev: 13.36, change: -1.11, changePct: -8.31 },
-  global: {
-    kospi: { spot: 2862.23, prev: 2849.83, change: 12.40, changePct: 0.43 },
-    nasdaq: { spot: 26206.89, prev: 25870.65, change: 336.24, changePct: 1.30 },
-    dji: { spot: 43120.80, prev: 43031.50, change: 89.30, changePct: 0.21 }
-  },
-  commodities: {
-    crude: { spot: 82.45, prev: 82.10, change: 0.35, changePct: 0.43, unit: '$' },
-    gold: { spot: 2415.30, prev: 2418.50, change: -3.20, changePct: -0.13, unit: '$' },
-    silver: { spot: 31.05, prev: 30.90, change: 0.15, changePct: 0.48, unit: '$' }
-  },
-  stocks: [
-    { symbol: 'HDFCBANK.NS', name: 'HDFC Bank', price: 1790.50, prev: 1778.20, change: 12.30, changePct: 0.69 },
-    { symbol: 'SBIN.NS', name: 'SBI', price: 242.20, prev: 240.10, change: 2.10, changePct: 0.87 },
-    { symbol: 'PNB.NS', name: 'PNB', price: 108.35, prev: 108.80, change: -0.45, changePct: -0.41 },
-    { symbol: 'YESBANK.NS', name: 'Yes Bank', price: 17.85, prev: 17.75, change: 0.10, changePct: 0.56 }
-  ],
-  fii: { buy: 14388, sell: 14921, net: -533 },
-  dii: { buy: 18303, sell: 16245, net: 2058 },
-  oi: {
-    strikes: [24100, 24150, 24200, 24250, 24300, 24350, 24400],
-    callOi: [1850000, 1420000, 3167950, 2100000, 1650000, 980000, 620000],
-    putOi: [620000, 980000, 1344150, 2100000, 2800000, 1950000, 1420000],
-    maxPain: 24200,
-    pcr: 0.42
-  },
-  greeks: {
-    atm: 24200,
-    iv: 13.0,
-    ce: { delta: 0.5356, theta: -17.09, gamma: 0.001079, vega: 11.26 },
-    pe: { delta: -0.4644, theta: -12.45, gamma: 0.001079, vega: 11.26 }
-  },
-  signal: { text: 'WAIT', confidence: 0, reason: 'Not enough candles' },
-  pnl: { day: 319.75, winRate: 50.0, totalTrades: 2, riskOk: true, capital: 18500, maxRisk: 555 },
-  indicators: {
-    rsi: 52.4,
-    vwap: 'ABOVE',
-    ema9: 24200,
-    ema21: 24150,
-    supertrend: 24130,
-    supertrendStatus: 'BUY'
-  },
-  news: [
-    { time: '15:38 IST', headline: 'Sensex ended 827.57 points (+1.08%) up at 77,569.39, Nifty at 24,206.90', source: 'The Hindu Business Line', impact: 'high' },
-    { time: '15:36 IST', headline: 'Bank of Maharashtra Q1 profit jumps 27% to ₹2,020 cr', source: 'MoneyControl', impact: 'med' },
-    { time: '15:26 IST', headline: 'NSE to pitch IPO to 30 global investors', source: 'Economic Times', impact: 'med' },
-    { time: '15:00 IST', headline: 'Rupee gains 16 paise to close at 95.31 against USD', source: 'Reuters', impact: 'low' },
-    { time: '14:20 IST', headline: 'Bank Nifty outperforms, led by HDFC Bank and ICICI Bank', source: 'LiveMint', impact: 'med' },
-    { time: '11:58 IST', headline: 'HFCL bags ₹495 cr optical fibre cable export order', source: 'CNBC-TV18', impact: 'low' },
-    { time: 'Jul 10, 09:41', headline: 'FII Sell ₹533 Cr | DII Buy ₹2,058 Cr (Jul 9 Provisional)', source: 'NSE / The Hindu', impact: 'high' }
-  ]
-};
-
-const fmt = {
-  n: (x, d=2) => x == null || isNaN(x) ? '--' : Number(x).toLocaleString('en-IN', {minimumFractionDigits:d, maximumFractionDigits:d}),
-  ch: (x) => x == null || isNaN(x) ? '--' : (x>=0?'+':'') + x.toFixed(2),
-  pct: (x) => x == null || isNaN(x) ? '--' : (x>=0?'+':'') + x.toFixed(2) + '%',
-  price: (x) => '₹' + (x == null || isNaN(x) ? '--' : Number(x).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2})),
-  cr: (x) => x == null || isNaN(x) ? '--' : '₹' + (x/100).toFixed(2) + ' Cr'
-};
+const POLL_MS = 5000;
+let _lastData = null;
+let _lastCandles = null;
 
 function setText(id, text) {
   const el = document.getElementById(id);
-  if (el) el.textContent = text;
+  if (el) el.textContent = (text === null || text === undefined || text === '') ? '--' : text;
 }
-
 function setHTML(id, html) {
   const el = document.getElementById(id);
   if (el) el.innerHTML = html;
 }
-
 function setClass(id, className) {
   const el = document.getElementById(id);
   if (el) el.className = className;
 }
-
 function setColor(id, color) {
   const el = document.getElementById(id);
   if (el) el.style.color = color;
 }
 
-// ============================================
-// POPULATE ALL BOXES WITH REAL DATA
-// ============================================
-function populateAll() {
-  const d = REAL_DATA;
+const fmt = {
+  n: (x, d=2) => (x === null || x === undefined || isNaN(x)) ? '--' : Number(x).toLocaleString('en-IN', {minimumFractionDigits:d, maximumFractionDigits:d}),
+  pct: (x) => (x === null || x === undefined || isNaN(x)) ? '--' : (x>=0?'+':'') + Number(x).toFixed(2) + '%',
+};
 
-  // === HEADER ===
-  const ist = new Date(new Date().toLocaleString('en-US', {timeZone:'Asia/Kolkata'}));
-  setText('istTime', ist.toLocaleTimeString('en-IN', {hour12:false}) + ' IST');
+async function fetchData() {
+  try {
+    const res = await fetch('/api/data', { cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const d = await res.json();
+    _lastData = d;
+    populateAll(d);
+  } catch (e) {
+    console.error('fetchData error:', e);
+    // Keep showing the last known good data rather than blanking everything —
+    // but flag that the connection is currently failing.
+    const pill = document.getElementById('livePill');
+    if (pill) { pill.className = 'live-pill closed-pill'; pill.innerHTML = '⚠️ CONNECTION ERROR'; }
+  }
+}
+
+function populateAll(d) {
+  const spot = d.spot ?? d.nifty ?? null;
+  const dayOpen = d.day_open ?? null;
+  const change = (spot != null && dayOpen) ? spot - dayOpen : null;
+  const changePct = (change != null && dayOpen) ? (change / dayOpen) * 100 : null;
 
   // === TICKER BAR ===
-  const n = d.nifty;
-  setText('tickerNifty', fmt.n(n.spot));
-  setText('tickerNiftyCh', '▲ +' + fmt.n(n.changePct) + '%');
-  setClass('tickerNiftyCh', 'ticker-change up');
+  setText('tickerNifty', fmt.n(spot));
+  setText('tickerNiftyCh', change != null ? fmt.pct(changePct) : '--');
+  setClass('tickerNiftyCh', 'ticker-change ' + (change >= 0 ? 'up' : 'down'));
 
-  const b = d.banknifty;
-  setText('tickerBnf', fmt.n(b.spot));
-  setText('tickerBnfCh', '▲ +' + fmt.n(b.changePct) + '%');
-  setClass('tickerBnfCh', 'ticker-change up');
+  setText('tickerBnf', fmt.n(d.banknifty));
+  setText('tickerBnfCh', '--');
+  setText('tickerSensex', fmt.n(d.sensex));
+  setText('tickerSensexCh', '--');
+  setText('tickerCrude', d.crudeoil != null ? '$' + fmt.n(d.crudeoil) : '--');
+  setText('tickerCrudeCh', '--');
+  setText('tickerGold', d.gold != null ? '$' + fmt.n(d.gold) : '--');
+  setText('tickerGoldCh', '--');
+  setText('tickerSilver', d.silver != null ? '$' + fmt.n(d.silver) : '--');
+  setText('tickerSilverCh', '--');
 
-  const s = d.sensex;
-  setText('tickerSensex', fmt.n(s.spot));
-  setText('tickerSensexCh', '▲ +' + fmt.n(s.changePct) + '%');
-  setClass('tickerSensexCh', 'ticker-change up');
+  const stockCount = d.stocks ? Object.keys(d.stocks).length : 0;
+  setText('tickerStocks', stockCount > 0 ? stockCount + ' live' : '--');
+  setText('tickerStocksCh', stockCount > 0 ? 'Yahoo Finance' : 'Not connected');
 
-  const c = d.commodities.crude;
-  setText('tickerCrude', '$' + fmt.n(c.spot));
-  setText('tickerCrudeCh', (c.change>=0?'▲':'▼') + ' ' + fmt.n(Math.abs(c.changePct)) + '%');
-  setClass('tickerCrudeCh', 'ticker-change ' + (c.change>=0?'up':'down'));
-
-  const g = d.commodities.gold;
-  setText('tickerGold', '$' + fmt.n(g.spot));
-  setText('tickerGoldCh', (g.change>=0?'▲':'▼') + ' ' + fmt.n(Math.abs(g.changePct)) + '%');
-  setClass('tickerGoldCh', 'ticker-change ' + (g.change>=0?'up':'down'));
-
-  const sil = d.commodities.silver;
-  setText('tickerSilver', '$' + fmt.n(sil.spot));
-  setText('tickerSilverCh', (sil.change>=0?'▲':'▼') + ' ' + fmt.n(Math.abs(sil.changePct)) + '%');
-  setClass('tickerSilverCh', 'ticker-change ' + (sil.change>=0?'up':'down'));
+  // GIFT NIFTY — backend does not fetch this, keep as explicit not-connected
+  setText('tickerGiftPrice', '--');
+  setText('tickerGiftCh', 'Not connected');
 
   // === NIFTY HERO ===
-  setText('niftySpot', fmt.n(n.spot));
-  setClass('niftySpot', 'nifty-spot up');
-  setHTML('niftyChange', '<span class="up">▲ +' + fmt.n(n.change) + ' (+' + fmt.n(n.changePct) + '%) 📈 BULLISH</span>');
-  setText('niftyOpen', fmt.n(n.open));
-  setText('niftyHigh', fmt.n(n.high));
-  setText('niftyLow', fmt.n(n.low));
-  setText('niftyPrev', fmt.n(n.prev));
-  setText('niftySignalTag', 'BULLISH');
-  setClass('niftySignalTag', 'tag tag-g');
+  setText('niftySpot', fmt.n(spot));
+  setClass('niftySpot', 'nifty-spot ' + (change >= 0 ? 'up' : change < 0 ? 'down' : ''));
+  if (change != null) {
+    setHTML('niftyChange', '<span class="' + (change>=0?'up':'down') + '">' + (change>=0?'▲ +':'▼ ') + fmt.n(change) + ' (' + fmt.pct(changePct) + ')</span>');
+  } else {
+    setHTML('niftyChange', '--');
+  }
+  setText('niftyOpen', fmt.n(dayOpen));
+  setText('niftySource', d.data_source || '--');
 
-  // Nifty stats
-  setText('pcrDisplay', d.oi.pcr.toFixed(2));
-  setText('ivDisplay', d.greeks.iv.toFixed(1) + '%');
-  setText('maxPainDisplay', d.oi.maxPain);
-  setText('signalDisplay', 'BUY');
-  setColor('signalDisplay', 'var(--green)');
+  const sig = d.real_signal || {};
+  const sigText = sig.signal || 'WAIT';
+  setText('niftySignalTag', sigText);
+  setClass('niftySignalTag', 'tag ' + (sigText === 'LONG' ? 'tag-g' : sigText === 'SHORT' ? 'tag-r' : 'tag-y'));
+
+  const oi = d.oi_data || {};
+  setText('pcrDisplay', oi.pcr ? oi.pcr.toFixed(2) : '--');
+  const greeks = d.greeks || {};
+  setText('ivDisplay', greeks.iv ? greeks.iv.toFixed(1) + '%' : '--');
+  setText('maxPainDisplay', oi.max_pain || '--');
+  setText('signalDisplay', sigText);
+  setColor('signalDisplay', sigText === 'LONG' ? 'var(--green)' : sigText === 'SHORT' ? 'var(--red)' : 'var(--yellow)');
 
   // === SIGNAL HERO ===
-  const sig = d.signal;
-  setClass('signalHero', 'signal-hero wait');
-  setText('signalBadge', '⏸️ STANDBY');
-  setText('signalTitle', '⏳ WAIT — ' + sig.reason);
-  setHTML('signalDesc', 'Signal generating... Not enough candles or no confluence.<br><span style="color:var(--purple)">📊 Intraday closed — use PCR, Max Pain & Greeks for swing/weekly expiry.</span>');
-  setText('entryLevel', '--');
-  setText('slLevel', '--');
-  setText('targetLevel', '--');
+  setClass('signalHero', 'signal-hero ' + (sigText === 'LONG' ? '' : sigText === 'SHORT' ? 'sell' : 'wait'));
+  setText('signalBadge', sig.confidence ? sig.confidence + '/6 confidence' : 'WAITING');
+  setText('signalTitle', sigText + (sig.note ? ' — ' + sig.note : ''));
+  setText('signalDesc', sig.note || 'No signal computed yet.');
+
+  const active = d.active_trade;
+  if (active) {
+    setText('entryLevel', fmt.n(active.entry));
+    setText('slLevel', fmt.n(active.sl));
+    setText('targetLevel', fmt.n(active.target));
+  } else {
+    setText('entryLevel', '--');
+    setText('slLevel', '--');
+    setText('targetLevel', '--');
+  }
 
   // === INDICATOR DASHBOARD ===
-  const ind = d.indicators;
-  setText('rsiVal', ind.rsi.toFixed(1));
-  setText('rsiStatus', ind.rsi < 30 ? 'OVERSOLD' : ind.rsi > 70 ? 'OVERBOUGHT' : 'NEUTRAL');
-  setColor('rsiStatus', ind.rsi < 30 ? 'var(--green)' : ind.rsi > 70 ? 'var(--red)' : 'var(--yellow)');
-  setText('vwapVal', fmt.n(n.spot - 15));
-  setText('vwapStatus', 'ABOVE');
-  setColor('vwapStatus', 'var(--blue)');
+  const ind = d.indicators || {};
+  setText('rsiVal', ind.rsi != null ? ind.rsi.toFixed(1) : '--');
+  if (ind.rsi != null) {
+    const st = ind.rsi < 30 ? 'OVERSOLD' : ind.rsi > 70 ? 'OVERBOUGHT' : 'NEUTRAL';
+    setText('rsiStatus', st);
+    setColor('rsiStatus', ind.rsi < 30 ? 'var(--green)' : ind.rsi > 70 ? 'var(--red)' : 'var(--yellow)');
+  } else { setText('rsiStatus', '--'); }
+
+  setText('vwapVal', fmt.n(ind.vwap_approx));
+  if (ind.vwap_approx && spot) {
+    setText('vwapStatus', spot > ind.vwap_approx ? 'ABOVE' : 'BELOW');
+    setColor('vwapStatus', spot > ind.vwap_approx ? 'var(--green)' : 'var(--red)');
+  } else { setText('vwapStatus', '--'); }
+
   setText('ema9Val', fmt.n(ind.ema9));
-  setText('ema9Status', 'BULL');
-  setColor('ema9Status', 'var(--green)');
   setText('ema21Val', fmt.n(ind.ema21));
-  setText('ema21Status', 'BULL');
-  setColor('ema21Status', 'var(--green)');
-  setText('stVal', fmt.n(ind.supertrend));
-  setText('stStatus', ind.supertrendStatus);
-  setColor('stStatus', 'var(--green)');
+  if (ind.ema9 && ind.ema21) {
+    const bull = ind.ema9 > ind.ema21;
+    setText('ema9Status', bull ? 'BULL' : 'BEAR');
+    setColor('ema9Status', bull ? 'var(--green)' : 'var(--red)');
+    setText('ema21Status', bull ? 'BULL' : 'BEAR');
+    setColor('ema21Status', bull ? 'var(--green)' : 'var(--red)');
+  } else { setText('ema9Status', '--'); setText('ema21Status', '--'); }
 
-  // === SMART MONEY ===
-  const fii = d.fii;
-  setText('fiiDesc', 'FII aaj net sellers hain — ' + fmt.cr(Math.abs(fii.net)) + ' cash market mein. Bearish signal!');
-  setText('fiiTag', 'SELLING');
-  setClass('fiiTag', 'sm-tag tag-r');
+  const st = ind.supertrend || {};
+  setText('stVal', fmt.n(st.value));
+  setText('stStatus', st.trend || '--');
+  setColor('stStatus', st.trend === 'BUY' ? 'var(--green)' : st.trend === 'SELL' ? 'var(--red)' : 'var(--yellow)');
 
-  const dii = d.dii;
-  setText('diiDesc', 'DII institutions support kar rahe hain — ' + fmt.cr(Math.abs(dii.net)) + '. Market strong base hai.');
-  setText('diiTag', 'SUPPORT');
-  setClass('diiTag', 'sm-tag tag-g');
-
-  const totalCall = d.oi.callOi.reduce((a,b)=>a+b,0);
-  const totalPut = d.oi.putOi.reduce((a,b)=>a+b,0);
-  if (totalCall > totalPut) {
-    setText('oiBuildDesc', 'Call OI zyada hai — bears active. Fresh short positions build ho rahe hain.');
-    setText('oiBuildTag', 'SHORT');
-    setClass('oiBuildTag', 'sm-tag tag-r');
+  // === SMART MONEY (institutional_stats) ===
+  const inst = d.institutional_stats || {};
+  const fiiLive = inst.status === 'Live (NSE)';
+  if (fiiLive) {
+    setText('fiiDesc', 'FII net: ₹' + fmt.n(inst.fii_net, 0) + ' Cr today.');
+    setText('fiiTag', inst.fii_net >= 0 ? 'BUYING' : 'SELLING');
+    setClass('fiiTag', 'sm-tag ' + (inst.fii_net >= 0 ? 'tag-g' : 'tag-r'));
+    setText('diiDesc', 'DII net: ₹' + fmt.n(inst.dii_net, 0) + ' Cr today.');
+    setText('diiTag', inst.dii_net >= 0 ? 'SUPPORT' : 'SELLING');
+    setClass('diiTag', 'sm-tag ' + (inst.dii_net >= 0 ? 'tag-g' : 'tag-r'));
   } else {
-    setText('oiBuildDesc', 'Put OI zyada hai — bulls active. Fresh long positions build ho rahe hain.');
-    setText('oiBuildTag', 'LONG');
-    setClass('oiBuildTag', 'sm-tag tag-g');
+    setText('fiiDesc', 'FII/DII data unavailable right now (NSE may be blocking this server).');
+    setText('fiiTag', 'UNAVAILABLE'); setClass('fiiTag', 'sm-tag tag-y');
+    setText('diiDesc', 'FII/DII data unavailable right now (NSE may be blocking this server).');
+    setText('diiTag', 'UNAVAILABLE'); setClass('diiTag', 'sm-tag tag-y');
   }
-  setText('putWriteDesc', d.oi.maxPain + ' PE mein heavy put writing — institutions ' + d.oi.maxPain + ' neeche nahi jaane denge.');
 
-  // === GREEKS & IV ===
-  const gr = d.greeks;
-  setText('greekIv', gr.iv.toFixed(1) + '%');
-  setText('greekIvRank', gr.iv < 15 ? '38 Buy Options ✅' : '65 Sell Options ⚠️');
-  setText('greekGamma', gr.ce.gamma.toFixed(6));
-  setText('greekTheta', '₹' + Math.abs(gr.ce.theta).toFixed(2));
-  setText('greekVega', gr.ce.vega.toFixed(2));
-  setText('greekDelta', gr.ce.delta.toFixed(4));
-  setText('greekSource', 'BS_APPROX');
+  if (oi.source === 'NSE_LIVE') {
+    const bearish = oi.call_oi > oi.put_oi;
+    setText('oiBuildDesc', bearish ? 'Call OI higher — bears active.' : 'Put OI higher — bulls active.');
+    setText('oiBuildTag', bearish ? 'SHORT' : 'LONG');
+    setClass('oiBuildTag', 'sm-tag ' + (bearish ? 'tag-r' : 'tag-g'));
+    setText('putWriteDesc', 'Max pain at ' + oi.max_pain + '.');
+    setText('putWriteTag', 'INFO'); setClass('putWriteTag', 'sm-tag tag-b');
+  } else {
+    setText('oiBuildDesc', 'Option chain data unavailable right now.');
+    setText('oiBuildTag', 'UNAVAILABLE'); setClass('oiBuildTag', 'sm-tag tag-y');
+    setText('putWriteDesc', 'Option chain data unavailable right now.');
+    setText('putWriteTag', 'UNAVAILABLE'); setClass('putWriteTag', 'sm-tag tag-y');
+  }
+
+  // === GREEKS ===
+  setText('greekIv', greeks.iv ? greeks.iv.toFixed(1) + '%' : '--');
+  setText('greekGamma', greeks.gamma != null ? greeks.gamma.toFixed(6) : '--');
+  setText('greekTheta', greeks.theta != null ? '₹' + Math.abs(greeks.theta).toFixed(2) : '--');
+  setText('greekVega', greeks.vega != null ? greeks.vega.toFixed(2) : '--');
+  setText('greekDelta', greeks.delta != null ? greeks.delta.toFixed(4) : '--');
+  setText('greekSource', greeks.source || '--');
 
   // === OI ANALYSIS ===
-  setText('oiPcr', d.oi.pcr.toFixed(2));
-  setText('oiCall', fmt.n(totalCall, 0));
-  setText('oiPut', fmt.n(totalPut, 0));
-  setText('oiMaxPain', d.oi.maxPain);
+  setText('oiPcr', oi.pcr ? oi.pcr.toFixed(2) : '--');
+  setText('oiCall', oi.call_oi ? fmt.n(oi.call_oi, 0) : '--');
+  setText('oiPut', oi.put_oi ? fmt.n(oi.put_oi, 0) : '--');
+  setText('oiMaxPain', oi.max_pain || '--');
+  setText('oiSource', oi.source || '--');
 
-  // === BANKNIFTY MINI ===
-  setText('miniBnf', fmt.n(b.spot));
-  setText('bnfRsi', '71.2');
-  setText('bnfVwap', 'BELOW');
-  setText('bnfOi', 'SHORT');
-  setText('bnfTrend', 'BEAR');
-  setText('bnfSignal', '🔴 BEARISH SETUP — PE Buy');
-  setClass('bnfSignal', 'mini-signal');
-  setColor('bnfSignal', 'var(--red)');
-
-  // === SENSEX MINI ===
-  setText('miniSensex', fmt.n(s.spot));
-  setText('sensexRsi', '52.4');
-  setText('sensexVwap', 'ABOVE');
-  setText('sensexOi', 'LONG');
-  setText('sensexTrend', 'BULL');
-  setText('sensexSignal', '🟢 BULLISH — Nifty confirm karta hai');
-  setClass('sensexSignal', 'mini-signal');
-  setColor('sensexSignal', 'var(--green)');
-
-  // === CRUDE MINI ===
-  setText('miniCrude', '$' + fmt.n(c.spot));
-  setText('crudeRsi', '62.1');
-  setText('crudeTrend', 'BULL');
-  setText('crudeImpact', 'BEARISH');
-  setText('crudeLevel', '$' + fmt.n(c.spot));
-  setText('crudeSignal', '⚠️ Crude ↑ = Nifty pe pressure');
-  setClass('crudeSignal', 'mini-signal');
-  setColor('crudeSignal', 'var(--yellow)');
-
-  // === GOLD MINI ===
-  setText('miniGold', '$' + fmt.n(g.spot));
-  setText('goldRsi', '48.2');
-  setText('goldTrend', 'NEUTRAL');
-  setText('goldSupport', '$2,320');
-  setText('goldTarget', '$2,400');
-  setText('goldSignal', '⏳ WAIT — No clear setup');
-  setClass('goldSignal', 'mini-signal');
-  setColor('goldSignal', 'var(--yellow)');
-
-  // === SILVER MINI ===
-  setText('miniSilver', '$' + fmt.n(sil.spot));
-  setText('silverRsi', '55.8');
-  setText('silverTrend', 'BULL');
-  setText('silverTarget', '$31.50');
-  setText('silverSl', '$29.80');
-  setText('silverSignal', '🟢 BULLISH — Momentum strong');
-  setClass('silverSignal', 'mini-signal');
-  setColor('silverSignal', 'var(--green)');
+  // === MINI CARDS (price only — no per-instrument indicators from backend) ===
+  setText('miniBnf', fmt.n(d.banknifty));
+  setText('miniSensex', fmt.n(d.sensex));
+  setText('miniCrude', d.crudeoil != null ? '$' + fmt.n(d.crudeoil) : '--');
+  setText('miniGold', d.gold != null ? '$' + fmt.n(d.gold) : '--');
+  setText('miniSilver', d.silver != null ? '$' + fmt.n(d.silver) : '--');
 
   // === STOCKS ===
   const stockContainer = document.getElementById('stocksContainer');
-  if (stockContainer) {
-    stockContainer.innerHTML = d.stocks.map(st => {
-      const up = st.changePct >= 0;
-      return `<div class="stock-row">
-        <span class="stock-name">${st.name === 'HDFC Bank' ? '🏦 ' : st.name === 'SBI' ? '🏛️ ' : st.name === 'PNB' ? '🏪 ' : '🏢 '}${st.name}</span>
-        <span class="stock-price ${up ? 'up' : 'down'}">₹${fmt.n(st.price)}</span>
-        <span class="stock-signal ${up ? 'tag-g' : 'tag-r'}">${up ? 'BUY' : 'WAIT'}</span>
-      </div>`;
-    }).join('');
+  const stockIcons = { HDFC: '🏦', SBI: '🏛️', PNB: '🏪', YES: '🏢', INFY: '💻' };
+  const stockNames = { HDFC: 'HDFC Bank', SBI: 'SBI', PNB: 'PNB', YES: 'YES Bank', INFY: 'Infosys' };
+  if (stockContainer && d.stocks) {
+    const keys = Object.keys(d.stocks);
+    if (keys.length > 0) {
+      stockContainer.innerHTML = keys.map(k => {
+        const s = d.stocks[k];
+        return `<div class="stock-row">
+          <span class="stock-name">${stockIcons[k] || '🏢'} ${stockNames[k] || k}</span>
+          <span class="stock-price">₹${fmt.n(s.ltp)}</span>
+          <span class="stock-signal tag-b">LIVE</span>
+        </div>`;
+      }).join('');
+    } else {
+      stockContainer.innerHTML = '<div style="color:var(--text-dim);text-align:center;padding:1rem;">Waiting for stock data...</div>';
+    }
   }
 
   // === GLOBAL MARKETS ===
-  const gl = d.global;
-  setText('globalNasdaq', fmt.n(gl.nasdaq.spot));
-  setHTML('globalNasdaqCh', '<span class="' + (gl.nasdaq.change>=0?'up':'down') + '">' + (gl.nasdaq.change>=0?'▲':'▼') + ' ' + fmt.n(Math.abs(gl.nasdaq.changePct)) + '%</span>');
-  setText('globalDji', fmt.n(gl.dji.spot));
-  setHTML('globalDjiCh', '<span class="' + (gl.dji.change>=0?'up':'down') + '">' + (gl.dji.change>=0?'▲':'▼') + ' ' + fmt.n(Math.abs(gl.dji.changePct)) + '%</span>');
-  setText('globalKospi', fmt.n(gl.kospi.spot));
-  setHTML('globalKospiCh', '<span class="' + (gl.kospi.change>=0?'up':'down') + '">' + (gl.kospi.change>=0?'▲':'▼') + ' ' + fmt.n(Math.abs(gl.kospi.changePct)) + '%</span>');
+  const gl = d.global || {};
+  setText('globalNasdaq', gl.nasdaq ? fmt.n(gl.nasdaq) : '--');
+  setText('globalDji', gl.dji ? fmt.n(gl.dji) : '--');
+  setText('globalKospi', gl.kospi ? fmt.n(gl.kospi) : '--');
+  setText('globalNasdaqCh', '--');
+  setText('globalDjiCh', '--');
+  setText('globalKospiCh', '--');
+  setText('globalSource', gl.source || '--');
 
-  // === TOP STRIKES ===
-  const tbody = document.getElementById('strikesTable');
-  if (tbody) {
-    const maxOi = Math.max(...d.oi.callOi, ...d.oi.putOi);
-    tbody.innerHTML = d.oi.strikes.map((strike, i) => {
-      const cOi = d.oi.callOi[i];
-      const pOi = d.oi.putOi[i];
-      const isMaxPain = strike === d.oi.maxPain;
-      return `<tr style="border-bottom:1px solid var(--border);${isMaxPain?'background:rgba(245,158,11,0.08);':''}">
-        <td style="padding:0.5rem;font-weight:700;">${strike}</td>
-        <td style="padding:0.5rem;text-align:right;color:var(--green);">${fmt.n(cOi, 0)}</td>
-        <td style="padding:0.5rem;text-align:right;color:var(--red);">${fmt.n(pOi, 0)}</td>
-        <td style="padding:0.5rem;text-align:right;font-family:monospace;">${fmt.n(strike === 24200 ? 45.20 : strike === 24150 ? 28.50 : strike === 24250 ? 38.75 : 22.10)}</td>
-      </tr>`;
-    }).join('');
-  }
-
-  // === NEWS ===
-  const newsContainer = document.getElementById('newsContainer');
-  if (newsContainer) {
-    newsContainer.innerHTML = d.news.map(n => {
-      const badgeClass = n.impact === 'high' ? 'high' : n.impact === 'med' ? 'med' : 'low';
-      const badgeIcon = n.impact === 'high' ? '🔴' : n.impact === 'med' ? '🟡' : '🟢';
-      return `<div class="news-item">
-        <div class="news-badge ${badgeClass}">${badgeIcon} ${n.impact.toUpperCase()}</div>
-        <div><div class="news-title">${n.headline}</div><div class="news-desc">${n.source} · ${n.time}</div></div>
-      </div>`;
-    }).join('');
+  // === ALERTS (real, from backend) ===
+  const alertsContainer = document.getElementById('alertsContainer');
+  if (alertsContainer) {
+    if (d.alerts && d.alerts.length > 0) {
+      alertsContainer.innerHTML = d.alerts.map(a => `
+        <div class="alert-item">
+          <span class="alert-time">${a.time || ''}</span>
+          <span class="alert-text">${a.msg || ''}</span>
+        </div>`).join('');
+    } else {
+      alertsContainer.innerHTML = '<div style="color:var(--text-dim);text-align:center;padding:1rem;">No alerts yet.</div>';
+    }
   }
 
   // === P&L / RISK ===
-  const pnl = d.pnl;
   const pnlEl = document.getElementById('todayPnl');
   if (pnlEl) {
-    pnlEl.textContent = (pnl.day >= 0 ? '+' : '') + '₹' + fmt.n(Math.abs(pnl.day));
-    pnlEl.className = 'cap-val ' + (pnl.day >= 0 ? 'up' : 'down');
+    const pnl = d.session_pnl_rs;
+    pnlEl.textContent = pnl != null ? (pnl >= 0 ? '+' : '') + '₹' + fmt.n(Math.abs(pnl)) : '--';
+    pnlEl.className = 'cap-val ' + (pnl >= 0 ? 'up' : 'down');
   }
-  setText('winRateDisplay', pnl.winRate + '%');
-  setText('tradesDisplay', pnl.totalTrades);
-  const riskUsed = Math.min(100, Math.abs(pnl.day) / pnl.maxRisk * 100);
-  setText('riskUsed', Math.round(riskUsed) + '%');
-  const riskBar = document.getElementById('riskBar');
-  if (riskBar) riskBar.style.width = riskUsed + '%';
+  setText('winRateDisplay', d.win_rate != null ? d.win_rate + '%' : '--');
+  setText('tradesDisplay', d.total_trades != null ? d.total_trades : '--');
+  setText('capitalDisplay', '--'); // not provided by backend
+  if (d.session_pnl_rs != null) {
+    const riskUsed = Math.min(100, Math.abs(d.session_pnl_rs) / 5000 * 100);
+    setText('riskUsed', Math.round(riskUsed) + '%');
+    const riskBar = document.getElementById('riskBar');
+    if (riskBar) riskBar.style.width = riskUsed + '%';
+  }
 
-  // === LAST UPDATED ===
-  setText('lastUpdated', ist.toLocaleString('en-IN', {timeZone:'Asia/Kolkata'}));
+  // === LAST UPDATED / FOOTER ===
+  setText('lastUpdated', d.last_update ? new Date(d.last_update).toLocaleString('en-IN', {timeZone:'Asia/Kolkata'}) : '--');
+  setText('footerSource', d.data_source || '--');
 
-  // === SESSIONS ===
-  const t = ist.getHours()*100 + ist.getMinutes();
-  setClass('sess1', 'session' + (t>=915 && t<1100 ? ' session-active' : ''));
-  setClass('sess2', 'session' + (t>=1100 && t<1300 ? ' session-active' : ''));
-  setClass('sess3', 'session' + (t>=1300 && t<1430 ? ' session-active' : ''));
-  setClass('sess4', 'session' + (t>=1430 && t<=1530 ? ' session-active' : ''));
-
-  // === LIVE PILL ===
-  const open = (ist.getDay() >= 1 && ist.getDay() <= 5 && t >= 915 && t <= 1530);
+  // === LIVE PILL (reflects actual market_status from backend, not guessed) ===
   const pill = document.getElementById('livePill');
   if (pill) {
-    if (open) {
+    if (d.market_status === 'OPEN') {
       pill.className = 'live-pill';
       pill.innerHTML = '<span class="live-dot"></span> LIVE';
     } else {
       pill.className = 'live-pill closed-pill';
-      pill.innerHTML = '⏸️ MARKET CLOSED';
+      pill.innerHTML = '⏸️ MARKET ' + (d.market_status || 'CLOSED') + ' (data still updating)';
     }
   }
   const swingBanner = document.getElementById('swingBanner');
-  if (swingBanner) swingBanner.style.display = open ? 'none' : 'flex';
+  if (swingBanner) swingBanner.style.display = (d.market_status === 'OPEN') ? 'none' : 'flex';
 
-  // === GIFT NIFTY (NEW) ===
-  // Add GIFT NIFTY to ticker bar if not present, or update if present
-  const tickerBar = document.querySelector('.ticker-bar');
-  if (tickerBar) {
-    const existingGift = document.getElementById('tickerGift');
-    if (!existingGift) {
-      const giftDiv = document.createElement('div');
-      giftDiv.className = 'ticker-item';
-      giftDiv.id = 'tickerGift';
-      giftDiv.innerHTML = `<div class="ticker-name">🎁 GIFT NIFTY</div><div class="ticker-price" id="tickerGiftPrice">${fmt.n(d.giftnifty.spot)}</div><div class="ticker-change up" id="tickerGiftCh">▲ +${fmt.n(d.giftnifty.changePct)}%</div>`;
-      tickerBar.appendChild(giftDiv);
-    } else {
-      setText('tickerGiftPrice', fmt.n(d.giftnifty.spot));
-      setText('tickerGiftCh', '▲ +' + fmt.n(d.giftnifty.changePct) + '%');
-      setClass('tickerGiftCh', 'ticker-change up');
-    }
-  }
-
-  // === CHART ===
   drawCandles();
 }
-
-let _lastRealCandles = null;
 
 async function drawCandles() {
   const c = document.getElementById('candleChart');
@@ -839,23 +737,25 @@ async function drawCandles() {
   ctx.strokeStyle = 'rgba(255,255,255,0.03)'; ctx.lineWidth = 1;
   for (let i=0; i<5; i++) { ctx.beginPath(); ctx.moveTo(0, h*i/5); ctx.lineTo(w, h*i/5); ctx.stroke(); }
 
-  // Real candles from the backend (config.state_manager.candle_store) —
-  // no more Math.random() fake data. If none are available yet, show a
-  // waiting message instead of fabricating a chart.
-  let candles = _lastRealCandles;
+  // No /api/candles endpoint exists yet on the backend — rather than fabricate
+  // a chart, show an honest waiting message. This does not affect any other
+  // part of the dashboard.
+  let candles = _lastCandles;
   try {
     const res = await fetch('/api/candles');
-    const d = await res.json();
-    if (d.candles && d.candles.length > 0) {
-      candles = d.candles.map(x => ({ o: x.open, h: x.high, l: x.low, c: x.close }));
-      _lastRealCandles = candles;
+    if (res.ok) {
+      const d = await res.json();
+      if (d.candles && d.candles.length > 0) {
+        candles = d.candles.map(x => ({ o: x.open, h: x.high, l: x.low, c: x.close }));
+        _lastCandles = candles;
+      }
     }
-  } catch (e) { /* keep last known candles on fetch failure */ }
+  } catch (e) { /* endpoint not available yet — keep last known candles if any */ }
 
   if (!candles || candles.length === 0) {
     ctx.fillStyle = 'rgba(255,255,255,0.4)';
     ctx.font = '13px sans-serif';
-    ctx.fillText('Waiting for real candle data...', 20, h/2);
+    ctx.fillText('Candle chart endpoint (/api/candles) not implemented yet.', 20, h/2);
     return;
   }
 
@@ -876,33 +776,23 @@ async function drawCandles() {
   });
 }
 
-// ============================================
-// YAHOO FETCH (kept for live updates if API works)
-// ============================================
-async function fetchYahoo(symbol) {
-  try {
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=2d`;
-    const res = await fetch(url, { cache: 'no-store' });
-    if (!res.ok) return null;
-    const data = await res.json();
-    const result = data.chart?.result?.[0];
-    if (!result) return null;
-    const meta = result.meta;
-    const price = meta.regularMarketPrice || meta.previousClose;
-    const prev = meta.previousClose || price;
-    return { price, prev, change: price - prev, pct: prev ? ((price - prev) / prev) * 100 : 0 };
-  } catch (e) { return null; }
-}
-
-// ============================================
-// INIT
-// ============================================
-populateAll();
-setInterval(() => {
+// === SESSIONS + CLOCK (client-side, purely for display of IST time) ===
+function updateClock() {
   const ist = new Date(new Date().toLocaleString('en-US', {timeZone:'Asia/Kolkata'}));
   setText('istTime', ist.toLocaleTimeString('en-IN', {hour12:false}) + ' IST');
-}, 1000);
+  const t = ist.getHours()*100 + ist.getMinutes();
+  setClass('sess1', 'session' + (t>=915 && t<1100 ? ' session-active' : ''));
+  setClass('sess2', 'session' + (t>=1100 && t<1300 ? ' session-active' : ''));
+  setClass('sess3', 'session' + (t>=1300 && t<1430 ? ' session-active' : ''));
+  setClass('sess4', 'session' + (t>=1430 && t<=1530 ? ' session-active' : ''));
+}
+
+// === INIT ===
+fetchData();
+updateClock();
+setInterval(fetchData, POLL_MS);   // keeps polling even when market is closed
+setInterval(updateClock, 1000);
 window.addEventListener('resize', drawCandles);
-</script></script>
+</script>
 </body>
 </html>
