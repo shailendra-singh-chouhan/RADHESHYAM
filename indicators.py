@@ -95,3 +95,79 @@ def calculate_supertrend(highs: List[float], lows: List[float], closes: List[flo
         "supertrend": round(float(st[-1]), 2),
         "trend": trend[-1],
     }
+
+
+# ─── Aliases used by strategy.py ────────────────────────────────────
+# strategy.py calls calc_* names and unpacks tuples, while the functions
+# above are named calculate_* and return dicts or None. These thin wrappers
+# bridge both gaps. Without them compute_real_signal() raises AttributeError
+# on every run and no signal is ever produced.
+#
+# Every wrapper returns a safe numeric default instead of None, because
+# strategy.py does arithmetic and comparisons on the result immediately.
+
+def _last_close(closes: List[float]) -> float:
+    """Last close, or 0.0 if the list is empty."""
+    return float(closes[-1]) if closes else 0.0
+
+
+def calc_rsi(closes: List[float], period: int = 14) -> float:
+    """RSI, defaulting to the neutral 50.0 when it cannot be computed."""
+    val = calculate_rsi(closes, period)
+    return 50.0 if val is None else float(val)
+
+
+def calc_ema(closes: List[float], period: int = 9) -> float:
+    """EMA, defaulting to the last close when it cannot be computed."""
+    val = calculate_ema(closes, period)
+    return _last_close(closes) if val is None else float(val)
+
+
+def calc_vwap_approx(candles) -> float:
+    """Approximate VWAP for volume-less index candles.
+
+    strategy.py passes 5-tuples (seconds, open, high, low, close) from
+    Yahoo Finance, which carry no volume, so a true volume-weighted VWAP
+    is not computable here. This returns the mean typical price
+    (high + low + close) / 3 across the candles — an approximation, not a
+    real VWAP. A true VWAP needs a volume-bearing instrument such as
+    NIFTY futures.
+    """
+    if not candles:
+        return 0.0
+
+    typicals = []
+    for c in candles:
+        try:
+            if isinstance(c, dict):
+                high = float(c.get("high", 0.0))
+                low = float(c.get("low", 0.0))
+                close = float(c.get("close", 0.0))
+            else:
+                high = float(c[2])
+                low = float(c[3])
+                close = float(c[4])
+        except (IndexError, KeyError, TypeError, ValueError):
+            continue
+        typicals.append((high + low + close) / 3.0)
+
+    if not typicals:
+        return 0.0
+    return round(sum(typicals) / len(typicals), 2)
+
+
+def calc_macd(closes: List[float], fast: int = 12, slow: int = 26, signal: int = 9):
+    """MACD as a (macd_line, signal_line) tuple; (0.0, 0.0) when unavailable."""
+    val = calculate_macd(closes, fast, slow, signal)
+    if not val:
+        return 0.0, 0.0
+    return float(val.get("macd", 0.0)), float(val.get("signal", 0.0))
+
+
+def calc_supertrend(highs: List[float], lows: List[float], closes: List[float],
+                    period: int = 10, multiplier: float = 3.0):
+    """Supertrend as a (trend, value) tuple; ("NEUTRAL", 0.0) when unavailable."""
+    val = calculate_supertrend(highs, lows, closes, period, multiplier)
+    if not val:
+        return "NEUTRAL", 0.0
+    return str(val.get("trend", "NEUTRAL")), float(val.get("supertrend", 0.0))
