@@ -251,10 +251,17 @@ def _update_orb(candles):
             logger.info(f"ORB set: H={_orb_high} L={_orb_low}")
 
 
+def _no_data_signal(reason):
+    """ENGINE BLIND: no usable data. This is NOT 'WAIT' — WAIT means we looked and see no edge."""
+    return {"signal": "NO_DATA", "confidence": 0, "checklist": {}, "note": f"ENGINE BLIND — {reason}",
+            "data_source": shared_state.get("data_source", "NONE"),
+            "data_age_seconds": None}
+
+
 def compute_real_signal(candles, spot):
     """Compute GOAT signal from indicators."""
     if not candles or len(candles) < 21:
-        return {"signal": "WAIT", "confidence": 0, "checklist": {}, "note": "Not enough candles"}
+        return _no_data_signal("Not enough candles")
 
     closes = [c[4] for c in candles]
     highs = [c[2] for c in candles]
@@ -267,14 +274,20 @@ def compute_real_signal(candles, spot):
     macd_line, signal_line = indicators.calc_macd(closes)
     st_trend, st_val = indicators.calc_supertrend(highs, lows, closes, 10, 3)
 
-    orb_breakdown = _orb_low and spot < _orb_low
-    orb_breakout = _orb_high and spot > _orb_high
+    # ORB with buffer: must clear the range by 20% of its width (min 15 pts)
+    orb_breakdown = orb_breakout = False
+    if _orb_high and _orb_low:
+        buf = max(config.ORB_MIN_BUFFER, config.ORB_BUFFER_PCT * (_orb_high - _orb_low))
+        orb_breakdown = spot < _orb_low - buf
+        orb_breakout = spot > _orb_high + buf
     below_vwap = spot < vwap
     above_vwap = spot > vwap
     ema_bearish = ema9 < ema21
     ema_bullish = ema9 > ema21
-    rsi_not_oversold = rsi > 30
-    rsi_not_overbought = rsi < 70
+    # RSI: a side only scores in its OWN zone (no free point for both sides).
+    # Bearish 25-40, bullish 60-75; >75 / <25 = exhausted = no point; 40-60 = no point.
+    rsi_not_oversold = 25 <= rsi <= 40
+    rsi_not_overbought = 60 <= rsi <= 75
     macd_bearish = macd_line < signal_line
     macd_bullish = macd_line > signal_line
     supertrend_sell = st_trend == "SELL"
@@ -316,7 +329,9 @@ def compute_real_signal(candles, spot):
         "supertrend": {"trend": st_trend, "value": round(st_val, 2)}
     }
 
-    return {"signal": sig, "confidence": conf, "checklist": checklist, "note": note}
+    return {"signal": sig, "confidence": conf, "checklist": checklist, "note": note,
+            "data_source": shared_state.get("data_source", "UNKNOWN"),
+            "data_age_seconds": 0}
 
 
 # ─── Price Poller (runs every 15s) ──────────────────────────────────
@@ -361,6 +376,8 @@ def indicator_poller(db_session_factory=None):
 
             candles = get_yf_candles(SYMBOLS["nifty"])
 
+            if not candles or len(candles) < 21:
+                shared_state["real_signal"] = _no_data_signal("no candle data from source")
             if candles and len(candles) >= 21:
                 _update_orb(candles)
                 signal = compute_real_signal(candles, spot)

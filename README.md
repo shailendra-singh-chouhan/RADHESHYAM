@@ -1,5 +1,8 @@
 # GOAT PRO — Complete Project Backup (Jul 8, 2026)
 
+> ⚠️ **Status (6 Oct 2026):** live data currently comes from **Yahoo Finance only**. Angel One (`angel_client.py`) is NOT in this repo yet — any README line below saying 'Angel One ✅ Real' is aspirational. Dead modules were removed.
+
+
 This ZIP contains the **complete, fully-fixed codebase** of your GOAT PRO Institutional Trading Dashboard.
 
 ---

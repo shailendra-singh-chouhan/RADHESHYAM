@@ -11,7 +11,7 @@ from database import get_db
 from models import Trade
 from strategy import shared_state
 import trading
-from config import AUTO_TRADE_ENABLED
+from config import AUTO_TRADE_ENABLED, MAX_DAILY_LOSS
 
 router = APIRouter()
 
@@ -87,22 +87,17 @@ def get_dashboard_data(request: Request, db: Session = Depends(get_db)):
         ),
     }
 
-    # Session PnL
-    trades = db.query(Trade).filter(Trade.status == "CLOSED").all()
-    session_pnl = sum(t.pnl or 0 for t in trades)
-    data["session_pnl_rs"] = round(session_pnl, 2)
+    # Session PnL (TODAY only, in rupees) + win rate — one source of truth
+    session_pnl = trading.get_today_pnl_rs(db)
+    data["session_pnl_rs"] = session_pnl
+    stats = trading.get_institutional_stats(db)
+    data["win_rate"] = stats["win_rate"]
+    data["total_trades"] = stats["total_trades"]
 
-    # Win rate
-    closed = db.query(Trade).filter(Trade.status == "CLOSED").all()
-    if closed:
-        wins = sum(1 for t in closed if (t.pnl or 0) > 0)
-        data["win_rate"] = round(wins / len(closed) * 100, 1)
-        data["total_trades"] = len(closed)
-
-    # Risk check
-    if session_pnl < -5000:
+    # Risk check (same limit as trading.py)
+    if session_pnl <= -MAX_DAILY_LOSS:
         data["risk_ok"] = False
-        data["risk_message"] = f"Risk limit hit! Day PnL: ₹{session_pnl}"
+        data["risk_message"] = f"Risk limit hit! Day PnL: ₹{session_pnl:.2f}"
     else:
         data["risk_ok"] = True
         data["risk_message"] = f"Risk OK (Day PnL: ₹{session_pnl:.2f})"

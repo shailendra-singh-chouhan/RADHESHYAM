@@ -30,7 +30,8 @@ PRICE_POLL_INTERVAL = 15       # yfinance — no need to hammer every 5s
 INDICATOR_POLL_INTERVAL = 180
 
 # ─── Risk Limits ────────────────────────────────────────────────────
-MAX_DAILY_LOSS = 5000
+MAX_DAILY_LOSS = 5000          # Rs per day (paper)
+NIFTY_LOT_SIZE = 65            # P&L points x lot size = Rs
 MAX_TRADE_LOSS = 2000
 
 # ─── Strategy Parameters ───────────────────────────────────────────
@@ -41,6 +42,8 @@ SUPERTREND_PERIOD = 10
 SUPERTREND_MULTIPLIER = 3
 ORB_MINUTES = 15
 MIN_SIGNAL_CONFIDENCE = 4
+ORB_BUFFER_PCT = 0.20          # breakout must clear ORB range by 20%...
+ORB_MIN_BUFFER = 15            # ...but never by less than 15 points
 
 # ─── Database ───────────────────────────────────────────────────────
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/goatpro")

@@ -6,7 +6,7 @@ import logging
 from datetime import datetime
 from sqlalchemy.orm import Session
 from models import Trade
-from config import MAX_DAILY_LOSS, MAX_TRADE_LOSS, MIN_SIGNAL_CONFIDENCE
+from config import MAX_DAILY_LOSS, MAX_TRADE_LOSS, MIN_SIGNAL_CONFIDENCE, NIFTY_LOT_SIZE, get_ist_now, IST
 
 logger = logging.getLogger(__name__)
 
@@ -17,9 +17,27 @@ def _get_shared_state():
     return strategy.shared_state
 
 
-def _get_session_pnl(db: Session) -> float:
+def _trade_day_ist(trade):
+    """Calendar day (IST) the trade was opened. Naive datetimes are treated as UTC."""
+    d = trade.trade_date
+    if d is None:
+        return None
+    if d.tzinfo is None:
+        from datetime import timezone
+        d = d.replace(tzinfo=timezone.utc)
+    return d.astimezone(IST).date()
+
+
+def get_today_pnl_rs(db: Session) -> float:
+    """TODAY's closed-trade P&L in rupees (points x lot size). Older days are ignored."""
+    today = get_ist_now().date()
     trades = db.query(Trade).filter(Trade.status == "CLOSED").all()
-    return sum(t.pnl or 0 for t in trades)
+    pts = sum((t.pnl or 0) for t in trades if _trade_day_ist(t) == today)
+    return round(pts * NIFTY_LOT_SIZE, 2)
+
+
+def _get_session_pnl(db: Session) -> float:
+    return get_today_pnl_rs(db)
 
 
 def _get_active_trade(db: Session) -> Trade:
@@ -98,7 +116,7 @@ def open_paper_trade(db: Session, signal: str, spot: float) -> Trade:
         entry_price=spot,
         status="OPEN",
         signal_type=signal,
-        trade_date=datetime.now(),
+        trade_date=get_ist_now(),
     )
     db.add(trade)
     db.commit()

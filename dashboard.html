@@ -534,21 +534,23 @@ function populateAll(d) {
 
   const sig = d.real_signal || {};
   const sigText = sig.signal || 'WAIT';
-  setText('niftySignalTag', sigText);
-  setClass('niftySignalTag', 'tag ' + (sigText === 'LONG' ? 'tag-g' : sigText === 'SHORT' ? 'tag-r' : 'tag-y'));
+  const blind = sigText === 'NO_DATA';
+  const sigLabel = blind ? 'ENGINE BLIND' : sigText;
+  setText('niftySignalTag', sigLabel);
+  setClass('niftySignalTag', 'tag ' + (sigText === 'LONG' ? 'tag-g' : (sigText === 'SHORT' || blind) ? 'tag-r' : 'tag-y'));
 
   const oi = d.oi_data || {};
   setText('pcrDisplay', oi.pcr ? oi.pcr.toFixed(2) : '--');
   const greeks = d.greeks || {};
   setText('ivDisplay', greeks.iv ? greeks.iv.toFixed(1) + '%' : '--');
   setText('maxPainDisplay', oi.max_pain || '--');
-  setText('signalDisplay', sigText);
-  setColor('signalDisplay', sigText === 'LONG' ? 'var(--green)' : sigText === 'SHORT' ? 'var(--red)' : 'var(--yellow)');
+  setText('signalDisplay', sigLabel);
+  setColor('signalDisplay', sigText === 'LONG' ? 'var(--green)' : (sigText === 'SHORT' || blind) ? 'var(--red)' : 'var(--yellow)');
 
   // === SIGNAL HERO ===
-  setClass('signalHero', 'signal-hero ' + (sigText === 'LONG' ? '' : sigText === 'SHORT' ? 'sell' : 'wait'));
-  setText('signalBadge', sig.confidence ? sig.confidence + '/6 confidence' : 'WAITING');
-  setText('signalTitle', sigText + (sig.note ? ' — ' + sig.note : ''));
+  setClass('signalHero', 'signal-hero ' + (sigText === 'LONG' ? '' : (sigText === 'SHORT' || blind) ? 'sell' : 'wait'));
+  setText('signalBadge', blind ? 'NO DATA' : (sig.confidence ? sig.confidence + '/6 confidence' : 'WAITING'));
+  setText('signalTitle', sigLabel + (sig.note ? ' — ' + sig.note : ''));
   setText('signalDesc', sig.note || 'No signal computed yet.');
 
   const active = d.active_trade;
